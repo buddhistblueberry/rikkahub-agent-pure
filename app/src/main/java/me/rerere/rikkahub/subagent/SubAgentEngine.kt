@@ -403,6 +403,12 @@ class SubAgentEngine(
         val effectiveTask = profile?.systemPrompt?.trim()?.takeIf { it.isNotEmpty() }
             ?.let { "$it\n\n${request.task}" }
             ?: request.task
+        // T-04 / (4) - the caller asked for part of its own conversation to travel with the
+        // task. A sub-agent's conversation starts empty, so the ONLY channel is this text:
+        // materialise the referenced turns into the first user message rather than trying to
+        // share history. Best-effort by design - a lookup failure degrades to the pre-T-04
+        // behaviour (task alone) instead of failing the run.
+        val taskWithContext = withParentContext(parentChatId, request, effectiveTask)
         val conv = Conversation.ofId(
             id = Uuid.random(),
             assistantId = parentAsstUuid,
@@ -420,7 +426,7 @@ class SubAgentEngine(
             // no closing text. Without explicit text the parent has nothing to harvest and
             // the sub-agent's findings are lost.
             val taskWithWrapup = buildString {
-                append(effectiveTask)
+                append(taskWithContext)
                 appendLine()
                 appendLine()
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
@@ -539,6 +545,34 @@ class SubAgentEngine(
         }.onFailure {
             Log.w(TAG, "failed to notify parent $parentChatId of subagent completion", it)
         }
+    }
+
+    /**
+     * T-04 / (4) - turn `context_refs` into text on the task, or return the task untouched.
+     *
+     * Returns the task unchanged (pre-T-04 behaviour, byte for byte) when: the feature was
+     * not requested, there is no caller conversation (cron / workflow / external automation
+     * dispatch from a context that has no user-facing history), the conversation is gone,
+     * or every candidate turn is blank after the digest's filtering. A sub-agent run must
+     * never fail because a context reference could not be resolved - the task is what
+     * matters, and the caller can still see it ran.
+     */
+    private suspend fun withParentContext(
+        parentChatId: String?,
+        request: SubAgentRequest,
+        task: String,
+    ): String {
+        val turns = request.contextRefs?.recentTurns ?: 0
+        if (turns <= 0 || parentChatId == null) return task
+        val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull() ?: return task
+        val digest = runCatching {
+            val conv = conversationRepo.getConversationById(parentUuid) ?: return@runCatching null
+            // `selectIndex` picks the live branch of each node; the unselected siblings of an
+            // edited/regenerated turn are deliberately not carried.
+            val selected = conv.messageNodes.mapNotNull { node -> node.messages.getOrNull(node.selectIndex) }
+            SubAgentContextDigest.render(SubAgentContextDigest.turnsFrom(selected, turns))
+        }.getOrNull()
+        return if (digest == null) task else digest + "\n\n" + task
     }
 
     private suspend fun harvestFinalText(conversationId: Uuid): String {

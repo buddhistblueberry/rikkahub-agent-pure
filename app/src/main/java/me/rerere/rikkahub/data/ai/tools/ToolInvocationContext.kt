@@ -33,6 +33,17 @@ data class ToolInvocationContext(
     val callerConversationId: String? = null,
     val isHeadless: Boolean = false,
     val modelCanSeeImages: Boolean = true,
+    /**
+     * T-04 / (4): true when the calling assistant has `enableSubAgentContextRefs` on.
+     * `subagent_dispatch` reads this to decide whether to OFFER its `include_recent_turns`
+     * parameter at all - the flag gates the tool SCHEMA, not just the behaviour, so an
+     * assistant with the feature off sends a byte-identical `subagent_dispatch` definition
+     * to the one it sent before T-04 (prompt-cache safe).
+     *
+     * Defaults to false: the empty / legacy context keeps the pre-T-04 surface, and
+     * ChatService is the only caller that can turn it on.
+     */
+    val subAgentContextRefsEnabled: Boolean = false,
 ) {
     companion object {
         /** No-knowledge fallback. Factories that depend on context MUST handle this. */

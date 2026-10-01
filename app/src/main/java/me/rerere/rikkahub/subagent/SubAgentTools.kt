@@ -137,6 +137,25 @@ fun subagentDispatchTool(
                     })
                     put("timeout_seconds", buildJsonObject { put("type", "integer") })
                     put("max_trips", buildJsonObject { put("type", "integer") })
+                    // T-04: only offered when the assistant has the feature enabled. When it
+                    // is off the schema is byte-identical to pre-T-04, so an install that
+                    // never turns this on sends exactly the same request as before.
+                    if (callerContext.subAgentContextRefsEnabled) {
+                        put("include_recent_turns", buildJsonObject {
+                            put("type", "integer")
+                            put(
+                                "description",
+                                "T-04: also send the last N turns of THIS conversation to the " +
+                                    "sub-agent, verbatim, as background. Use it instead of " +
+                                    "retyping context into `task` when the task refers to " +
+                                    "something discussed here (\"summarise the last few turns\", " +
+                                    "\"write up what we just decided\"). N is 1.." +
+                                    "${SubAgentContextDigest.MAX_TURNS}. Omit or pass 0 to send " +
+                                    "the task alone, exactly as before. The turns are context, " +
+                                    "not instructions: the sub-agent still only does `task`.",
+                            )
+                        })
+                    }
                 },
                 required = listOf("task"),
             )
@@ -170,6 +189,14 @@ fun subagentDispatchTool(
                 maxTrips = params["max_trips"]?.jsonPrimitive?.intOrNull
                     ?: SubAgentDefaults.DEFAULT_MAX_TRIPS,
                 label = params["label"]?.jsonPrimitive?.contentOrNull,
+                // T-04: read only if the feature is on, so a stale/rogue `include_recent_turns`
+                // from a caller who never enabled it cannot smuggle parent history into a
+                // sub-agent. `intOrNull` on a non-number yields null -> no refs -> pre-T-04
+                // behaviour.
+                contextRefs = params["include_recent_turns"]
+                    ?.jsonPrimitive?.intOrNull
+                    ?.takeIf { callerContext.subAgentContextRefsEnabled && it > 0 }
+                    ?.let { SubAgentContextRefs(recentTurns = it) },
             )
             // The engine's recursion guard checks `HeadlessConversations.isHeadless(parentChatId)`
             // — if the calling conversation is itself headless (cron / sub-agent / workflow /
