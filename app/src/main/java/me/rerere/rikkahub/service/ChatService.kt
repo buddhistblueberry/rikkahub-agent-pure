@@ -1063,6 +1063,10 @@ class ChatService(
                 callerAssistantId = assistant.id.toString(),
                 callerConversationId = conversationId.toString(),
                 isHeadless = false,  // gated above
+                // T-09 / (8) - keep the fast-path lookup honest: if this ever runs for a
+                // conversation whose surface is frozen, it must resolve the same tools the
+                // model was offered.
+                subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
             ),
         )
         val tool = tools.firstOrNull { it.name == match.toolName } ?: run {
@@ -1546,6 +1550,9 @@ class ChatService(
             // the first pass, otherwise the subagent_dispatch definition would silently lose
             // its `include_recent_turns` parameter on a re-run.
             subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
+            // T-09 / (8) - same reasoning for the freeze: a regenerate on a sub-agent
+            // conversation must see the frozen surface, not the assistant's full one.
+            subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
         )
         addAll(localTools.getTools(assistant.localTools, invocationCtx))
         addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
@@ -1573,7 +1580,10 @@ class ChatService(
                 )
             )
         }
-    }
+        // T-09 / (8) - a sub-agent conversation sees its frozen, headless-safe surface; every
+        // other conversation gets this exact list back by reference (apply is an identity when
+        // the conversation was never frozen).
+    }.let { me.rerere.rikkahub.subagent.SubAgentToolSurface.apply(conversationId, it) }
 
     // ---- 处理消息补全 ----
 
@@ -1829,6 +1839,9 @@ class ChatService(
                         // T-04 / (4) - gates subagent_dispatch's `include_recent_turns`
                         // parameter (schema AND behaviour).
                         subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
+                        // T-09 / (8) - gates subagent_dispatch's `tools` parameter (schema AND
+                        // behaviour) and lets the engine know a frozen surface is wanted.
+                        subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
                     )
                     addAll(localTools.getTools(assistant.localTools, invocationCtx))
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
@@ -1917,7 +1930,7 @@ class ChatService(
                             add(buildMcpTool(serverId, serverName, tool))
                         }
                     }
-                },
+                }.let { me.rerere.rikkahub.subagent.SubAgentToolSurface.apply(conversationId, it) },
             ).onCompletion { completionCause ->
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)

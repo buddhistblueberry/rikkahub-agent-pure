@@ -20,7 +20,8 @@ data class SubAgentRun(
     val label: String,
     val task: String,
     val modelId: String?,              // null = inherited from parent
-    val tools: List<String>?,          // null = inherited from parent
+    val tools: List<String>?,          // null = inherited from parent; T-09: also the narrowing
+                                       // allow-list a sub-agent conversation is frozen to
     val runInBackground: Boolean,
     val noResult: Boolean = false,   // #78/#79: suppress result text from encodeRun/parent notification
     val timeoutSeconds: Int,
@@ -83,6 +84,15 @@ data class SubAgentRequest(
      */
     val agentName: String? = null,
     val systemPrompt: String? = null,
+    /**
+     * T-09 / (8): optional allow-list of tool names for the run. Null (or an empty array) means
+     * "no narrowing" — the sub-agent inherits the frozen headless-safe surface.
+     *
+     * This used to be a dead parameter: it was parsed out of the tool call, stored here, and
+     * never read by anything (the engine copied it into the run record and stopped). Only honoured
+     * while the assistant has `enableSubAgentToolSurface` on; with the flag off a caller-supplied
+     * list is ignored exactly as before.
+     */
     val tools: List<String>? = null,
     val runInBackground: Boolean = false,
     val noResult: Boolean = false,

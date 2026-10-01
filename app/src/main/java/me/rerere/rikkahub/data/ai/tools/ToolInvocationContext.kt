@@ -44,6 +44,18 @@ data class ToolInvocationContext(
      * ChatService is the only caller that can turn it on.
      */
     val subAgentContextRefsEnabled: Boolean = false,
+    /**
+     * T-09 / (8): true when the calling assistant has `enableSubAgentToolSurface` on.
+     * `subagent_dispatch` reads this to decide whether to DESCRIBE its `tools` parameter at all
+     * and whether to honour it - the flag gates the tool SCHEMA, not just the behaviour, so an
+     * assistant with the feature off sends a byte-identical `subagent_dispatch` definition to the
+     * one it sent before T-09 (prompt-cache safe). The engine reads the same Assistant field for
+     * the freeze itself, so the two can never disagree.
+     *
+     * Defaults to false: the empty / legacy context keeps the pre-T-09 surface, and ChatService is
+     * the only caller that can turn it on.
+     */
+    val subAgentToolSurfaceEnabled: Boolean = false,
 ) {
     companion object {
         /** No-knowledge fallback. Factories that depend on context MUST handle this. */

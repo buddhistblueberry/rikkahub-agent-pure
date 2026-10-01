@@ -96,6 +96,17 @@ data class Assistant(
     // behaviour: with it off, the subagent_dispatch definition is byte-identical to the
     // pre-T-04 one (prompt-cache safe), and the model has no parameter to fill in.
     val enableSubAgentContextRefs: Boolean = false,
+    // T-09 / (8) — freeze the tool surface of sub-agents this assistant dispatches. Off by
+    // default. When ON, every sub-agent conversation is filtered down to the headless-safe
+    // surface (no `subagent_*` handles, no per-call-approval tools such as eval_javascript /
+    // mcp_add / keystore_*, no device-UI-bound tools), and `subagent_dispatch`'s `tools`
+    // parameter finally does something: it narrows that surface further. This matters because a
+    // headless run auto-approves every tool it is handed, so an unfrozen child could run a tool
+    // that is documented to require a per-call user confirmation.
+    // With the flag off no freeze record is ever written and ChatService hands every
+    // conversation the exact same List<Tool> it built before T-09 (identity filter).
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val enableSubAgentToolSurface: Boolean = false,
 )
 
 @Serializable
