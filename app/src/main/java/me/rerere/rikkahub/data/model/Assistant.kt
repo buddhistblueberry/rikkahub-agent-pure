@@ -70,6 +70,12 @@ data class Assistant(
     val fastPathRouterEnabled: Boolean = false,
     val allowConversationSystemPrompt: Boolean = false, // 允许对话单独重写 system prompt
     val allowConversationPromptInjection: Boolean = false, // 允许对话单独绑定提示词注入
+    // Phase 17 (⑥) — Optional per-tool-result token budget. null = upstream behaviour unchanged
+    // (the fixed 32 KB character gate in GenerationLoop.maybeTruncateToolOutput). When set,
+    // oversized tool results are trimmed to roughly this many tokens keeping head + tail, and
+    // the full text is still spilled to /tool_outputs/ for on-demand re-reading.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val toolResultMaxTokens: Int? = null,
 )
 
 @Serializable

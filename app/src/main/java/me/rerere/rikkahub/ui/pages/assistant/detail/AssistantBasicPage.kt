@@ -538,6 +538,48 @@ internal fun AssistantBasicContent(
                     }
                 )
             }
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_tool_result_budget))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_tool_result_budget_desc))
+                }
+            ) {
+                OutlinedTextField(
+                    value = assistant.toolResultMaxTokens?.toString() ?: "",
+                    onValueChange = { text ->
+                        val tokens = if (text.isBlank()) {
+                            null
+                        } else {
+                            text.toIntOrNull()?.takeIf { it > 0 }
+                        }
+                        onUpdate(
+                            assistant.copy(
+                                toolResultMaxTokens = tokens
+                            )
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(stringResource(R.string.assistant_page_tool_result_budget_placeholder))
+                    },
+                    supportingText = {
+                        if (assistant.toolResultMaxTokens != null) {
+                            Text(
+                                stringResource(
+                                    R.string.assistant_page_tool_result_budget_active,
+                                    assistant.toolResultMaxTokens,
+                                )
+                            )
+                        } else {
+                            Text(stringResource(R.string.assistant_page_tool_result_budget_off))
+                        }
+                    }
+                )
+            }
         }
 
         Card(
