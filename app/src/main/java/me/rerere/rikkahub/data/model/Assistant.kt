@@ -9,6 +9,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.data.ai.tools.LenientLocalToolListSerializer
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.ToolSurfaceMode
 import me.rerere.rikkahub.utils.SimpleCache
 import java.util.concurrent.TimeUnit
 import kotlin.uuid.Uuid
@@ -83,6 +84,13 @@ data class Assistant(
     // from the next turn; the turn that triggered it keeps its raw history.
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val enableCompactContextTool: Boolean = false,
+    // Phase 17 (①) — Progressive tool exposure. DIRECT (default) keeps the historical behaviour:
+    // every enabled MCP tool's schema is injected on every request. PROGRESSIVE_CATALOG replaces
+    // the MCP portion of the tool list with the small `tool_search` / `tool_open` pair, and only
+    // activated schemas get injected (from the following turn onwards). Local tools are never
+    // catalogued — only MCP tools — so the blast radius of this phase stays small.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val toolSurfaceMode: ToolSurfaceMode = ToolSurfaceMode.DIRECT,
 )
 
 @Serializable

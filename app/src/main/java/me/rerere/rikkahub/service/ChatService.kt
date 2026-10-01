@@ -78,6 +78,13 @@ import me.rerere.rikkahub.data.ai.CompactedMessageView
 import me.rerere.rikkahub.data.ai.ContextCompactionView
 import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.ai.tools.TOOL_CATALOG_MAX_SUMMARY_CHARS
+import me.rerere.rikkahub.data.ai.tools.ToolActivationState
+import me.rerere.rikkahub.data.ai.tools.ToolCatalog
+import me.rerere.rikkahub.data.ai.tools.ToolCatalogEntry
+import me.rerere.rikkahub.data.ai.tools.ToolCatalogSource
+import me.rerere.rikkahub.data.ai.tools.ToolSurfaceMode
+import me.rerere.rikkahub.data.ai.tools.buildToolCatalogTools
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.LocalTools
@@ -461,6 +468,78 @@ class ChatService(
     private val persistenceMutexes = ConcurrentHashMap<Uuid, Mutex>()
     private fun persistenceMutexFor(conversationId: Uuid): Mutex =
         persistenceMutexes.getOrPut(conversationId) { Mutex() }
+
+    /**
+     * T-03 / (1) - per-conversation activation state for the progressive tool catalog.
+     *
+     * Deliberately session-scoped and never persisted: which schemas the model opened is
+     * discovery state, not user data, and losing it merely costs the model one extra
+     * `tool_search` round-trip. [ToolActivationState] prunes names that leave the catalog on the
+     * next turn, so a deleted server cannot leave a stale activation behind.
+     */
+    private val toolActivations = ConcurrentHashMap<Uuid, ToolActivationState>()
+
+    private fun toolActivationFor(conversationId: Uuid): ToolActivationState =
+        toolActivations.getOrPut(conversationId) { ToolActivationState() }
+
+    /**
+     * Builds the model-facing definition for one MCP tool. Extracted from the tool assembly block
+     * so the direct surface and the catalog surface emit byte-identical definitions - if they
+     * ever drift, a tool the model activates would behave differently from the same tool when
+     * exposed directly.
+     */
+    private fun buildMcpTool(
+        serverId: Uuid,
+        serverName: String,
+        tool: me.rerere.rikkahub.data.ai.mcp.McpTool,
+    ): Tool {
+        // Namespace MCP tools by a server-id slug so two enabled servers that each expose a tool
+        // of the same name don't collide (which would 400 or mis-route to whichever server
+        // registered last). Built by the same buildMcpToolName helper mcp_list_tools uses to
+        // advertise this name to the model (#88), so the two can never drift. The execute lambda
+        // below still calls callTool with the REAL tool.name, since the namespacing exists only
+        // on the model-facing surface.
+        val mcpToolName = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, tool.name)
+        return Tool(
+            name = mcpToolName,
+            description = tool.description ?: "",
+            parameters = { tool.inputSchema },
+            // MCP servers' tool surfaces are opaque to us - we can't tell read from write or safe
+            // from destructive - so every MCP call is approval-gated by default. The user can
+            // grant Always-Allow per-tool to suppress prompts on a known-safe MCP server. The
+            // HARDLINE floor still applies via HardlineCommandGuard's `mcp__*` branch, which scans
+            // every string arg for shell-content patterns (rm -rf /, mkfs, shutdown, encoded
+            // payloads).
+            needsApproval = {
+                me.rerere.rikkahub.data.ai.tools
+                    .ToolApprovalDefaults.requiresApproval(mcpToolName) ||
+                    tool.needsApproval
+            },
+            execute = {
+                mcpManager.callTool(serverId, tool.name, it.jsonObject)
+            },
+        )
+    }
+
+    /**
+     * Catalog summary for one MCP tool. Kept short on purpose: the catalog exists to avoid
+     * shipping full schemas, so a summary that grew to schema size would defeat it. The
+     * `[untrusted]` marker matters - an MCP server's description is data we did not author, and
+     * it is now the only thing the model sees before deciding to open the tool.
+     */
+    private fun mcpCatalogSummary(tool: me.rerere.rikkahub.data.ai.mcp.McpTool): String {
+        val firstLine = tool.description
+            .orEmpty()
+            .lineSequence()
+            .firstOrNull { line -> line.isNotBlank() }
+            .orEmpty()
+            .trim()
+        if (firstLine.isEmpty()) {
+            return "[untrusted] External MCP tool with no description."
+        }
+        return "[untrusted] " + firstLine.take(TOOL_CATALOG_MAX_SUMMARY_CHARS)
+    }
+
 
     /**
      * A monotonically increasing marker lets a flush tell whether a newer stream chunk arrived
@@ -1774,7 +1853,7 @@ class ChatService(
                             )
                         )
                     }
-                    mcpManager.getAllAvailableTools().also { allTools ->
+                    val allMcpTools = mcpManager.getAllAvailableTools().also { allTools ->
                         // Upstream name validation: a server name that isn't pure
                         // English+digits would produce an invalid `mcp__<name>__tool`
                         // surface, so surface it as an error rather than emit a tool the
@@ -1795,38 +1874,41 @@ class ChatService(
                             )
                             return
                         }
-                    }.forEach { (serverId, serverName, tool) ->
-                        // Namespace MCP tools by a server-id slug so two enabled servers that
-                        // each expose a tool of the same name don't collide (which would 400 or
-                        // mis-route to whichever server registered last). Built by the same
-                        // buildMcpToolName helper mcp_list_tools uses to advertise this name to
-                        // the model (#88), so the two can never drift. The execute lambda below
-                        // still calls callTool with the REAL tool.name, since the namespacing
-                        // exists only on the model-facing surface.
-                        val mcpToolName = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, tool.name)
-                        add(
-                            Tool(
-                                name = mcpToolName,
-                                description = tool.description ?: "",
-                                parameters = { tool.inputSchema },
-                                // MCP servers' tool surfaces are opaque to us — we can't
-                                // tell read from write or safe from destructive — so
-                                // every MCP call is approval-gated by default. The user
-                                // can grant Always-Allow per-tool to suppress prompts on
-                                // a known-safe MCP server. The HARDLINE floor still
-                                // applies via HardlineCommandGuard's `mcp__*` branch,
-                                // which scans every string arg for shell-content
-                                // patterns (rm -rf /, mkfs, shutdown, encoded payloads).
-                                needsApproval = {
-                                    me.rerere.rikkahub.data.ai.tools
-                                        .ToolApprovalDefaults.requiresApproval(mcpToolName) ||
-                                        tool.needsApproval
-                                },
-                                execute = {
-                                    mcpManager.callTool(serverId, tool.name, it.jsonObject)
-                                },
-                            )
+                    }
+                    if (assistant.toolSurfaceMode == ToolSurfaceMode.PROGRESSIVE_CATALOG) {
+                        // T-03 / (1) - progressive tool exposure. MCP schemas are the expensive
+                        // part of the surface (one entry per remote tool, all of them opaque to
+                        // us), so in this mode they are replaced by a two-tool discovery pair.
+                        // Local/workspace/skill tools stay directly attached: they are the ones
+                        // the model needs on nearly every turn, and keeping them stable is also
+                        // what keeps the prompt prefix cacheable.
+                        val mcpCatalog = ToolCatalog(
+                            entries = allMcpTools.map { (serverId, serverName, tool) ->
+                                ToolCatalogEntry(
+                                    name = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(
+                                        serverId = serverId,
+                                        serverName = serverName,
+                                        toolName = tool.name,
+                                    ),
+                                    summary = mcpCatalogSummary(tool),
+                                    source = ToolCatalogSource.MCP,
+                                    tool = buildMcpTool(serverId, serverName, tool),
+                                )
+                            },
                         )
+                        val activation = toolActivationFor(conversationId)
+                        // Drop names whose server/tool disappeared since the last turn so a
+                        // stale activation can never attempt to inject a schema that no longer
+                        // exists (which would 400 the request).
+                        activation.retain(mcpCatalog.entries.mapTo(mutableSetOf()) { it.name })
+                        addAll(buildToolCatalogTools(catalog = mcpCatalog, activation = activation))
+                        activation.active().forEach { activeName ->
+                            mcpCatalog.entry(activeName)?.let { entry -> add(entry.tool) }
+                        }
+                    } else {
+                        allMcpTools.forEach { (serverId, serverName, tool) ->
+                            add(buildMcpTool(serverId, serverName, tool))
+                        }
                     }
                 },
             ).onCompletion { completionCause ->

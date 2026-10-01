@@ -43,6 +43,7 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.ai.tools.ToolSurfaceMode
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -596,6 +597,32 @@ internal fun AssistantBasicContent(
                             onUpdate(
                                 assistant.copy(
                                     enableCompactContextTool = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_tool_surface_mode))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_tool_surface_mode_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.toolSurfaceMode == ToolSurfaceMode.PROGRESSIVE_CATALOG,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    toolSurfaceMode = if (it) {
+                                        ToolSurfaceMode.PROGRESSIVE_CATALOG
+                                    } else {
+                                        ToolSurfaceMode.DIRECT
+                                    }
                                 )
                             )
                         }
