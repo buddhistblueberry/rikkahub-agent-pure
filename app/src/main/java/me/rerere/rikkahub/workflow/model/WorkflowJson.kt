@@ -189,6 +189,8 @@ object WorkflowJson {
             updatedAtMs = now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull
                 ?.takeIf { it.isNotBlank() },
+            // T-07 — absent in every pre-existing row, which is exactly the intended default.
+            useActionTemplates = obj["use_action_templates"]?.jsonPrimitive?.booleanOrNull ?: false,
         ))
     }
 
@@ -220,6 +222,12 @@ object WorkflowJson {
             put("updated_at_ms", JsonPrimitive(definition.updatedAtMs.toString()))
             if (definition.authoringAssistantId != null) {
                 put("authoring_assistant_id", JsonPrimitive(definition.authoringAssistantId))
+            }
+            // T-07 — written only when on, so a stored row that never used templates re-encodes
+            // to the same bytes it was loaded from (the encoder must stay byte-stable for the
+            // projection-only writes that don't go through here).
+            if (definition.useActionTemplates) {
+                put("use_action_templates", JsonPrimitive(true))
             }
         }
         return obj.toString()
@@ -273,6 +281,8 @@ object WorkflowJson {
             updatedAtMs = obj["updated_at_ms"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: now,
             authoringAssistantId = obj["authoring_assistant_id"]?.jsonPrimitive?.contentOrNull
                 ?.takeIf { it.isNotBlank() },
+            // T-07 — read path is lenient like the rest: a missing key is simply "off".
+            useActionTemplates = obj["use_action_templates"]?.jsonPrimitive?.booleanOrNull ?: false,
         )
     }
 

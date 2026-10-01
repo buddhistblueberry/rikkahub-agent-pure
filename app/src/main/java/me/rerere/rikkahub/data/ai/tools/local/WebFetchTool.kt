@@ -27,6 +27,18 @@ import java.nio.charset.Charset
 private const val WEB_FETCH_TIMEOUT_MS = 30_000L
 internal const val WEB_FETCH_BODY_CAP = 8 * 1024  // 8 KB
 
+/**
+ * T-07 — HTTP verbs this tool accepts. Was GET/POST only, which is not enough to drive a real
+ * API: a REST endpoint that creates or updates a resource needs PUT/PATCH (POST is
+ * create-only) and DELETE. OkHttp's own rules decide which verbs may carry a body — see
+ * [METHODS_REQUIRING_BODY]; passing a body to GET/HEAD would be rejected by the builder, and
+ * the surrounding try/catch turns that into the existing `bad_request` envelope.
+ */
+internal val HTTP_METHODS = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
+
+/** Verbs OkHttp insists on a body for. DELETE may carry one, but does not require it. */
+internal val METHODS_REQUIRING_BODY = setOf("POST", "PUT", "PATCH")
+
 /** Cap for extracted prose. Higher than the raw cap because prose is all signal. */
 internal const val WEB_FETCH_EXTRACT_CAP = 32 * 1024
 
@@ -134,7 +146,8 @@ internal fun buildExtractEnvelope(
 }
 
 /**
- * Lightweight HTTP GET/POST tool so workflows / the LLM can fetch a URL without driving the
+ * Lightweight HTTP tool (GET/POST/PUT/PATCH/DELETE/HEAD) so workflows / the LLM can fetch a
+ * URL without driving the
  * full in-app browser or shelling out to Termux+curl. Backed by the DI [OkHttpClient]
  * singleton (already NetworkChangeMonitor-registered), rebuilt per call with [withEgressGuard]
  * so private / loopback / link-local targets are refused, whether named by hostname or IP
@@ -149,9 +162,9 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
         read a page), 'text' (all body text), 'links', or 'metadata'. Raw returns markup that
         is mostly not content, so pass 'article' when you want to read a page. max_chars caps
         the returned text (default 32768 when extracting, 8192 for raw); when truncated=true
-        pass next_start_index back as start_index to continue. method is GET (default) or
-        POST. Response headers are omitted unless include_headers=true. Private, loopback and
-        link-local addresses are refused. Returns {status, ok, final_url, extract_mode, title,
+        pass next_start_index back as start_index to continue. method is GET (default), POST, PUT,
+        PATCH, DELETE or HEAD. Response headers are omitted unless include_headers=true. Private,
+        loopback and link-local addresses are refused. Returns {status, ok, final_url, extract_mode, title,
         text, truncated, next_start_index} or {error, detail, recovery}.
     """.trimIndent().replace("\n", " "),
     parameters = {
@@ -179,7 +192,7 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
                 })
                 put("method", buildJsonObject {
                     put("type", "string")
-                    put("description", "GET (default) or POST")
+                    put("description", "GET (default), POST, PUT, PATCH, DELETE or HEAD")
                 })
                 put("headers", buildJsonObject {
                     put("type", "object")
@@ -187,7 +200,7 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
                 })
                 put("body", buildJsonObject {
                     put("type", "string")
-                    put("description", "Optional request body string (POST only)")
+                    put("description", "Optional request body string. Required for POST/PUT/PATCH; DELETE may carry one; GET/HEAD must not send one.")
                 })
             },
             required = listOf("url"),
@@ -208,6 +221,19 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
                 }.toString()
             )
         }
+        // Validate the verb before the (also purely pre-flight) address guard, so that a test
+        // can prove a verb cleared this gate by aiming at a loopback URL — which the address
+        // guard rejects next — without ever touching the network.
+        val method = obj["method"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: "GET"
+        if (method !in HTTP_METHODS) {
+            return@Tool fmTextPart(
+                buildJsonObject {
+                    put("error", "bad_method")
+                    put("detail", "method must be one of ${HTTP_METHODS.joinToString(", ")}, got $method")
+                    put("recovery", "Use one of ${HTTP_METHODS.joinToString(", ")}.")
+                }.toString()
+            )
+        }
         // OkHttp routes a literal-IP host straight to the socket without consulting the
         // GuardedDns wrapper, so refuse a private/loopback/link-local literal deterministically
         // here; the interceptor in withEgressGuard still covers literal redirect hops.
@@ -224,16 +250,6 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
                     }.toString()
                 )
             }
-        }
-        val method = obj["method"]?.jsonPrimitive?.contentOrNull?.trim()?.uppercase() ?: "GET"
-        if (method != "GET" && method != "POST") {
-            return@Tool fmTextPart(
-                buildJsonObject {
-                    put("error", "bad_method")
-                    put("detail", "method must be GET or POST, got $method")
-                    put("recovery", "Use method=GET or method=POST.")
-                }.toString()
-            )
         }
         val bodyStr = obj["body"]?.jsonPrimitive?.contentOrNull
 
@@ -256,10 +272,14 @@ fun webFetchTool(client: OkHttpClient): Tool = Tool(
             (obj["headers"] as? kotlinx.serialization.json.JsonObject)?.forEach { (name, value) ->
                 value.jsonPrimitive.contentOrNull?.let { builder.header(name, it) }
             }
-            if (method == "POST") {
-                builder.post((bodyStr ?: "").toRequestBody())
+            if (method in METHODS_REQUIRING_BODY) {
+                builder.method(method, (bodyStr ?: "").toRequestBody())
+            } else if (bodyStr != null) {
+                // DELETE is the only remaining verb OkHttp lets carry a body; GET/HEAD with a
+                // body would throw here and be reported as `bad_request` below.
+                builder.method(method, bodyStr.toRequestBody())
             } else {
-                builder.get()
+                builder.method(method, null)
             }
             builder.build()
         } catch (e: IllegalArgumentException) {

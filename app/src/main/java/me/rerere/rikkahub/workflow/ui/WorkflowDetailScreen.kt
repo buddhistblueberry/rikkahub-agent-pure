@@ -213,6 +213,26 @@ fun WorkflowDetailScreen(
                     }
                 }
             }
+            // Dynamic arguments (T-07) — when on, an action's string args may reference an
+            // earlier action's output. Off by default.
+            item {
+                SectionHeader(stringResource(R.string.setting_page_workflow_detail_section_dynamic_args))
+                WorkflowDynamicArgsRow(
+                    enabled = currentLoaded.definition.useActionTemplates,
+                    onToggle = { enabled ->
+                        scope.launch {
+                            vm.setUseActionTemplates(currentLoaded.entity.id, enabled)
+                            loaded = vm.get(currentLoaded.entity.id)
+                        }
+                    },
+                )
+            }
+            // API secrets (T-07) — keystore-backed values a web_fetch header can reference as
+            // {{secret:NAME}} without the token ever entering the workflow JSON.
+            item {
+                SectionHeader(stringResource(R.string.setting_page_workflow_detail_section_secrets))
+                WorkflowSecretsCard(vm)
+            }
             // Stats
             item {
                 SectionHeader(stringResource(R.string.setting_page_workflow_detail_section_stats))
