@@ -10,6 +10,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.ai.tools.HeadlessToolApprovalPolicy
 import me.rerere.rikkahub.data.ai.tools.HardlineCommandGuard
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -415,6 +416,21 @@ class WorkflowActionRunner {
                 logSafe("workflow hardline-blocked action $idx tool=${action.tool}: $hardlineReason")
                 return RunResult(success = false,
                     error = "action $idx: hardline:$hardlineReason",
+                    summary = outputs.joinToString("\n"))
+            }
+            // T-10 / (9) — a workflow fire is headless by construction: no conversation and no
+            // approval channel (see the class KDoc), which is exactly why the factories'
+            // `needsApproval = { true }` never prompts here. That pre-authorisation is the
+            // `workflow_create` approval the user granted, and it does NOT cover the tools they
+            // reserved for a per-call confirmation, nor the ones that record their surroundings.
+            // Fail the run with the same structured code the model-facing paths emit, rather
+            // than executing something the user never agreed to run unattended. (There is no
+            // model in this loop to hand an envelope to, so the run's own error field carries it.)
+            val refusalDetail = HeadlessToolApprovalPolicy.refusalDetail(action.tool)
+            if (refusalDetail != null) {
+                logSafe("workflow refused action $idx tool=${action.tool}: ${HeadlessToolApprovalPolicy.ERROR_CODE} — $refusalDetail")
+                return RunResult(success = false,
+                    error = "action $idx: ${HeadlessToolApprovalPolicy.ERROR_CODE}:${action.tool}",
                     summary = outputs.joinToString("\n"))
             }
             val tool = availableTools.find { it.name == action.tool }

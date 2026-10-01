@@ -892,6 +892,34 @@ class GenerationLoop(
                             return@forEach
                         }
 
+                        // T-10 / (9) — headless auto-approval floor. A conversation registered
+                        // via HeadlessConversations.mark() (cron / sub-agent / skill-tester /
+                        // external-automation) has NO approval channel, so ChatService's
+                        // isToolAutoApproved hands it every tool. That must not extend to the
+                        // tools the user reserved for a per-call confirmation, nor to the ones
+                        // that capture the user's surroundings. The refusal cannot be a plain
+                        // "not approved": that flips the tool to Pending and the loop below
+                        // breaks waiting for an answer that can never come. Emit an envelope
+                        // instead — the same shape as the hardline floor above — so the model
+                        // sees a structured refusal and can pivot. Sitting here rather than in
+                        // the approval lookup is deliberate: it also covers the resume path,
+                        // where tools arrive already Approved.
+                        val headlessRefusal = me.rerere.rikkahub.data.ai.tools.HeadlessToolApprovalPolicy
+                            .refusalEnvelopeFor(
+                                toolName = tool.toolName,
+                                headless = conversationId?.let { id ->
+                                    me.rerere.rikkahub.data.ai.tools.HeadlessConversations
+                                        .shouldAutoApprove(id)
+                                } ?: false,
+                            )
+                        if (headlessRefusal != null) {
+                            Log.w(TAG, "generateText: ${tool.toolName} refused — headless conversation has no approval channel")
+                            executedTools += tool.copy(
+                                output = listOf(UIMessagePart.Text(headlessRefusal))
+                            )
+                            return@forEach
+                        }
+
                         // Loop-guard: check whether the model has already called this exact
                         // tool with the same args multiple times in this turn. Refuse a
                         // repeat run and inject a "loop_detected" envelope so the model has
