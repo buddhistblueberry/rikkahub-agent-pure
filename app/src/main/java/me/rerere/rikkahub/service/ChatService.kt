@@ -1542,6 +1542,10 @@ class ChatService(
             callerConversationId = conversationId.toString(),
             isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId),
             modelCanSeeImages = Modality.IMAGE in model.inputModalities,
+            // T-04 / (4) - the rebuild path (regenerate) must offer the SAME tool surface as
+            // the first pass, otherwise the subagent_dispatch definition would silently lose
+            // its `include_recent_turns` parameter on a re-run.
+            subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
         )
         addAll(localTools.getTools(assistant.localTools, invocationCtx))
         addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
@@ -1822,6 +1826,9 @@ class ChatService(
                         // show_image keys its result envelope off this — a text-only model
                         // gets told it cannot see the image instead of confabulating one.
                         modelCanSeeImages = Modality.IMAGE in model.inputModalities,
+                        // T-04 / (4) - gates subagent_dispatch's `include_recent_turns`
+                        // parameter (schema AND behaviour).
+                        subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
                     )
                     addAll(localTools.getTools(assistant.localTools, invocationCtx))
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))

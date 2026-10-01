@@ -89,6 +89,34 @@ data class SubAgentRequest(
     val timeoutSeconds: Int = SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
     val maxTrips: Int = SubAgentDefaults.DEFAULT_MAX_TRIPS,
     val label: String? = null,
+    /**
+     * T-04 / (4): references to the CALLER's context. A sub-agent runs in a clean context,
+     * so the referenced history is materialised as text into its first user message - the
+     * referenced messages are never replayed as real turns, and the sub-agent gains no
+     * ability to read the parent conversation itself.
+     *
+     * Null (the default) means "behave exactly as before T-04": the task text alone.
+     * Appended last on purpose, same rule as the Assistant model - every existing caller
+     * uses named arguments, and a new field at the end cannot re-bind an older positional
+     * one.
+     */
+    val contextRefs: SubAgentContextRefs? = null,
+)
+
+/**
+ * T-04 / (4) - which slice of the caller's conversation to hand to the sub-agent.
+ *
+ * `recentTurns` is the whole of v1. Message IDS were deliberately left out: the
+ * dispatching model has no way to learn message ids (they are not in the transcript, the
+ * tool schema, or any listing tool), so a `message_ids` parameter would be a parameter no
+ * caller could ever fill in correctly - a footgun, not a feature. If a future caller does
+ * have real ids (a workflow step, an external automation) the engine can grow an overload;
+ * the model-facing surface stays turn-based.
+ */
+@Serializable
+data class SubAgentContextRefs(
+    /** How many of the newest caller turns to carry. 0 (or an absent [SubAgentRequest.contextRefs]) = none. */
+    val recentTurns: Int = 0,
 )
 
 object SubAgentRequestValidator {
@@ -132,6 +160,17 @@ object SubAgentRequestValidator {
                 return Result.Reject(
                     "invalid_label",
                     "label exceeds ${SubAgentDefaults.MAX_LABEL_LENGTH} chars; got ${it.length}"
+                )
+            }
+        }
+        // T-04: reject rather than clamp, so a caller that asked for 50 turns learns the
+        // real ceiling instead of silently getting 10 and assuming it worked.
+        request.contextRefs?.recentTurns?.let { turns ->
+            if (turns < 0 || turns > SubAgentContextDigest.MAX_TURNS) {
+                return Result.Reject(
+                    "invalid_context_refs",
+                    "context_refs.recent_turns must be between 0 and " +
+                        "${SubAgentContextDigest.MAX_TURNS}; got $turns"
                 )
             }
         }

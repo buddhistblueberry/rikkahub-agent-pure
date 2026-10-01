@@ -91,6 +91,11 @@ data class Assistant(
     // catalogued — only MCP tools — so the blast radius of this phase stays small.
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val toolSurfaceMode: ToolSurfaceMode = ToolSurfaceMode.DIRECT,
+    // T-04 / (4) - let `subagent_dispatch` carry a slice of THIS conversation to the
+    // sub-agent. Off by default, and the flag gates the tool SCHEMA as well as the
+    // behaviour: with it off, the subagent_dispatch definition is byte-identical to the
+    // pre-T-04 one (prompt-cache safe), and the model has no parameter to fill in.
+    val enableSubAgentContextRefs: Boolean = false,
 )
 
 @Serializable

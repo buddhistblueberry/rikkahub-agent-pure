@@ -629,6 +629,28 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_subagent_context_refs))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_subagent_context_refs_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enableSubAgentContextRefs,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    enableSubAgentContextRefs = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
 
         Card(
