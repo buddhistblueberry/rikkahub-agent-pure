@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
-      - name: Checkout (submodules required: llama.cpp + material-color-utilities)
+      - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -55,8 +55,8 @@ jobs:
           pnpm --version
 
       # web-ui/bun.lock is not committed upstream (only pnpm-lock.yaml is), while
-      # web/build.gradle.kts:installWebUiDeps runs `bun install --frozen-lockfile`.
-      # Bootstrap it the same way a local checkout does: bun migrates the pins.
+      # web/build.gradle.kts installWebUiDeps runs `bun install --frozen-lockfile`.
+      # Bootstrap it the same way a local checkout does, by letting bun migrate the pins.
       - name: Bootstrap web-ui lockfile
         working-directory: web-ui
         run: |
