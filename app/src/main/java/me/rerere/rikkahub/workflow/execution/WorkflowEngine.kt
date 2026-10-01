@@ -72,6 +72,16 @@ class WorkflowEngine(
     }
 
     /**
+     * T-07 — workflow secret store, resolved lazily for the same reason as [localTools]:
+     * only the (rare) fire path needs it, and a lazy lookup keeps this class's constructor
+     * DI surface unchanged for every existing construction site (tests included).
+     */
+    private val secretsStore: me.rerere.rikkahub.workflow.secrets.WorkflowSecretsStore by lazy {
+        org.koin.java.KoinJavaComponent.getKoin()
+            .get<me.rerere.rikkahub.workflow.secrets.WorkflowSecretsStore>()
+    }
+
+    /**
      * Phase 24 — unified AgentRun ledger writer. Resolved lazily via Koin (same pattern as
      * [localTools] above) to keep the engine's constructor DI surface minimal — the engine
      * is shared across cron / sub-agent surfaces and a tiny lookup on the rare-fire path is
@@ -220,7 +230,15 @@ class WorkflowEngine(
         )
 
         // Execute the action sequence. ActionRunner enforces per-action timeout + HARDLINE.
-        val result = actionRunner.run(def.actions, tools)
+        // T-07: `useActionTemplates` is opt-in per workflow; while it is false the runner
+        // takes the pre-T-07 path unchanged and the two secret lambdas are never invoked.
+        val result = actionRunner.run(
+            actions = def.actions,
+            availableTools = tools,
+            dynamicArgs = def.useActionTemplates,
+            secretLookup = { name -> secretsStore.get(name) },
+            knownSecretNames = { secretsStore.list().toSet() },
+        )
         val status = if (result.success) WorkflowRunStatus.SUCCESS else WorkflowRunStatus.FAILED
         return persistAndReturn(workflowId, firedAtMs, started, status, result.error, result.summary, ledgerId)
     }
@@ -350,10 +368,48 @@ class WorkflowActionRunner {
 
     data class RunResult(val success: Boolean, val error: String?, val summary: String)
 
-    suspend fun run(actions: List<WorkflowAction>, availableTools: List<Tool>): RunResult {
+    /**
+     * Execute [actions] in order, aborting on the first failure.
+     *
+     * [dynamicArgs] (T-07) enables `ActionTemplates` substitution for this fire: each action's
+     * string arguments are resolved against the outputs of the actions before it (and against
+     * stored secrets), and it is the **resolved** argument object that the HARDLINE guard
+     * inspects and the tool receives — resolving after the guard would let a template assemble
+     * something the literal check never saw. While [dynamicArgs] is false nothing is scanned
+     * and nothing beyond the 200-char summary is retained, so the pre-T-07 path is untouched.
+     *
+     * [secretLookup] and [knownSecretNames] are only consulted when a secret reference exists.
+     */
+    suspend fun run(
+        actions: List<WorkflowAction>,
+        availableTools: List<Tool>,
+        dynamicArgs: Boolean = false,
+        secretLookup: (String) -> String? = { null },
+        knownSecretNames: () -> Set<String> = { emptySet() },
+    ): RunResult {
         val outputs = mutableListOf<String>()
+        // T-07: parallel to `outputs` (which stays the 200-char run-history summary) but
+        // holding the full captured text that a later action may read. Stayed empty while
+        // templating is off, so the disabled path retains nothing extra.
+        val captured = mutableListOf<String>()
         for ((idx, action) in actions.withIndex()) {
-            val argsJson = action.args.toString()
+            val effectiveArgs = if (!dynamicArgs) action.args else {
+                when (val resolved = resolveDynamicArgs(
+                    action = action,
+                    actionIndex = idx,
+                    outputs = captured,
+                    secretLookup = secretLookup,
+                    knownSecretNames = knownSecretNames(),
+                )) {
+                    is ActionTemplates.Outcome.Err -> return RunResult(
+                        success = false,
+                        error = "action $idx: ${resolved.code}: ${resolved.detail}",
+                        summary = outputs.joinToString("\n"),
+                    )
+                    is ActionTemplates.Outcome.Ok -> resolved.args
+                }
+            }
+            val argsJson = effectiveArgs.toString()
             val hardlineReason = HardlineCommandGuard.checkTool(action.tool, argsJson)
             if (hardlineReason != null) {
                 logSafe("workflow hardline-blocked action $idx tool=${action.tool}: $hardlineReason")
@@ -364,7 +420,7 @@ class WorkflowActionRunner {
             val tool = availableTools.find { it.name == action.tool }
                 ?: return RunResult(false, "action $idx: unknown_tool:${action.tool}", outputs.joinToString("\n"))
             val out = try {
-                withTimeoutOrNull(action.timeoutSeconds * 1000L) { tool.execute(action.args) }
+                withTimeoutOrNull(action.timeoutSeconds * 1000L) { tool.execute(effectiveArgs) }
             } catch (c: kotlinx.coroutines.CancellationException) {
                 // Don't swallow cancellation — re-throw so structured concurrency can
                 // unwind the fire (e.g. the engine scope is cancelled on shutdown). The
@@ -385,8 +441,37 @@ class WorkflowActionRunner {
             val text = out.filterIsInstance<me.rerere.ai.ui.UIMessagePart.Text>()
                 .joinToString("\n") { it.text }
             outputs += "[$idx] ${action.tool}: ${text.take(200)}"
+            if (dynamicArgs) captured += text.take(ActionTemplates.MAX_CAPTURED_OUTPUT_CHARS)
         }
         return RunResult(true, null, outputs.joinToString("\n").take(2000))
+    }
+
+    /**
+     * T-07 — build the effective args for one action, loading only the secret values that the
+     * action actually references. Every failure mode is a named `ActionTemplates` error, which
+     * the caller surfaces as `action N: <code>: <detail>` in the run history.
+     */
+    private fun resolveDynamicArgs(
+        action: WorkflowAction,
+        actionIndex: Int,
+        outputs: List<String>,
+        secretLookup: (String) -> String?,
+        knownSecretNames: Set<String>,
+    ): ActionTemplates.Outcome {
+        val referenced = ActionTemplates.referencedSecretNames(action.args)
+        val secrets = if (referenced.isEmpty()) {
+            emptyMap()
+        } else {
+            referenced.mapNotNull { name -> secretLookup(name)?.let { name to it } }.toMap()
+        }
+        return ActionTemplates.resolve(
+            args = action.args,
+            actionIndex = actionIndex,
+            toolName = action.tool,
+            outputs = outputs,
+            secrets = secrets,
+            knownSecretNames = knownSecretNames,
+        )
     }
 
     /**

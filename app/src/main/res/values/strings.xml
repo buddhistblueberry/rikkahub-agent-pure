@@ -1499,6 +1499,20 @@
   <string name="setting_page_workflow_detail_stat_cooldown_none">Cooldown: none</string>
   <string name="setting_page_workflow_detail_stat_daily_cap">Daily cap: %1$d</string>
   <string name="setting_page_workflow_detail_stat_daily_cap_unlimited">Daily cap: unlimited</string>
+  <!-- T-07: dynamic arguments ({{actions[N]...}} / {{secret:NAME}}) -->
+  <string name="setting_page_workflow_detail_section_dynamic_args">Dynamic arguments</string>
+  <string name="setting_page_workflow_detail_dynamic_args">Use earlier action output</string>
+  <string name="setting_page_workflow_detail_dynamic_args_desc">Lets an action’s arguments contain {{actions[0].text}} or {{actions[0].json.data.id}} — the output of an earlier action in this same workflow. Off means every action runs with the arguments exactly as written.</string>
+  <string name="setting_page_workflow_detail_section_secrets">API secrets</string>
+  <string name="setting_page_workflow_detail_secrets_empty">No secrets stored. A web_fetch header can reference one as {{secret:NAME}}.</string>
+  <string name="setting_page_workflow_detail_secret_add">Add secret</string>
+  <string name="setting_page_workflow_detail_secret_add_title">Add an API secret</string>
+  <string name="setting_page_workflow_detail_secret_name">Name (A-Z, 0-9, _)</string>
+  <string name="setting_page_workflow_detail_secret_value">Value</string>
+  <string name="setting_page_workflow_detail_secret_hint">Stored encrypted on this device and never written into the workflow. Reference it from a web_fetch request header as {{secret:NAME}}.</string>
+  <string name="setting_page_workflow_detail_secret_save">Save</string>
+  <string name="setting_page_workflow_detail_secret_cancel">Cancel</string>
+  <string name="setting_page_workflow_detail_secret_delete">Delete</string>
   <string name="setting_page_scheduled_jobs_empty">No scheduled jobs yet. Ask your assistant to create one.</string>
   <string name="setting_page_scheduled_jobs_how_it_works">How scheduled jobs work</string>
   <string name="setting_page_scheduled_jobs_how_it_works_title">How scheduled jobs work</string>

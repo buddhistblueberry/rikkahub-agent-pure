@@ -51,8 +51,36 @@ class WebFetchToolTest {
     @Test fun `unsupported method is rejected`() {
         assertEquals(
             "bad_method",
-            invoke("""{"url":"https://example.com","method":"DELETE"}""").error(),
+            invoke("""{"url":"https://example.com","method":"TRACE"}""").error(),
         )
+    }
+
+    @Test fun `every accepted verb clears the method gate`() {
+        // The verb check is a pure input check that runs before the address guard, so aiming
+        // at loopback proves acceptance offline: an accepted verb falls through to
+        // blocked_address, whereas a rejected one would have stopped at bad_method first.
+        val verbs = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD")
+        val observed = verbs.map { verb ->
+            verb to invoke("""{"url":"http://127.0.0.1:9","method":"$verb"}""").error()
+        }
+        assertEquals(verbs.map { it to "blocked_address" }, observed)
+    }
+
+    @Test fun `method gate runs before the address guard`() {
+        // Same loopback URL as the per-verb test, but with an unsupported verb: this must
+        // report bad_method, proving the blocked_address above was reached *after* the gate
+        // rather than masking a silently-rejected verb.
+        assertEquals(
+            "bad_method",
+            invoke("""{"url":"http://127.0.0.1:9","method":"TRACE"}""").error(),
+        )
+    }
+
+    @Test fun `accepted verb set is exactly the documented one`() {
+        assertEquals(listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"), HTTP_METHODS)
+        assertEquals(setOf("POST", "PUT", "PATCH"), METHODS_REQUIRING_BODY)
+        // A verb that requires a body but is not accepted would make the body path dead code.
+        assertTrue(HTTP_METHODS.containsAll(METHODS_REQUIRING_BODY))
     }
 
     @Test fun `method is case-insensitive and clears validation`() {

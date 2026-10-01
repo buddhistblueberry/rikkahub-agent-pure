@@ -62,6 +62,14 @@ data class WorkflowDefinition(
      * always have this set via the ToolInvocationContext propagation in workflow_create.
      */
     val authoringAssistantId: String? = null,
+    /**
+     * T-07 — dynamic action arguments. When true, string values inside an action's `args` may
+     * reference an earlier action's output (`{{actions[0].json.data.id}}`) or a stored secret
+     * (`{{secret:NAME}}`, web_fetch request headers only). Default false, and while false the
+     * runner never scans an argument for references, so pre-T-07 behaviour is unchanged
+     * byte-for-byte. See `ActionTemplates` for the syntax and its safety properties.
+     */
+    val useActionTemplates: Boolean = false,
 )
 
 /**

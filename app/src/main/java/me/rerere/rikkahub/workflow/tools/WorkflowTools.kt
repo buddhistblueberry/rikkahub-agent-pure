@@ -91,6 +91,13 @@ fun workflowCreateTool(
         ACTIONS: each is { tool: <existing tool name>, args: { ... }, timeout_seconds?: int }.
         Use any tool currently registered for this assistant. workflow_run is NOT allowed
         as an action (no chaining in v1).
+
+        DYNAMIC ARGUMENTS: set use_action_templates: true to let a later action read an
+        earlier action's output. Inside any string in args you may then write
+        {{actions[N].text}} (the whole text action N printed), {{actions[N].json.data.id}}
+        (a JSON path into action N's output), or {{secret:NAME}} (a secret the user stored;
+        only valid inside a web_fetch "headers" value). N must be an earlier action. Leave
+        use_action_templates false (default) for the plain, non-substituting behaviour.
     """.trimIndent(),
     parameters = {
         InputSchema.Obj(
@@ -99,7 +106,9 @@ fun workflowCreateTool(
                     put("type", "object")
                     put("description", "The workflow definition. Required keys: name, trigger, actions. " +
                         "Optional: description, enabled (default true), conditions (array), " +
-                        "cooldown_seconds (default 0), max_runs_per_day (default unlimited), id.")
+                        "cooldown_seconds (default 0), max_runs_per_day (default unlimited), id, " +
+                        "use_action_templates (default false; enables {{actions[N]...}} and " +
+                        "{{secret:NAME}} substitution inside action args).")
                 })
             },
             required = listOf("definition"),

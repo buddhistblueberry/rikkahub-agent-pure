@@ -138,6 +138,10 @@ val appModule = module {
     single { me.rerere.rikkahub.skills.js.JsSkillRunner(get()) }
     single { me.rerere.rikkahub.skills.js.SkillSecretsStore(get()) }
 
+    // T-07: named secrets a workflow action can reference as {{secret:NAME}} — keystore-backed
+    // so the token never has to live inside the (plaintext, model-visible) workflow JSON.
+    single { me.rerere.rikkahub.workflow.secrets.WorkflowSecretsStore(get()) }
+
     // Phase 12: Workflows
     single {
         me.rerere.rikkahub.workflow.repository.WorkflowRepository(
