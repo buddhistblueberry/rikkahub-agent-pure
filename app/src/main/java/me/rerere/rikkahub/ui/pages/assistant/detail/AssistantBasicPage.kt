@@ -580,6 +580,28 @@ internal fun AssistantBasicContent(
                     }
                 )
             }
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_compact_context))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_compact_context_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enableCompactContextTool,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    enableCompactContextTool = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
 
         Card(

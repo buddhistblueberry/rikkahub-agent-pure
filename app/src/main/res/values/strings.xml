@@ -100,6 +100,8 @@
   <string name="assistant_page_tool_result_budget_placeholder">Default (32 KB spill gate only)</string>
   <string name="assistant_page_tool_result_budget_active">Limit: about %d tokens per tool result</string>
   <string name="assistant_page_tool_result_budget_off">Using the default limit (32 KB characters, head preview only)</string>
+  <string name="assistant_page_compact_context">Model-initiated context compaction</string>
+  <string name="assistant_page_compact_context_desc">Adds a compact_context tool so the model can summarise earlier turns by itself when it decides the context is getting too long. It runs the same summariser as the manual compress action, and the shortened context applies from the next turn. Off by default.</string>
   <string name="assistant_page_memory">Memory</string>
   <string name="assistant_page_memory_count">Memory: %d</string>
   <string name="assistant_page_memory_desc">When memory is enabled, the model will try to actively record your information during conversations and use it in subsequent conversations. This feature requires the model to support tool calls to work properly</string>
