@@ -34,8 +34,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # setup-android v3 defaults to `sdkmanager tools`, a package that no longer
+      # exists in the SDK repository (exit 1). Pin the list explicitly.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+          accept-android-sdk-licenses: true
+
+      - name: Android SDK inventory
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | timeout 180 sdkmanager --licenses > /dev/null 2>&1 || true
+          for d in platforms build-tools ndk cmake; do
+            echo "--- $d"
+            ls "$ANDROID_HOME/$d" 2>/dev/null || echo "(none)"
+          done
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -55,8 +69,8 @@ jobs:
           pnpm --version
 
       # web-ui/bun.lock is not committed upstream (only pnpm-lock.yaml is), while
-      # web/build.gradle.kts installWebUiDeps runs `bun install --frozen-lockfile`.
-      # Bootstrap it the same way a local checkout does, by letting bun migrate the pins.
+      # web/build.gradle.kts:installWebUiDeps runs `bun install --frozen-lockfile`.
+      # Bootstrap it the same way a local checkout does: bun migrates the pins.
       - name: Bootstrap web-ui lockfile
         working-directory: web-ui
         run: |
