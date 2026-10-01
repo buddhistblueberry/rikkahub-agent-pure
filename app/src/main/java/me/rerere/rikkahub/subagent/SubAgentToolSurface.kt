@@ -40,7 +40,8 @@ import kotlin.uuid.Uuid
  * The policy is a **deny list plus an optional narrowing allow-list**:
  *
  *  - [isDenied] removes the tools a headless run must never receive — see
- *    [UI_BOUND_TOOL_NAMES], [ToolApprovalDefaults.NO_ALWAYS_ALLOW] and the `subagent_` prefix.
+ *    [UI_BOUND_TOOL_NAMES], [PRIVACY_SENSITIVE_TOOL_NAMES],
+ *    [ToolApprovalDefaults.NO_ALWAYS_ALLOW] and the `subagent_` prefix.
  *  - the optional `requested` set is whatever the dispatcher passed in `subagent_dispatch`'s
  *    `tools` parameter. That parameter was parsed and then silently dropped before T-09
  *    (nothing ever read `SubAgentRequest.tools`); it now narrows the frozen surface. An absent
@@ -89,6 +90,29 @@ object SubAgentToolSurface {
     )
 
     /**
+     * Tools that can technically finish inside a headless run — they touch no device UI and never
+     * block — but must not, because finishing means **capturing the user's surroundings or speech
+     * with nobody present to consent**.
+     *
+     *  - `record_audio` → opens the microphone and writes what it hears to a file
+     *  - `speech_to_text` → opens the microphone and ships the audio to a recognizer
+     *
+     * Both live in [ToolApprovalDefaults.ALWAYS_ASK] (the privacy / hardware-actuation group), so
+     * an ordinary conversation prompts the user on every call. A headless one does not: `ChatService
+     * .isToolAutoApproved` blanket-approves every tool in a `HeadlessConversations` run without
+     * consulting `NO_ALWAYS_ALLOW`, which is the hole T-09 closes at the surface level. Excluding
+     * them here means a prompt-injected parent cannot turn its sub-agent into a silent recorder.
+     *
+     * Not listed: `transcribe_audio_file` (reads existing files, records nothing) and the
+     * merely-screen-visible `share` / `open_file` / `launch_app` / `show_toast` /
+     * `post_notification` (they register on screen but still complete headless, so v1 leaves them).
+     */
+    val PRIVACY_SENSITIVE_TOOL_NAMES: Set<String> = setOf(
+        "record_audio",
+        "speech_to_text",
+    )
+
+    /**
      * Tools whose whole definition is "the parent agent controls itself": dispatch, list, get,
      * cancel. Inside a sub-agent they only ever answer "no_recursion" (three `isHeadless` guards
      * refuse them), so they are pure token cost plus a wasted tool trip. Excluded by PREFIX, so a
@@ -114,6 +138,7 @@ object SubAgentToolSurface {
         toolName == ASK_USER_TOOL_NAME -> "tool_unavailable_headless"
         toolName in UI_BOUND_TOOL_NAMES -> "tool_unavailable_headless"
         toolName in ToolApprovalDefaults.NO_ALWAYS_ALLOW -> "tool_not_authorized"
+        toolName in PRIVACY_SENSITIVE_TOOL_NAMES -> "tool_not_authorized"
         else -> null
     }
 

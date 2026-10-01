@@ -18,8 +18,8 @@ import kotlin.uuid.Uuid
  * Two things are load-bearing here and both are asserted below:
  *
  *  - the policy removes exactly the tools a headless sub-agent must not receive (the
- *    `subagent_` handles, the per-call-approval tools, `ask_user`, the device-UI-bound tools)
- *    and nothing else, and
+ *    `subagent_` handles, the per-call-approval tools, `ask_user`, the device-UI-bound tools,
+ *    the privacy-sensitive capture tools) and nothing else, and
  *  - `apply` is the IDENTITY — same `List<Tool>` instance — for every conversation that was
  *    never frozen, which is what makes the feature byte-for-byte inert when the assistant's
  *    flag is off.
@@ -83,6 +83,21 @@ class SubAgentToolSurfaceTest {
         assertEquals(expected, SubAgentToolSurface.UI_BOUND_TOOL_NAMES)
         expected.forEach { name ->
             assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason(name))
+        }
+    }
+
+    @Test
+    fun `privacy sensitive capture tools are denied`() {
+        assertEquals(
+            setOf("record_audio", "speech_to_text"),
+            SubAgentToolSurface.PRIVACY_SENSITIVE_TOOL_NAMES,
+        )
+        // Ground truth: both sit in ALWAYS_ASK (per-call consent) in the non-headless world, and
+        // a headless run is exactly the world that would skip that consent.
+        SubAgentToolSurface.PRIVACY_SENSITIVE_TOOL_NAMES.forEach { name ->
+            assertTrue(name, name in ToolApprovalDefaults.ALWAYS_ASK)
+            assertEquals(name, "tool_not_authorized", SubAgentToolSurface.denialReason(name))
+            assertFalse(SubAgentToolSurface.safeNames(listOf(name)).contains(name))
         }
     }
 
