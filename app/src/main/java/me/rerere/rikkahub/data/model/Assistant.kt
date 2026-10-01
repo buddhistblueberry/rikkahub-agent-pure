@@ -76,6 +76,13 @@ data class Assistant(
     // the full text is still spilled to /tool_outputs/ for on-demand re-reading.
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val toolResultMaxTokens: Int? = null,
+    // Phase 17 (②) — Model-initiated context compaction. Off by default. When ON, this
+    // assistant gets a `compact_context` tool that runs the SAME summariser as the manual
+    // "compress context" action (ChatService.compressConversation → ContextCompactionPlanner),
+    // so the compaction logic itself lives in exactly one place. The shortened context applies
+    // from the next turn; the turn that triggered it keeps its raw history.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val enableCompactContextTool: Boolean = false,
 )
 
 @Serializable

@@ -83,6 +83,8 @@ import me.rerere.rikkahub.data.ai.tools.InvalidMcpServerNamesException
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.createSearchTools
 import me.rerere.rikkahub.data.ai.tools.createSkillTools
+import me.rerere.rikkahub.data.ai.tools.CompactionToolResult
+import me.rerere.rikkahub.data.ai.tools.buildCompactionTools
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.preferences.isWorkspaceToolName
@@ -148,6 +150,12 @@ private const val MAX_FULL_CONTEXT_MAP_GROUPS = 8
  * prefix before compaction has to fire again.
  */
 private const val COMPACTION_TAIL_BUDGET_PERCENT = 50
+
+/**
+ * Raw messages a model-initiated `compact_context` call keeps verbatim. Matches the default of
+ * the manual compress dialog (`CompressContextDialog`) so the two entry points behave the same.
+ */
+private const val COMPACTION_TOOL_KEEP_RECENT_MESSAGES = 32
 private const val MIN_AUTOMATIC_TAIL_BUDGET_TOKENS = 512
 /**
  * Streaming chunks can arrive once per token. Persisting every chunk rewrites all message nodes
@@ -1747,6 +1755,25 @@ class ChatService(
                             )
                         )
                     }
+                    if (assistant.enableCompactContextTool) {
+                        // T-02 / ② - model-initiated compaction. Reuses the manual compress
+                        // pipeline end-to-end (see compactConversationFromTool) instead of
+                        // re-implementing summarisation. Default OFF: when the flag is unset
+                        // the tool list is byte-for-byte what it was before this change.
+                        addAll(
+                            buildCompactionTools(
+                                onCompact = { instructions ->
+                                    compactConversationFromTool(
+                                        conversationId = conversationId,
+                                        conversation = getConversationFlow(conversationId).value,
+                                        settings = settings,
+                                        model = model,
+                                        instructions = instructions,
+                                    )
+                                },
+                            )
+                        )
+                    }
                     mcpManager.getAllAvailableTools().also { allTools ->
                         // Upstream name validation: a server name that isn't pure
                         // English+digits would produce an invalid `mcp__<name>__tool`
@@ -2599,6 +2626,76 @@ class ChatService(
                 title = context.getString(R.string.error_title_compress_conversation),
             )
         }
+    }
+
+    /**
+     * T-02 / ② — model-initiated compaction, driven by the optional `compact_context` tool.
+     *
+     * A deliberately thin wrapper over [compressConversation] so the summarisation logic keeps
+     * living in exactly one place ([generateAndStoreCompaction] → `ContextCompactionPlanner`).
+     * Nothing here re-implements, re-prompts or post-processes the summary.
+     *
+     * Failure model: this runs inside a tool call, so expected failures (no compression model
+     * configured, empty conversation) come back as `compacted = false` with a readable note
+     * rather than as an exception — the model should learn why nothing happened and can decide
+     * to continue. Only genuinely unexpected errors propagate; GenerationLoop turns those into a
+     * `tool_failed` envelope. Cancellation is always rethrown so "user pressed stop" is not
+     * mistaken for a compact failure.
+     */
+    private suspend fun compactConversationFromTool(
+        conversationId: Uuid,
+        conversation: Conversation,
+        settings: Settings,
+        model: Model,
+        instructions: String?,
+    ): CompactionToolResult {
+        val targetTokens = settings.getContextCompactionTargetTokens(
+            compactionContextLength(settings, model),
+        )
+        val viewBefore = loadCompactedMessageView(conversation)
+        val tokensBefore = ContextBudgetPlanner.estimateContextTokens(viewBefore.messages)
+
+        val result = compressConversation(
+            conversationId = conversationId,
+            conversation = conversation,
+            additionalPrompt = instructions.orEmpty(),
+            targetTokens = targetTokens,
+            keepRecentMessages = COMPACTION_TOOL_KEEP_RECENT_MESSAGES,
+        )
+        result.exceptionOrNull()?.let { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Log.w(TAG, "compact_context: failed for $conversationId: ${error.message}")
+            return CompactionToolResult(
+                compacted = false,
+                tokensBefore = tokensBefore,
+                tokensAfter = tokensBefore,
+                summaryChars = 0,
+                note = "Compaction did not run (${error.message ?: error::class.simpleName}). " +
+                    "The context is unchanged.",
+            )
+        }
+
+        val latest = getConversationFlow(conversationId).value
+        val tokensAfter = ContextBudgetPlanner.estimateContextTokens(
+            loadCompactedMessageView(latest).messages,
+        )
+        val summaryChars = conversationRepo.getCompaction(conversationId)?.summary?.length ?: 0
+        Log.i(
+            TAG,
+            "compact_context: $conversationId ${tokensBefore} -> ${tokensAfter} estimated tokens, " +
+                "summary ${summaryChars} chars",
+        )
+        return CompactionToolResult(
+            compacted = true,
+            tokensBefore = tokensBefore,
+            tokensAfter = tokensAfter,
+            summaryChars = summaryChars,
+            // Say this explicitly: the in-flight turn already holds its own copy of the
+            // pre-compaction messages, so a model that immediately re-reads the "history"
+            // would see the short version while this turn still sends the long one.
+            note = "Compaction stored. It applies from the NEXT turn; this turn still carries the " +
+                "raw history. Original messages remain stored and are not deleted.",
+        )
     }
 
     private suspend fun generateAndStoreCompaction(
