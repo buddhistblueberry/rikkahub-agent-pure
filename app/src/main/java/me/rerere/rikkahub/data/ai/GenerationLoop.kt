@@ -57,6 +57,7 @@ import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.limits.ToolRuntimeLimits
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
+import me.rerere.rikkahub.data.ai.tools.truncateToolResult
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
@@ -1085,7 +1086,12 @@ class GenerationLoop(
                             // the context window.
                             val hasShellAccess = toolsInternal.any { it.name == "workspace_shell" }
                             executedTools += markedTool.copy(
-                                output = maybeTruncateToolOutput(tool.toolCallId, result, hasShellAccess)
+                                output = maybeTruncateToolOutput(
+                                    toolCallId = tool.toolCallId,
+                                    output = result,
+                                    hasShellAccess = hasShellAccess,
+                                    maxTokens = assistant.toolResultMaxTokens,
+                                )
                             )
                         }.onFailure {
                             // runCatching also captures CancellationException (e.g. the user
@@ -1423,10 +1429,40 @@ class GenerationLoop(
         toolCallId: String,
         output: List<UIMessagePart>,
         hasShellAccess: Boolean,
+        maxTokens: Int? = null,
     ): List<UIMessagePart> {
         val textParts = output.filterIsInstance<UIMessagePart.Text>()
         val nonTextParts = output.filter { it !is UIMessagePart.Text }
         val totalChars = textParts.sumOf { it.text.length }
+
+        // Phase 17 (⑥): optional per-tool-result token budget. Off by default (null = the
+        // char-based gate below, i.e. upstream behaviour untouched). When it IS set it can only
+        // ever tighten that gate, never loosen it: output that fits the token budget still has
+        // to clear the character gate.
+        if (maxTokens != null) {
+            val fullText = textParts.joinToString("\n") { it.text }
+            val outcome = truncateToolResult(text = fullText, maxTokens = maxTokens)
+            if (outcome.truncated) {
+                Log.i(
+                    TAG,
+                    "maybeTruncateToolOutput: tool $toolCallId trimmed to the ${maxTokens}-token budget " +
+                        "(${outcome.originalTokens} -> ${outcome.resultTokens} tokens, " +
+                        "${outcome.elidedChars} chars elided)"
+                )
+                val fileName = spillToolOutput(toolCallId, fullText)
+                return listOf(
+                    UIMessagePart.Text(
+                        buildBudgetedTruncationNotice(
+                            totalChars = totalChars,
+                            fileName = fileName,
+                            showShellHints = hasShellAccess,
+                            budgetTokens = maxTokens,
+                            body = outcome.text,
+                        )
+                    )
+                ) + nonTextParts
+            }
+        }
 
         if (totalChars <= MAX_TOOL_OUTPUT_CHARS || !hasShellAccess) return output
 
@@ -1451,6 +1487,45 @@ class GenerationLoop(
                 }
             )
         ) + nonTextParts
+    }
+
+    /**
+     * Spills the full tool output to `/tool_outputs/<toolCallId>.txt` and returns the file name,
+     * or null when the write fails (read-only storage, disk full). Callers degrade to truncating
+     * without a spill — losing the tail of a log must never fail the tool call itself.
+     */
+    private fun spillToolOutput(toolCallId: String, fullText: String): String? = runCatching {
+        val fileName = "${toolCallId}.txt"
+        val outputDir = File(context.filesDir, FileFolders.TOOL_OUTPUTS).apply { mkdirs() }
+        File(outputDir, fileName).writeText(fullText)
+        fileName
+    }.getOrNull()
+
+    /**
+     * Header for a budget-trimmed tool result. The `cat`/`grep` hints are only advertised when a
+     * workspace shell is actually on the table this turn — pointing the model at a path it cannot
+     * read is worse than saying nothing.
+     */
+    private fun buildBudgetedTruncationNotice(
+        totalChars: Int,
+        fileName: String?,
+        showShellHints: Boolean,
+        budgetTokens: Int,
+        body: String,
+    ): String = buildString {
+        appendLine("[Tool output truncated to fit the ${budgetTokens}-token per-result budget]")
+        appendLine("[Original size: $totalChars characters]")
+        if (fileName != null) {
+            appendLine("Full output saved to: /tool_outputs/$fileName")
+            if (showShellHints) {
+                appendLine("Use shell to read: `cat /tool_outputs/$fileName`")
+                appendLine("Use shell to search: `grep \"pattern\" /tool_outputs/$fileName`")
+            }
+        } else {
+            appendLine("Full output could not be saved to disk; the trimmed text below is all that remains.")
+        }
+        appendLine()
+        append(body)
     }
 
 }
