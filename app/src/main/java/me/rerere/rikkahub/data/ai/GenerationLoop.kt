@@ -1068,7 +1068,7 @@ class GenerationLoop(
                                     put("detail", JsonPrimitive("turn budget exceeded before tool started"))
                                 })))
                             } else if (assistant.enableToolExecutionRetry &&
-                                ToolExecutionRetryPolicy.isIdempotentReadOnly(toolDef.name)
+                                ToolExecutionRetryPolicy.isIdempotentReadOnly(toolDef.name, args)
                             ) {
                                 executeReadOnlyToolWithRetry(
                                     toolDef = toolDef,
@@ -1441,7 +1441,8 @@ class GenerationLoop(
      *
      * Only reached when the assistant opted in via
      * [me.rerere.rikkahub.data.model.Assistant.enableToolExecutionRetry] AND
-     * [ToolExecutionRetryPolicy.isIdempotentReadOnly] accepts the tool, so with the flag off the
+     * [ToolExecutionRetryPolicy.isIdempotentReadOnly] accepts the call — for `web_fetch` that
+     * means its arguments were inspected and the verb is GET/HEAD (T-11). With the flag off the
      * caller's single-attempt path stays byte-identical. Two failure shapes are retried:
      *  - a thrown transient exception (socket timeout / IO / retryable HTTP status), and
      *  - a returned transient error envelope — most local network tools swallow the failure
