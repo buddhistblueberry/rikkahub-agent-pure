@@ -93,6 +93,10 @@ import me.rerere.rikkahub.data.ai.tools.createSkillTools
 import me.rerere.rikkahub.data.ai.tools.CompactionToolResult
 import me.rerere.rikkahub.data.ai.tools.buildCompactionTools
 import me.rerere.rikkahub.data.ai.tools.createWorkspaceTools
+import me.rerere.rikkahub.data.ai.tools.buildColdMemoryTools
+import me.rerere.rikkahub.data.ai.tools.ColdMemoryDoc
+import me.rerere.rikkahub.data.ai.tools.ColdMemoryRules
+import me.rerere.rikkahub.data.ai.tools.ColdMemoryWriteResult
 import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.preferences.isWorkspaceToolName
 import me.rerere.rikkahub.data.files.SkillManager
@@ -133,6 +137,7 @@ import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.WorkspaceShellStatus
+import me.rerere.workspace.WorkspaceStorageArea
 import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import me.rerere.rikkahub.utils.applyPlaceholders
@@ -1556,6 +1561,9 @@ class ChatService(
         )
         addAll(localTools.getTools(assistant.localTools, invocationCtx))
         addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
+        // T-06 / (7) - cold memory (Markdown knowledge base). Same on both build paths so a
+        // regenerate sees the surface the first pass had. Off unless enabled AND configured.
+        addAll(createColdMemoryToolsIfConfigured(assistant))
         if (assistant.enabledSkills.isNotEmpty()) {
             addAll(
                 createSkillTools(
@@ -1845,6 +1853,8 @@ class ChatService(
                     )
                     addAll(localTools.getTools(assistant.localTools, invocationCtx))
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
+                    // T-06 / (7) - cold memory, mirroring the regenerate path above.
+                    addAll(createColdMemoryToolsIfConfigured(assistant))
                     if (assistant.enabledSkills.isNotEmpty()) {
                         addAll(
                             createSkillTools(
@@ -2147,6 +2157,61 @@ class ChatService(
             return emptyList()
         }
         return createWorkspaceTools(workspaceId, workspaceRepository, cwd)
+    }
+
+    /**
+     * T-06 / (7) - cold memory (Markdown knowledge base). Built only when the assistant turned
+     * the feature on AND bound a workspace AND picked a directory inside it; otherwise this
+     * returns an empty list and the tool surface is byte-for-byte what it was before T-06.
+     *
+     * The directory is read through WorkspaceRepository, NOT through the workspace shell tools:
+     * cold memory is plain file IO, so it keeps working even when the workspace rootfs was
+     * never installed (the `workspace_*` family deliberately requires a READY rootfs).
+     */
+    private suspend fun createColdMemoryToolsIfConfigured(assistant: Assistant): List<Tool> {
+        if (!assistant.coldMemoryEnabled) return emptyList()
+        val workspaceId = assistant.workspaceId?.toString() ?: return emptyList()
+        val dir = ColdMemoryRules.normalizeDir(assistant.coldMemoryDir) ?: return emptyList()
+        if (workspaceRepository.getById(workspaceId) == null) return emptyList()
+
+        fun childPath(name: String): String = if (dir.isEmpty()) name else "$dir/$name"
+
+        suspend fun readFile(path: String): String? = try {
+            workspaceRepository.readText(workspaceId, path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.d(TAG, "coldMemory: cannot read '$path': ${e.message}")
+            null
+        }
+
+        return buildColdMemoryTools(
+            dirLabel = if (dir.isEmpty()) {
+                ColdMemoryRules.WORKSPACE_PREFIX
+            } else {
+                "${ColdMemoryRules.WORKSPACE_PREFIX}/$dir"
+            },
+            listDocs = {
+                workspaceRepository.listFiles(workspaceId, WorkspaceStorageArea.FILES, dir)
+                    .filter { !it.isDirectory }
+                    .map { ColdMemoryDoc(it.name, it.sizeBytes) }
+            },
+            readDoc = { name -> readFile(childPath(name)) },
+            writeDoc = { name, content, append ->
+                val path = childPath(name)
+                val text = if (append) {
+                    readFile(path).orEmpty() + content
+                } else {
+                    content
+                }
+                workspaceRepository.writeText(workspaceId, path, text, overwrite = true)
+                ColdMemoryWriteResult(
+                    fileName = name,
+                    mode = if (append) "append" else "overwrite",
+                    totalChars = text.length,
+                )
+            },
+        )
     }
 
     // ---- 检查无效消息 ----

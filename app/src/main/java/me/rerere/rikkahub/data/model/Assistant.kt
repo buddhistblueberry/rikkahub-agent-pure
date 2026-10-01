@@ -115,6 +115,17 @@ data class Assistant(
     // off the tool-execution path is byte-identical to before - one attempt, no delay.
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val enableToolExecutionRetry: Boolean = false,
+    // T-06 / (7) - cold memory: a Markdown knowledge base on disk that the model searches and
+    // reads on demand (memory_index / memory_read / memory_write), instead of the always-injected
+    // short records kept by `memory_tool`. Off by default; the two tools are only registered when
+    // this is on AND workspaceId is bound AND coldMemoryDir is a usable directory inside it.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val coldMemoryEnabled: Boolean = false,
+    // T-06 / (7) - the cold-memory directory INSIDE the bound workspace, in the same form the
+    // working-directory picker writes: "/workspace/notes/memory". Null means "not configured",
+    // which registers no tools at all.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val coldMemoryDir: String? = null,
 )
 
 @Serializable

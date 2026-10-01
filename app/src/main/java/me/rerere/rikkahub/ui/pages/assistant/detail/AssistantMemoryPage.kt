@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Delete01
@@ -47,6 +48,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.ui.components.ai.WorkspaceCwdPickerSheet
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
@@ -65,6 +68,7 @@ fun AssistantMemoryPage(id: String) {
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
+    val workspaces by vm.workspaces.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -87,6 +91,7 @@ fun AssistantMemoryPage(id: String) {
             innerPadding = innerPadding,
             assistant = assistant,
             memories = memories,
+            workspaces = workspaces,
             onUpdateAssistant = { vm.update(it) },
             onDeleteMemory = { vm.deleteMemory(it) },
             onAddMemory = { vm.addMemory(it) },
@@ -100,6 +105,7 @@ private fun AssistantMemoryContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
     memories: List<AssistantMemory>,
+    workspaces: List<WorkspaceEntity>,
     onUpdateAssistant: (Assistant) -> Unit,
     onAddMemory: (AssistantMemory) -> Unit,
     onUpdateMemory: (AssistantMemory) -> Unit,
@@ -116,6 +122,11 @@ private fun AssistantMemoryContent(
 
     var showTimeReminderIntervalDialog by remember(assistant.id) { mutableStateOf(false) }
     var timeReminderIntervalInput by remember(assistant.id) { mutableStateOf("") }
+
+    // T-06: the depth-of-memory picker. Only meaningful once the assistant is bound to a
+    // workspace AND cold memory is on — the sheet browses that workspace's files area.
+    var showColdMemoryDirPicker by remember(assistant.id) { mutableStateOf(false) }
+    val coldMemoryWorkspace = workspaces.find { it.id == assistant.workspaceId?.toString() }
 
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
@@ -272,6 +283,51 @@ private fun AssistantMemoryContent(
 
         CardGroup {
             item(
+                headlineContent = { Text(stringResource(R.string.assistant_page_cold_memory)) },
+                supportingContent = { Text(stringResource(R.string.assistant_page_cold_memory_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.coldMemoryEnabled,
+                        onCheckedChange = {
+                            onUpdateAssistant(assistant.copy(coldMemoryEnabled = it))
+                        }
+                    )
+                }
+            )
+            if (assistant.coldMemoryEnabled) {
+                if (coldMemoryWorkspace == null) {
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.assistant_page_cold_memory_no_workspace))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.assistant_page_cold_memory_no_workspace_desc))
+                        },
+                    )
+                } else {
+                    item(
+                        headlineContent = { Text(stringResource(R.string.assistant_page_cold_memory_dir)) },
+                        supportingContent = {
+                            Text(
+                                text = assistant.coldMemoryDir
+                                    ?: stringResource(R.string.assistant_page_cold_memory_dir_unset)
+                            )
+                        },
+                        trailingContent = {
+                            Icon(
+                                imageVector = HugeIcons.ArrowRight01,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        onClick = { showColdMemoryDirPicker = true },
+                    )
+                }
+            }
+        }
+
+        CardGroup {
+            item(
                 headlineContent = { Text(stringResource(R.string.assistant_page_time_reminder)) },
                 supportingContent = {
                     Text(
@@ -343,6 +399,17 @@ private fun AssistantMemoryContent(
                 )
             }
         }
+    }
+
+    if (showColdMemoryDirPicker && coldMemoryWorkspace != null) {
+        WorkspaceCwdPickerSheet(
+            workspaceId = coldMemoryWorkspace.id,
+            currentCwd = assistant.coldMemoryDir,
+            onSelectCwd = { selected ->
+                onUpdateAssistant(assistant.copy(coldMemoryDir = selected))
+            },
+            onDismiss = { showColdMemoryDirPicker = false },
+        )
     }
 
     RikkaConfirmDialog(

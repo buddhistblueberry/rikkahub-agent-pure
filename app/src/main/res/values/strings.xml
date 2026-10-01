@@ -102,6 +102,12 @@
   <string name="assistant_page_tool_result_budget_off">Using the default limit (32 KB characters, head preview only)</string>
   <string name="assistant_page_compact_context">Model-initiated context compaction</string>
   <string name="assistant_page_compact_context_desc">Adds a compact_context tool so the model can summarise earlier turns by itself when it decides the context is getting too long. It runs the same summariser as the manual compress action, and the shortened context applies from the next turn. Off by default.</string>
+  <string name="assistant_page_cold_memory">Cold memory (Markdown)</string>
+  <string name="assistant_page_cold_memory_desc">Adds memory_index / memory_read / memory_write tools that work on a folder of Markdown files inside the bound workspace. Unlike the records above, these documents stay on disk and are pulled in on demand, so a large knowledge base costs nothing until it is read. Off by default.</string>
+  <string name="assistant_page_cold_memory_no_workspace">No workspace bound</string>
+  <string name="assistant_page_cold_memory_no_workspace_desc">Bind a workspace on the Basic settings page first. Cold memory lives inside a workspace folder.</string>
+  <string name="assistant_page_cold_memory_dir">Knowledge base folder</string>
+  <string name="assistant_page_cold_memory_dir_unset">Not selected</string>
   <string name="assistant_page_tool_surface_mode">Progressive MCP tool catalog</string>
   <string name="assistant_page_tool_surface_mode_desc">Replaces the MCP tools in each request with a tool_search / tool_open pair, so only the schemas the model opens are sent. Cuts the first-turn tool tokens, but the tool list changes between turns, which can cost prompt-cache hits. Local tools are never catalogued. Off by default.</string>
   <string name="assistant_page_subagent_context_refs">Sub-agent context references</string>
