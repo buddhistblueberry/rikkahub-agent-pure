@@ -107,6 +107,14 @@ data class Assistant(
     // conversation the exact same List<Tool> it built before T-09 (identity filter).
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val enableSubAgentToolSurface: Boolean = false,
+    // T-05 / (3) - retry a transient failure of an idempotent READ-ONLY tool at the execution
+    // layer (socket timeout, IO error, retryable HTTP status, or a `{"error":"timeout"}`
+    // result envelope) with a short exponential backoff, instead of handing the failure back
+    // to the model for a whole extra round-trip. Only tools whose every call is a pure read
+    // are eligible, so a retry can never duplicate a side effect. Off by default: while it is
+    // off the tool-execution path is byte-identical to before - one attempt, no delay.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    val enableToolExecutionRetry: Boolean = false,
 )
 
 @Serializable

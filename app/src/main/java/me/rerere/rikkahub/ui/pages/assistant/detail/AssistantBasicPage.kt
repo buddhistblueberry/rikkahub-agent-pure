@@ -673,6 +673,28 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_tool_retry))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_tool_retry_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enableToolExecutionRetry,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    enableToolExecutionRetry = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
 
         Card(
