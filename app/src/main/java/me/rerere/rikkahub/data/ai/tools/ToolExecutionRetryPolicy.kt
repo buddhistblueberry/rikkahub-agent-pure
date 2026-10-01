@@ -5,6 +5,9 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -25,8 +28,9 @@ import me.rerere.ai.util.HttpException
  * This object is deliberately pure — no Android, no I/O, no globals — so the entire policy is
  * unit-testable:
  *
- *  - [isIdempotentReadOnly] decides WHICH tool calls may be retried. Only tools whose every
- *    call is a pure read may appear here; retrying a write would duplicate its side effect.
+ *  - [isIdempotentReadOnly] decides WHICH tool calls may be retried. Usually the tool name
+ *    settles it; `web_fetch` is the exception, because its HTTP verb lives in the arguments
+ *    (T-11). Retrying a write would duplicate its side effect.
  *  - [isTransientFailure] / [isTransientToolOutput] decide WHETHER an outcome is worth
  *    retrying. Deterministic failures (bad args, permission denied, 404) are never retried —
  *    they would fail identically forever.
@@ -36,7 +40,7 @@ import me.rerere.ai.util.HttpException
  *
  * Nothing here is active by default: `GenerationLoop` only routes a call through
  * [runWithRetries] when the assistant opted in via `enableToolExecutionRetry`, and only when
- * [isIdempotentReadOnly] accepts the tool name.
+ * [isIdempotentReadOnly] accepts the call.
  */
 object ToolExecutionRetryPolicy {
 
@@ -62,7 +66,12 @@ object ToolExecutionRetryPolicy {
         "search_", // search_web / search_contacts / search_sms
         "find_",   // find_files / find_node
         "scrape_", // scrape_web
-        "web_",    // web_fetch / web_extract (HTTP GET only)
+        // T-11: a "web_" prefix used to sit here (T-05), annotated "HTTP GET only". That was
+        // wrong: `web_fetch` dispatches on its `method` argument and accepts
+        // POST/PUT/PATCH/DELETE/HEAD as well as GET, so a prefix match classified a write as a
+        // pure read and a retry could duplicate its side effect. `web_fetch` is now resolved by
+        // [isReadOnlyWebFetchCall], which needs the call's arguments; `web_extract` moved to
+        // [IDEMPOTENT_EXACT] because it really is GET-only.
     )
 
     /**
@@ -83,7 +92,26 @@ object ToolExecutionRetryPolicy {
         "workspace_read_file",
         "workspace_read_folder",
         "workspace_background_status",
+        // T-11: `web_extract` is GET-only, so unlike its sibling `web_fetch` it needs no
+        // argument inspection — see [isReadOnlyWebFetchCall].
+        "web_extract",
     )
+
+    /**
+     * The one local tool whose read/write nature depends on its ARGUMENTS rather than its name:
+     * `web_fetch` dispatches on `method` and accepts POST/PUT/PATCH/DELETE as well as GET/HEAD.
+     */
+    private const val WEB_FETCH_TOOL_NAME = "web_fetch"
+
+    /** The argument that selects the HTTP verb for [WEB_FETCH_TOOL_NAME]. */
+    private const val WEB_FETCH_METHOD_ARG = "method"
+
+    /**
+     * The verbs that only read. Mirrors the read-only half of `WebFetchTool.HTTP_METHODS`
+     * (T-07). Any verb NOT listed here is refused, so a verb added upstream can never silently
+     * widen the retry surface — it would have to be added here on purpose.
+     */
+    private val READ_ONLY_HTTP_METHODS = setOf("GET", "HEAD")
 
     /**
      * 4xx statuses that describe a *transient* condition rather than a permanently bad
@@ -130,12 +158,45 @@ object ToolExecutionRetryPolicy {
      * information about whether the underlying operation is a read or a write, and the relay
      * cannot be inspected here.
      */
-    fun isIdempotentReadOnly(toolName: String): Boolean {
+    /**
+     * True when this call is a pure read, i.e. safe to repeat after a transient failure.
+     *
+     * Usually the tool's NAME settles it. `web_fetch` is the exception: it dispatches on its
+     * `method` argument, so [args] decides — see [isReadOnlyWebFetchCall]. Callers that cannot
+     * supply the arguments get a conservative answer (a skipped retry) rather than a duplicated
+     * write.
+     *
+     * MCP-relayed tools (`mcp__<server>__<tool>`) are always excluded: their name carries no
+     * information about whether the underlying operation is a read or a write, and the relay
+     * cannot be inspected here.
+     */
+    fun isIdempotentReadOnly(toolName: String, args: JsonElement? = null): Boolean {
         val name = toolName.trim()
         if (name.isEmpty()) return false
         if (name.startsWith("mcp__") || name.startsWith("mcp_")) return false
+        if (name == WEB_FETCH_TOOL_NAME) return isReadOnlyWebFetchCall(args)
         if (name in IDEMPOTENT_EXACT) return true
         return IDEMPOTENT_PREFIXES.any { name.startsWith(it) }
+    }
+
+    /**
+     * Whether this particular `web_fetch` call is a pure read.
+     *
+     * Absent `method` → the tool's documented default, GET → eligible.
+     *
+     * Unusable arguments → **not** eligible, because nothing then proves the verb: `null` args,
+     * a JSON value that is not an object, an explicit `{"method": null}`, a non-string verb, or
+     * a blank one. The asymmetry is deliberate — refusing a retry costs one extra model
+     * round-trip, while retrying a `POST` that already reached the server duplicates whatever it
+     * did.
+     */
+    private fun isReadOnlyWebFetchCall(args: JsonElement?): Boolean {
+        val obj = args as? JsonObject ?: return false
+        val raw = obj[WEB_FETCH_METHOD_ARG] ?: return true
+        if (raw is JsonNull) return false
+        val method = (raw as? JsonPrimitive)?.contentOrNull?.trim()?.uppercase()
+        if (method.isNullOrEmpty()) return false
+        return method in READ_ONLY_HTTP_METHODS
     }
 
     internal fun isTransientHttpStatus(statusCode: Int): Boolean =

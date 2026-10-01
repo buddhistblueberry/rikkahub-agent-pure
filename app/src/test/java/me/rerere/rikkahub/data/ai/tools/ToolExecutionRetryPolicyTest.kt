@@ -7,6 +7,9 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.HttpException
 import me.rerere.rikkahub.data.ai.tools.ToolExecutionRetryPolicy.RetryOutcome
@@ -18,8 +21,9 @@ import org.junit.Test
 /**
  * Pins the T-05 / (3) execution-layer retry policy:
  *
- *  - only idempotent READ-ONLY tools are ever eligible (a retried write would duplicate its
- *    side effect),
+ *  - only idempotent READ-ONLY calls are ever eligible (a retried write would duplicate its
+ *    side effect) — usually decided by the tool name, except for `web_fetch`, whose HTTP verb
+ *    lives in its arguments (T-11),
  *  - only transient failures are retried (a deterministic one would fail identically forever),
  *  - both failure shapes count — a thrown exception AND the `{"error":"timeout"}` envelope that
  *    most local network tools return instead of throwing,
@@ -39,7 +43,10 @@ class ToolExecutionRetryPolicyTest {
             "read_file", "read_sensor", "read_window_tree",
             "search_web", "search_contacts", "search_sms",
             "find_files", "find_node",
-            "scrape_web", "web_fetch", "web_extract",
+            "scrape_web",
+            // T-11: `web_extract` is GET-only, so it belongs here. `web_fetch` was REMOVED from
+            // this list — its verb is an argument, see the `web_fetch` tests below.
+            "web_extract",
         )
         names.forEach { name ->
             assertTrue("$name should be retry-eligible", ToolExecutionRetryPolicy.isIdempotentReadOnly(name))
@@ -98,6 +105,113 @@ class ToolExecutionRetryPolicyTest {
         assertTrue(ToolExecutionRetryPolicy.isIdempotentReadOnly("  read_file  "))
         assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly(""))
         assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("   "))
+    }
+
+    // ------------------------------------------ T-11: web_fetch is decided by its arguments
+
+    private fun args(json: String): JsonElement = Json.parseToJsonElement(json)
+
+    @Test
+    fun `a web_fetch call without a method defaults to GET and stays eligible`() {
+        assertTrue(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("{}")))
+        assertTrue(
+            ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                "web_fetch",
+                args("""{"url":"https://example.com"}"""),
+            ),
+        )
+    }
+
+    @Test
+    fun `a web_fetch read verb is eligible whatever the casing or padding`() {
+        listOf("GET", "get", "Head", " HEAD ").forEach { verb ->
+            assertTrue(
+                "method=$verb must stay retry-eligible",
+                ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                    "web_fetch",
+                    args("""{"url":"https://example.com","method":"$verb"}"""),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `a web_fetch write verb is never eligible`() {
+        listOf("POST", "post", "Put", "PATCH", "delete", "TRACE").forEach { verb ->
+            assertFalse(
+                "method=$verb must never be retry-eligible",
+                ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                    "web_fetch",
+                    args("""{"url":"https://example.com","method":"$verb"}"""),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `a web_fetch call whose verb cannot be proven is not eligible`() {
+        // No arguments, a non-object payload, an explicit null verb, a blank verb, a number and
+        // an object all leave the verb unknown. Refusing is the cheap side of the asymmetry: a
+        // skipped retry costs one round-trip, a re-sent POST duplicates whatever it did.
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch"))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", JsonNull))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("[]")))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("\"GET\"")))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("""{"method":null}""")))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("""{"method":""}""")))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("""{"method":5}""")))
+        assertFalse(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_fetch", args("""{"method":{"a":1}}""")))
+    }
+
+    @Test
+    fun `web_extract stays eligible without any argument inspection`() {
+        assertTrue(ToolExecutionRetryPolicy.isIdempotentReadOnly("web_extract"))
+        assertTrue(
+            ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                "web_extract",
+                args("""{"url":"https://example.com"}"""),
+            ),
+        )
+        // Its sibling's gate must not leak onto it, even for nonsense arguments.
+        assertTrue(
+            ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                "web_extract",
+                args("""{"method":"DELETE"}"""),
+            ),
+        )
+    }
+
+    @Test
+    fun `the argument gate is scoped to web_fetch and leaves every other tool alone`() {
+        // A `method` argument means nothing to these tools — their eligibility comes from the
+        // name, and they must not silently lose their retry because a caller passed one.
+        listOf("read_file", "list_files", "search_web", "scrape_web", "file_info").forEach { name ->
+            assertTrue(
+                "$name must stay retry-eligible",
+                ToolExecutionRetryPolicy.isIdempotentReadOnly(name, args("""{"method":"POST"}""")),
+            )
+        }
+    }
+
+    @Test
+    fun `a transient envelope no longer buys a write a retry`() {
+        // The envelope track lives inside `runWithRetries`, which is only entered when the gate
+        // above passes. So these two facts together are what stop a timed-out POST from being
+        // re-sent: the envelope IS classified transient, and the call is NOT eligible.
+        val transientEnvelope = text("""{"error":"network_error","detail":"socket closed"}""")
+        assertTrue(ToolExecutionRetryPolicy.isTransientToolOutput(transientEnvelope))
+        assertTrue(
+            ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                "web_fetch",
+                args("""{"url":"https://x","method":"GET"}"""),
+            ),
+        )
+        assertFalse(
+            ToolExecutionRetryPolicy.isIdempotentReadOnly(
+                "web_fetch",
+                args("""{"url":"https://x","method":"POST"}"""),
+            ),
+        )
     }
 
     // ------------------------------------------------------- transient failures
