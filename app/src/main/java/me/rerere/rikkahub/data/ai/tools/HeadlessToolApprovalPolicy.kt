@@ -6,14 +6,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * T-10 / (9) — which tools a conversation with **no approval channel at all** must not run
- * unattended.
+ * T-10 / (9) + T-12 / (11) — which tools a conversation with **no approval channel at all**
+ * must not run unattended.
  *
  * `ChatService.isToolAutoApproved` auto-approves *every* tool in a conversation registered via
  * [HeadlessConversations.mark] (cron / sub-agent / workflow / skill-tester /
  * external-automation), on the reasoning that the user pre-authorised the schedule itself at
  * job-creation time and there is no UI to prompt at fire time. The reasoning is sound for the
- * ordinary tool set, and wrong for the two groups below — those are exactly the tools whose
+ * ordinary tool set, and wrong for the three groups below — those are exactly the tools whose
  * *point* is that a human looks at each call.
  *
  * The refusal has to be an **explicit one**. Flipping the tool to `Pending` instead would break
@@ -55,14 +55,60 @@ object HeadlessToolApprovalPolicy {
     )
 
     /**
-     * Every tool this policy refuses in a headless run: the per-call-confirmation set
-     * ([ToolApprovalDefaults.NO_ALWAYS_ALLOW]) plus [PRIVACY_SENSITIVE_TOOL_NAMES].
+     * T-12 / (11) — the rest of the private surface: everything that reads or sends data
+     * belonging to the user *personally*, plus the one write that outlives the run.
      *
-     * Derived rather than hardcoded, so a tool added to `NO_ALWAYS_ALLOW` upstream is covered
-     * here without a second edit — the direction that fails safe.
+     * T-10 stopped at `NO_ALWAYS_ALLOW` and the microphone pair. That left the far larger
+     * [ToolApprovalDefaults.ALWAYS_ASK] group (132 names) auto-approving in headless runs —
+     * deliberate for `read_file` / `web_fetch` / `termux_run_command` (a schedule has to be
+     * able to do its job), and wrong for these: a run that reads the SMS inbox, the contact
+     * list or the call log, fires the camera, re-sends a notification, or posts a message as
+     * the user is a thing nobody asked for and nobody is watching.
+     *
+     * `memory_write` rides along for a different reason: it is a *persistent* write. An
+     * unattended run that appends to its own memory silently changes every later turn — the
+     * same "no reviewer present" problem. (T-06's delivery note flagged this one and handed it
+     * to the headless-approval card; T-10's chosen scope did not reach it.)
+     *
+     * Deliberately narrow. `get_location` is NOT here because it does not require approval in
+     * the first place (its tool definition carries no `needsApproval`), so it is outside this
+     * policy's remit; reading *existing* files is not here either, because a scheduled job
+     * needs it to do anything at all.
+     */
+    val PRIVATE_DATA_TOOL_NAMES: Set<String> = setOf(
+        // Contacts
+        "list_contacts",
+        "search_contacts",
+        "create_contact",
+        // Messages and calls
+        "list_sms_inbox",
+        "search_sms",
+        "send_sms",
+        "send_sms_intent",
+        "list_call_log",
+        // Camera and screen
+        "take_photo",
+        "take_screenshot",
+        // Notifications
+        "notification_action_click",
+        "notification_reply",
+        "dismiss_notification",
+        "send_email_intent",
+        // The assistant's own persistent memory
+        "memory_write",
+    )
+
+    /**
+     * Every tool this policy refuses in a headless run: the per-call-confirmation set
+     * ([ToolApprovalDefaults.NO_ALWAYS_ALLOW]), [PRIVACY_SENSITIVE_TOOL_NAMES], and
+     * [PRIVATE_DATA_TOOL_NAMES].
+     *
+     * `NO_ALWAYS_ALLOW` is derived rather than hardcoded, so a tool added to it upstream is
+     * covered here without a second edit — the direction that fails safe. The two local sets
+     * are spelled out on purpose: they are policy, not a mirror of an upstream constant.
      */
     val REFUSED_TOOL_NAMES: Set<String> =
-        ToolApprovalDefaults.NO_ALWAYS_ALLOW + PRIVACY_SENSITIVE_TOOL_NAMES
+        ToolApprovalDefaults.NO_ALWAYS_ALLOW + PRIVACY_SENSITIVE_TOOL_NAMES + PRIVATE_DATA_TOOL_NAMES
 
     /**
      * Why [toolName] must not run in a headless conversation, or null when it may.
@@ -83,6 +129,11 @@ object HeadlessToolApprovalPolicy {
                 "$name records the user's surroundings or speech and needs somebody present to " +
                     "consent. This conversation has no approval channel, so there is nobody to " +
                     "ask. It cannot run unattended."
+            name in PRIVATE_DATA_TOOL_NAMES ->
+                "$name reads or sends the user's own data — contacts, messages, call log, the " +
+                    "camera or screen, notifications — or overwrites the assistant's persistent " +
+                    "notes. This conversation has no approval channel, so nobody is there to " +
+                    "consent. It cannot run unattended."
             else -> null
         }
     }

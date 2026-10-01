@@ -72,14 +72,26 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the refused set is exactly the union of the two groups`() {
+    fun `the refused set is exactly the union of the three groups`() {
         assertEquals(
-            ToolApprovalDefaults.NO_ALWAYS_ALLOW + HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES,
+            ToolApprovalDefaults.NO_ALWAYS_ALLOW +
+                HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES +
+                HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES,
             HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES,
         )
         HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES.forEach { name ->
             assertNotNull("$name is in the set but has no detail", HeadlessToolApprovalPolicy.refusalDetail(name))
         }
+    }
+
+    @Test
+    fun `the three groups do not overlap`() {
+        val upstream = ToolApprovalDefaults.NO_ALWAYS_ALLOW
+        val mic = HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES
+        val private = HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES
+        assertTrue("NO_ALWAYS_ALLOW and the microphone group overlap", (upstream intersect mic).isEmpty())
+        assertTrue("NO_ALWAYS_ALLOW and the private-data group overlap", (upstream intersect private).isEmpty())
+        assertTrue("the two local groups overlap", (mic intersect private).isEmpty())
     }
 
     // ------------------------------------------------------------- non-refusals
@@ -92,7 +104,7 @@ class HeadlessToolApprovalPolicyTest {
         listOf(
             "read_file", "list_files", "write_text_file", "workspace_shell", "web_fetch",
             "web_extract", "search_web", "termux_run_command", "ssh_exec", "shizuku_exec",
-            "get_battery_status", "get_location", "take_photo", "take_screenshot", "share",
+            "get_battery_status", "get_location", "share",
             "open_file", "launch_app", "post_notification", "telegram_send_message",
             "subagent_dispatch", "ask_user", "mcp__github__get_file_contents",
             "keystore_encrypt", "keystore_verify", "keystore_list_keys",
@@ -187,11 +199,85 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the two groups read differently because the operator fix differs`() {
+    fun `the groups read differently because the operator fix differs`() {
         val confirmation = HeadlessToolApprovalPolicy.refusalDetail("eval_javascript")!!
-        val privacy = HeadlessToolApprovalPolicy.refusalDetail("record_audio")!!
+        val mic = HeadlessToolApprovalPolicy.refusalDetail("record_audio")!!
+        val private = HeadlessToolApprovalPolicy.refusalDetail("list_sms_inbox")!!
         assertTrue(confirmation.contains("confirm"))
-        assertTrue(privacy.contains("consent"))
-        assertNotEquals(confirmation, privacy)
+        assertTrue(mic.contains("consent"))
+        assertTrue(private.contains("consent"))
+        assertNotEquals(confirmation, mic)
+        assertNotEquals(confirmation, private)
+        assertNotEquals(mic, private)
+    }
+
+    // --------------------------------------------- T-12 private-data group
+
+    @Test
+    fun `the private-data group is exactly the reviewed names`() {
+        // Pinned so a name cannot be dropped (or quietly added) without this going red. Every
+        // entry was reviewed against the 132-name ALWAYS_ASK set on 2026-10-01.
+        assertEquals(
+            setOf(
+                "list_contacts", "search_contacts", "create_contact",
+                "list_sms_inbox", "search_sms", "send_sms", "send_sms_intent", "list_call_log",
+                "take_photo", "take_screenshot",
+                "notification_action_click", "notification_reply", "dismiss_notification",
+                "send_email_intent",
+                "memory_write",
+            ),
+            HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES,
+        )
+    }
+
+    @Test
+    fun `every private-data tool is refused`() {
+        assertTrue(HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES.isNotEmpty())
+        HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES.forEach { name ->
+            assertTrue("$name must be refused in a headless run", HeadlessToolApprovalPolicy.isRefused(name))
+        }
+    }
+
+    @Test
+    fun `the private-data group is refused only in a headless run`() {
+        HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES.forEach { name ->
+            assertNull(
+                "$name must still prompt normally in a foreground conversation",
+                HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = false),
+            )
+            assertNotNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = true))
+        }
+    }
+
+    @Test
+    fun `T-06 memory_write is covered`() {
+        // T-06s delivery note called this out and handed it to the headless-approval card;
+        // T-10s scope did not reach it, so it is pinned here.
+        assertTrue(HeadlessToolApprovalPolicy.isRefused("memory_write"))
+        assertFalse(
+            "memory_write must stay usable in the foreground",
+            HeadlessToolApprovalPolicy.isRefused("memory_read"),
+        )
+    }
+
+    @Test
+    fun `get_location is deliberately out of scope`() {
+        // Not an oversight: its tool definition carries no `needsApproval`, so it never
+        // reaches this policy in any mode. Pinned so a future gating change is noticed.
+        assertFalse(HeadlessToolApprovalPolicy.isRefused("get_location"))
+    }
+
+    @Test
+    fun `a schedule can still do its job`() {
+        // The whole point of the narrow scope: these must never be refused, or cron and
+        // sub-agent runs lose the ability to work at all.
+        listOf(
+            "read_file", "list_files", "find_files", "write_text_file", "workspace_shell",
+            "web_fetch", "web_extract", "search_web", "download_file",
+            "termux_run_command", "ssh_exec", "subagent_dispatch", "schedule_job",
+            "workflow_run", "trigger_job_now", "get_job_history", "generate_bug_report",
+        ).forEach { name ->
+            assertFalse("$name must stay runnable headless", HeadlessToolApprovalPolicy.isRefused(name))
+        }
     }
 }
