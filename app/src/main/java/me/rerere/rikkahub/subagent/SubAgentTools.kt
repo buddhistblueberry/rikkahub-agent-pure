@@ -124,6 +124,22 @@ fun subagentDispatchTool(
                     put("tools", buildJsonObject {
                         put("type", "array")
                         put("items", buildJsonObject { put("type", "string") })
+                        // T-09 / (8) - described only when the assistant has the sub-agent
+                        // tool-surface freeze on. With the freeze off this object stays
+                        // byte-identical to the pre-T-09 one (prompt-cache safe) and the
+                        // parameter is ignored exactly as it always was.
+                        if (callerContext.subAgentToolSurfaceEnabled) {
+                            put(
+                                "description",
+                                "T-09: optional allow-list of tool names for the sub-agent. " +
+                                    "Omit it (or pass an empty array) to let the sub-agent " +
+                                    "inherit its default headless surface. Names this " +
+                                    "assistant cannot hand to a headless run - device-UI " +
+                                    "tools, per-call-approval tools, and the subagent_* " +
+                                    "tools - are rejected outright; names that simply do " +
+                                    "not exist are ignored.",
+                            )
+                        }
                     })
                     put("run_in_background", buildJsonObject { put("type", "boolean") })
                     put("no_result", buildJsonObject {
@@ -175,13 +191,43 @@ fun subagentDispatchTool(
             val params = args.jsonObject
             val task = params["task"]?.jsonPrimitive?.contentOrNull
                 ?: return@Tool errEnv("invalid_task", "task is required")
+            // T-09 / (8) - `tools` used to be parsed into SubAgentRequest and then dropped on the
+            // floor: nothing ever read it. It now narrows the frozen tool surface of the run.
+            //
+            // Only honoured when the assistant has the freeze on. With it off a stale or rogue
+            // `tools` array cannot change the sub-agent's surface by a single entry, which is the
+            // pre-T-09 behaviour and what keeps the flag honest.
+            val requestedTools: List<String>? = if (callerContext.subAgentToolSurfaceEnabled) {
+                params["tools"]?.let { runCatching { it.jsonArray }.getOrNull() }
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    ?.distinct()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.also { names ->
+                        // Reject rather than silently drop: the whole point of the freeze is that a
+                        // sub-agent never runs a device-UI or per-call-approval tool unattended, and
+                        // a silent drop would leave the dispatcher believing it got what it asked for
+                        // (the exact footgun this card exists to remove).
+                        val blocked = names.filter { SubAgentToolSurface.isDenied(it) }
+                        if (blocked.isNotEmpty()) {
+                            return@Tool errEnv(
+                                "tool_unavailable_headless",
+                                "these tools cannot be handed to a headless sub-agent: " +
+                                    blocked.joinToString(", ") { "${it} (${SubAgentToolSurface.denialReason(it)})" } +
+                                    ". Drop them from `tools` (or omit `tools`) and retry.",
+                            )
+                        }
+                    }
+            } else {
+                null
+            }
             val request = SubAgentRequest(
                 task = task,
                 modelId = params["model_id"]?.jsonPrimitive?.contentOrNull,
                 agentName = params["agent"]?.jsonPrimitive?.contentOrNull,
                 systemPrompt = params["system_prompt"]?.jsonPrimitive?.contentOrNull,
-                tools = params["tools"]?.let { runCatching { it.jsonArray }.getOrNull() }
-                    ?.mapNotNull { it.jsonPrimitive.contentOrNull },
+                tools = requestedTools,
                 runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull ?: false,
                 noResult = params["no_result"]?.jsonPrimitive?.booleanOrNull ?: false,
                 timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull

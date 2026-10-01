@@ -18,6 +18,7 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
@@ -195,10 +196,16 @@ internal fun resolveSubAgentModel(
  *
  * Recursion guard: SubAgentEngine refuses to dispatch if the calling conversation is
  * itself headless (i.e. we're already inside a sub-agent / cron / external-automation
- * run). The four `subagent_*` tools are also not registered for headless conversations
- * via the standard tool gating in [me.rerere.rikkahub.data.ai.tools.LocalTools] — but the
- * engine-level check is the load-bearing guard since a misconfigured assistant could
- * still try to call us. v1: no recursion.
+ * run). The `subagent_*` tools stay REGISTERED inside a headless conversation — the older
+ * claim that [me.rerere.rikkahub.data.ai.tools.LocalTools]' standard gating removes them
+ * was wrong: registration keys off `LocalToolOption.SubAgents`, and a sub-agent run reuses
+ * its parent's assistant, so that option is still in the list. The load-bearing guard is
+ * the trio of `isHeadless` checks (the dispatch tool's entry guard, this engine's dispatch
+ * entry, and the parent-notification path). Since T-09 / (8) the frozen tool surface
+ * ([SubAgentToolSurface]) additionally removes the `subagent_*` handles from a sub-agent
+ * conversation altogether, so the model never sees them and never spends a trip on a
+ * refusal — but that is a cost optimisation on top of the guards, not a replacement for
+ * them. v1: no recursion.
  *
  * Concurrency caps:
  *  - Per-assistant cap from [me.rerere.rikkahub.data.model.Assistant.maxConcurrentSubAgents]
@@ -372,6 +379,13 @@ class SubAgentEngine(
                 return
             }
         val settings = settingsStore.settingsFlow.first()
+        // T-09 / (8) — does this run's parent assistant want the sub-agent tool surface frozen?
+        // Read here even though subagent_dispatch also reads the field from its
+        // ToolInvocationContext: both read the SAME persisted Assistant field, so they cannot
+        // disagree — and the tool needs it at tool-CONSTRUCTION time to gate whether the `tools`
+        // parameter is even described in the schema.
+        val freezeToolSurface =
+            settings.getAssistantById(parentAsstUuid)?.enableSubAgentToolSurface == true
         // #36: resolve `agent` before `model_id` so model_id's own resolution can
         // fall back to the profile's model when model_id is absent - `model_id` still wins
         // when both are given (see SubAgentTools' parameter description).
@@ -420,6 +434,21 @@ class SubAgentEngine(
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
+        // T-09 / (8) — a sub-agent conversation is built from its parent's assistant, so it
+        // inherits that assistant's COMPLETE tool surface (browser, NFC, external storage,
+        // workspace, skills, MCP, the subagent_* handles). Freeze it to the headless-safe subset
+        // for as long as the run lives; ChatService applies the filter at every tool-assembly
+        // site. With the flag off no record is written at all, so `apply` stays an identity and
+        // the child's schemas are byte-for-byte what they were before T-09.
+        if (freezeToolSurface) {
+            // Belt and braces: subagent_dispatch already REJECTS a blocked name outright, but the
+            // engine is the layer that actually owns the surface, and a future caller (a workflow
+            // step, an external automation, a test) could hand us a SubAgentRequest directly.
+            // Running the requested names through the policy here means a blocked name can never
+            // reach a frozen surface no matter who asked for it. An empty result means "no
+            // narrowing", which is exactly what `request.tools == null` means.
+            SubAgentToolSurface.freeze(conv.id, SubAgentToolSurface.safeNames(request.tools.orEmpty()))
+        }
         try {
             // Prepend a wrap-up instruction. Some models naturally write a summary paragraph
             // after their tool-call sequence; others stop after the last tool result and emit
@@ -475,6 +504,10 @@ class SubAgentEngine(
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             HeadlessConversations.unmark(conv.id)
+            // T-09 / (8) — release in the same finally that unmarks the conversation, so a
+            // cancelled / failed / timed-out run cannot leave a stale freeze behind. Releasing is
+            // unconditional and safe: removing a record that was never written is a no-op.
+            SubAgentToolSurface.release(conv.id)
             registry.clearJob(runId)
         }
     }

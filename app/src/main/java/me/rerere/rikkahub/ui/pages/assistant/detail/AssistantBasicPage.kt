@@ -651,6 +651,28 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+            HorizontalDivider()
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_subagent_tool_surface))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_subagent_tool_surface_desc))
+                },
+                tail = {
+                    Switch(
+                        checked = assistant.enableSubAgentToolSurface,
+                        onCheckedChange = {
+                            onUpdate(
+                                assistant.copy(
+                                    enableSubAgentToolSurface = it
+                                )
+                            )
+                        }
+                    )
+                }
+            )
         }
 
         Card(
