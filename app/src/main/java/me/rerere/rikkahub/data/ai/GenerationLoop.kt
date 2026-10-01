@@ -56,6 +56,7 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.ai.limits.ToolRuntimeLimits
+import me.rerere.rikkahub.data.ai.tools.ToolExecutionRetryPolicy
 import me.rerere.rikkahub.data.ai.tools.buildMemoryTools
 import me.rerere.rikkahub.data.ai.tools.truncateToolResult
 import me.rerere.rikkahub.data.datastore.Settings
@@ -1066,6 +1067,15 @@ class GenerationLoop(
                                     put("error", JsonPrimitive("tool_cancelled_wall_clock"))
                                     put("detail", JsonPrimitive("turn budget exceeded before tool started"))
                                 })))
+                            } else if (assistant.enableToolExecutionRetry &&
+                                ToolExecutionRetryPolicy.isIdempotentReadOnly(toolDef.name)
+                            ) {
+                                executeReadOnlyToolWithRetry(
+                                    toolDef = toolDef,
+                                    args = args,
+                                    turnStartMs = turnStartMs,
+                                    firstAttemptRemainingMs = remainingMs,
+                                )
                             } else {
                                 withTimeoutOrNull(remainingMs) { toolDef.execute(args) }
                                     ?: run {
@@ -1422,6 +1432,66 @@ class GenerationLoop(
             }
         } finally {
             processingStatus.value = null
+        }
+    }
+
+    /**
+     * T-05 / (3) — run an idempotent READ-ONLY tool with a bounded number of retries when an
+     * attempt fails transiently.
+     *
+     * Only reached when the assistant opted in via
+     * [me.rerere.rikkahub.data.model.Assistant.enableToolExecutionRetry] AND
+     * [ToolExecutionRetryPolicy.isIdempotentReadOnly] accepts the tool, so with the flag off the
+     * caller's single-attempt path stays byte-identical. Two failure shapes are retried:
+     *  - a thrown transient exception (socket timeout / IO / retryable HTTP status), and
+     *  - a returned transient error envelope — most local network tools swallow the failure
+     *    into `{"error":"timeout"|"network_error"}` instead of throwing, so an exception-only
+     *    retry would never fire for the very tools this exists for.
+     * Cancellation always propagates, and the wall-clock turn budget still bounds every attempt,
+     * so retries can never carry a turn past its budget.
+     */
+    private suspend fun executeReadOnlyToolWithRetry(
+        toolDef: Tool,
+        args: kotlinx.serialization.json.JsonElement,
+        turnStartMs: Long,
+        firstAttemptRemainingMs: Long,
+    ): List<UIMessagePart> {
+        val outcome = ToolExecutionRetryPolicy.runWithRetries(
+            firstAttemptRemainingMs = firstAttemptRemainingMs,
+            remainingMsProvider = {
+                ToolRuntimeLimits.turnBudgetMs -
+                    (android.os.SystemClock.elapsedRealtime() - turnStartMs)
+            },
+            execute = { budgetMs -> withTimeoutOrNull(budgetMs) { toolDef.execute(args) } },
+            onRetry = { attemptNumber, failure ->
+                Log.w(
+                    TAG,
+                    "generateText: ${toolDef.name} transient failure, retrying " +
+                        "($attemptNumber/${ToolExecutionRetryPolicy.MAX_RETRIES})",
+                    failure,
+                )
+            },
+        )
+        return when (outcome) {
+            is ToolExecutionRetryPolicy.RetryOutcome.Completed -> outcome.output
+            is ToolExecutionRetryPolicy.RetryOutcome.Failed -> throw outcome.failure
+            is ToolExecutionRetryPolicy.RetryOutcome.TimedOut -> {
+                Log.w(TAG, "generateText: ${toolDef.name} cancelled — wall-clock budget exhausted mid-execution")
+                listOf(UIMessagePart.Text(json.encodeToString(buildJsonObject {
+                    put("error", JsonPrimitive("tool_cancelled_wall_clock"))
+                    put(
+                        "detail",
+                        JsonPrimitive("tool execution exceeded the ${ToolRuntimeLimits.turnBudgetMs / 1000}s turn budget")
+                    )
+                })))
+            }
+            is ToolExecutionRetryPolicy.RetryOutcome.BudgetExhausted -> {
+                Log.w(TAG, "generateText: ${toolDef.name} skipped — wall-clock budget already exceeded")
+                listOf(UIMessagePart.Text(json.encodeToString(buildJsonObject {
+                    put("error", JsonPrimitive("tool_cancelled_wall_clock"))
+                    put("detail", JsonPrimitive("turn budget exceeded before tool started"))
+                })))
+            }
         }
     }
 
