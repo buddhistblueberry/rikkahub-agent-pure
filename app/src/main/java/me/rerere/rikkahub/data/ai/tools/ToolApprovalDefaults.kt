@@ -45,6 +45,9 @@ object ToolApprovalDefaults {
         "save_ssh_host",
         "delete_ssh_host",
 
+        // Accounting writes
+        "usage_set_prices",  // replaces the whole model price table; every later cost depends on it
+
         // Filesystem / network writes
         "write_text_file",
         "download_file",

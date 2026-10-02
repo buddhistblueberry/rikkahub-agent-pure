@@ -126,7 +126,10 @@ enum class AgentRunKind(val wire: String) {
     Workflow("workflow"),
     SubAgent("subagent"),
     Telegram("telegram"),
-    ExternalAutomation("external_automation");
+    ExternalAutomation("external_automation"),
+
+    /** A write of the model price table (P2-11d-3). */
+    PriceTable("price_table");
 
     companion object {
         fun fromWire(wire: String?): AgentRunKind? = entries.firstOrNull { it.wire == wire }

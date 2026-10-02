@@ -332,6 +332,7 @@ private const val EVAL_JS_TIMEOUT_MS = 5_000L
 class LocalTools(
     private val context: Context,
     private val usageRecordDao: me.rerere.rikkahub.data.usage.UsageRecordDao,
+    private val agentRunRepository: me.rerere.rikkahub.data.agentrun.AgentRunRepository,
     private val eventBus: AppEventBus,
     private val cameraResultBuffer: CameraResultBuffer,
     private val biometricResultBuffer: BiometricResultBuffer,
@@ -746,6 +747,8 @@ class LocalTools(
 
         if (options.contains(LocalToolOption.UsageLedger)) {
             tools.add(me.rerere.rikkahub.data.usage.usageExportTool(usageRecordDao))
+            tools.add(me.rerere.rikkahub.data.usage.usageGetPricesTool(settingsStore))
+            tools.add(me.rerere.rikkahub.data.usage.usageSetPricesTool(settingsStore, agentRunRepository))
         }
         if (options.contains(LocalToolOption.AudioInfo)) {
             tools.add(audioInfoTool(context))
