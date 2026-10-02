@@ -2157,6 +2157,29 @@
   <string name="setting_sub_agents_page_delete">Delete</string>
   <string name="setting_sub_agents_page_cancel">Cancel</string>
   <string name="setting_sub_agents_page_confirm">Save</string>
+  <string name="setting_sub_agents_page_surface_title">Surface</string>
+  <string name="setting_sub_agents_page_surface_desc">What this expert may use. A group left on inherit keeps whatever the assistant that dispatches it has; turn it on to give the expert its own.</string>
+  <string name="setting_sub_agents_page_surface_tools">Local tools</string>
+  <string name="setting_sub_agents_page_surface_disabled_tools">Disabled tools</string>
+  <string name="setting_sub_agents_page_surface_mcp">MCP servers</string>
+  <string name="setting_sub_agents_page_surface_skills">Skills</string>
+  <string name="setting_sub_agents_page_surface_namespace">Namespace</string>
+  <string name="setting_sub_agents_page_surface_inherit">Inherits the parent assistant</string>
+  <string name="setting_sub_agents_page_surface_own_count">Custom · %1$d selected</string>
+  <string name="setting_sub_agents_page_surface_no_tools">No tools to list.</string>
+  <string name="setting_sub_agents_page_surface_no_mcp">No MCP server is enabled.</string>
+  <string name="setting_sub_agents_page_surface_no_skills">No skill is installed.</string>
+  <string name="setting_sub_agents_page_surface_namespace_off">No private namespace</string>
+  <string name="setting_sub_agents_page_surface_namespace_unsaved">Enter a namespace</string>
+  <string name="setting_sub_agents_page_surface_namespace_label">Namespace</string>
+  <string name="setting_sub_agents_page_surface_namespace_hint">Lowercase letters, digits and dashes. The expert files live under agents/&lt;namespace&gt;/ in the parent workspace.</string>
+  <string name="setting_sub_agents_page_surface_namespace_preview">Memory folder: %1$s</string>
+  <string name="setting_sub_agents_page_surface_namespace_error_empty">Enter a namespace: this name cannot be turned into one automatically. Use lowercase letters, digits and dashes.</string>
+  <string name="setting_sub_agents_page_surface_namespace_error_duplicate">Another expert already uses the namespace &quot;%1$s&quot;. Sharing one would mix their memory files.</string>
+  <string name="setting_sub_agents_page_badge_tools">Tools %1$d</string>
+  <string name="setting_sub_agents_page_badge_mcp">MCP %1$d</string>
+  <string name="setting_sub_agents_page_badge_skills">Skills %1$d</string>
+  <string name="setting_sub_agents_page_badge_namespace">agents/%1$s</string>
 
   <!-- BrowserAiStripe redesign: outcome-aware, localized action trail -->
   <string name="browser_ai_stripe_stop">Stop</string>
