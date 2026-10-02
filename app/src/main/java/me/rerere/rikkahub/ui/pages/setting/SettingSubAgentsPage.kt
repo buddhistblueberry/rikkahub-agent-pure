@@ -42,7 +42,6 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -63,7 +62,8 @@ import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.subagent.SubAgentProfile
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -73,27 +73,55 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
 /**
- * #36: named sub-agent profiles - a name, description, custom system prompt and model,
- * so `subagent_dispatch` can be given a profile NAME instead of a model uuid. List/add/edit/
- * delete, mirroring the Lorebook/ModeInjection tabs in PromptPage. Model selection reuses the
- * shared [ModelSelector] component rather than a new picker.
+ * P2-06b — the expert library.
+ *
+ * #36 shipped this screen over the DataStore-backed `Settings.subAgents` list; P2-06b retires that
+ * list and backs the same screen with [AgentDefinitionRepository] (its own `agent_definitions.db`).
+ * The UI is otherwise deliberately unchanged: this is the "mechanical" half of the source-of-truth
+ * switch, so the expert-editing *surface* (tool face, MCP servers, skills, the D9 namespace picker)
+ * stays a P2-06c concern while list / add / edit / delete keep working today.
+ *
+ * Name resolution for `subagent_dispatch` is case-insensitive, so a second expert whose name only
+ * differs by case would make dispatch ambiguous. That is rejected here (as before) rather than being
+ * allowed to reach the resolver at dispatch time.
  */
 @Composable
-fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
+fun SettingSubAgentsPage(
+    vm: SettingVM = koinViewModel(),
+    agentDefinitionRepository: AgentDefinitionRepository = koinInject(),
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val profiles = settings.subAgents
+    val definitions by agentDefinitionRepository.definitions.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val editState = useEditState<SubAgentProfile> { edited ->
-        val index = profiles.indexOfFirst { it.id == edited.id }
-        val updated = if (index >= 0) {
-            profiles.toMutableList().apply { set(index, edited) }
-        } else {
-            profiles + edited
+    val editState = useEditState<AgentDefinition> { edited ->
+        // A create and an update differ only in whether the row already exists. `update` refuses to
+        // insert (a stale id must not resurrect a deleted expert), so the branch is explicit.
+        scope.launch {
+            if (definitions.any { it.id == edited.id }) {
+                agentDefinitionRepository.update(edited)
+            } else {
+                agentDefinitionRepository.create(
+                    name = edited.name,
+                    description = edited.description,
+                    systemPrompt = edited.systemPrompt,
+                    modelId = edited.modelId,
+                    enabled = edited.enabled,
+                    localTools = edited.localTools,
+                    disabledLocalTools = edited.disabledLocalTools,
+                    mcpServers = edited.mcpServers,
+                    skills = edited.skills,
+                    slug = edited.slug,
+                    tokenBudget = edited.tokenBudget,
+                    id = edited.id,
+                )
+            }
         }
-        vm.updateSettings(settings.copy(subAgents = updated))
     }
 
     Scaffold(
@@ -120,7 +148,7 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
                 contentPadding = innerPadding + PaddingValues(16.dp) + PaddingValues(bottom = 128.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (profiles.isEmpty()) {
+                if (definitions.isEmpty()) {
                     item {
                         Column(
                             modifier = Modifier
@@ -142,11 +170,11 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 } else {
-                    items(profiles, key = { it.id }) { profile ->
-                        SubAgentProfileCard(
-                            profile = profile,
-                            onEdit = { editState.open(profile) },
-                            onDelete = { vm.updateSettings(settings.copy(subAgents = profiles - profile)) },
+                    items(definitions, key = { it.id }) { definition ->
+                        AgentDefinitionCard(
+                            definition = definition,
+                            onEdit = { editState.open(definition) },
+                            onDelete = { scope.launch { agentDefinitionRepository.delete(definition.id) } },
                         )
                     }
                 }
@@ -158,7 +186,9 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
                     .align(Alignment.BottomCenter)
                     .offset(y = -ScreenOffset),
             ) {
-                Button(onClick = { editState.open(SubAgentProfile()) }) {
+                Button(onClick = {
+                    editState.open(AgentDefinition(id = Uuid.random().toString(), name = ""))
+                }) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
@@ -177,10 +207,10 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
 
     if (editState.isEditing) {
         editState.currentState?.let { state ->
-            SubAgentProfileEditSheet(
-                profile = state,
+            AgentDefinitionEditSheet(
+                definition = state,
                 providers = settings.providers,
-                existingProfiles = profiles,
+                existingDefinitions = definitions,
                 onDismiss = { editState.dismiss() },
                 onConfirm = { editState.confirm() },
                 onEdit = { editState.currentState = it },
@@ -190,8 +220,8 @@ fun SettingSubAgentsPage(vm: SettingVM = koinViewModel()) {
 }
 
 @Composable
-private fun SubAgentProfileCard(
-    profile: SubAgentProfile,
+private fun AgentDefinitionCard(
+    definition: AgentDefinition,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -240,21 +270,21 @@ private fun SubAgentProfileCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = profile.name.ifEmpty { stringResource(R.string.setting_sub_agents_page_unnamed) },
+                        text = definition.name.ifEmpty { stringResource(R.string.setting_sub_agents_page_unnamed) },
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (profile.description.isNotEmpty()) {
+                    if (definition.description.isNotEmpty()) {
                         Text(
-                            text = profile.description,
+                            text = definition.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (!profile.enabled) {
+                    if (!definition.enabled) {
                         Tag(type = TagType.WARNING) {
                             Text(stringResource(R.string.setting_sub_agents_page_disabled))
                         }
@@ -269,24 +299,25 @@ private fun SubAgentProfileCard(
 }
 
 @Composable
-private fun SubAgentProfileEditSheet(
-    profile: SubAgentProfile,
+private fun AgentDefinitionEditSheet(
+    definition: AgentDefinition,
     providers: List<ProviderSetting>,
-    existingProfiles: List<SubAgentProfile>,
+    existingDefinitions: List<AgentDefinition>,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
-    onEdit: (SubAgentProfile) -> Unit,
+    onEdit: (AgentDefinition) -> Unit,
 ) {
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
     val scope = rememberCoroutineScope()
-    // Resolution matches profiles by name case-insensitively (SubAgentProfileResolver); saving
-    // a second profile with a name that only differs by case would make dispatch ambiguous, so
-    // reject it here rather than letting the ambiguity reach the resolver at dispatch time.
-    val nameDuplicate = existingProfiles.any {
-        it.id != profile.id && it.name.isNotBlank() && it.name.equals(profile.name, ignoreCase = true)
+    // Resolution matches experts by name case-insensitively (AgentDefinitionResolver); saving a
+    // second expert with a name that only differs by case would make dispatch ambiguous, so reject
+    // it here rather than letting the ambiguity reach the resolver at dispatch time.
+    val nameDuplicate = existingDefinitions.any {
+        it.id != definition.id && it.name.isNotBlank() &&
+            it.name.equals(definition.name, ignoreCase = true)
     }
 
     ModalBottomSheet(
@@ -324,8 +355,8 @@ private fun SubAgentProfileEditSheet(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedTextField(
-                    value = profile.name,
-                    onValueChange = { onEdit(profile.copy(name = it)) },
+                    value = definition.name,
+                    onValueChange = { onEdit(definition.copy(name = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_name)) },
                     singleLine = true,
                     isError = nameDuplicate,
@@ -336,8 +367,8 @@ private fun SubAgentProfileEditSheet(
                 )
 
                 OutlinedTextField(
-                    value = profile.description,
-                    onValueChange = { onEdit(profile.copy(description = it)) },
+                    value = definition.description,
+                    onValueChange = { onEdit(definition.copy(description = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_description)) },
                     supportingText = { Text(stringResource(R.string.setting_sub_agents_page_description_hint)) },
                     modifier = Modifier.fillMaxWidth(),
@@ -347,8 +378,8 @@ private fun SubAgentProfileEditSheet(
                     label = { Text(stringResource(R.string.setting_sub_agents_page_enabled)) },
                     tail = {
                         Switch(
-                            checked = profile.enabled,
-                            onCheckedChange = { onEdit(profile.copy(enabled = it)) },
+                            checked = definition.enabled,
+                            onCheckedChange = { onEdit(definition.copy(enabled = it)) },
                         )
                     },
                 )
@@ -358,7 +389,10 @@ private fun SubAgentProfileEditSheet(
                     description = { Text(stringResource(R.string.setting_sub_agents_page_model_desc)) },
                     content = {
                         ModelSelector(
-                            modelId = profile.modelId,
+                            // The store keeps the model id as its canonical Uuid string; the picker
+                            // speaks Uuid. A value that no longer parses (hand-edited data) reads as
+                            // "no model chosen" here rather than crashing the sheet.
+                            modelId = definition.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
                             providers = providers,
                             type = ModelType.CHAT,
                             allowClear = true,
@@ -366,15 +400,21 @@ private fun SubAgentProfileEditSheet(
                                 // ModelSelector's clear button calls onSelect(Model()), whose
                                 // default modelId is "" - no real model ever has a blank
                                 // provider model id, so that's the clear signal.
-                                onEdit(profile.copy(modelId = model.id.takeIf { model.modelId.isNotBlank() }))
+                                onEdit(
+                                    definition.copy(
+                                        modelId = model.id
+                                            .takeIf { model.modelId.isNotBlank() }
+                                            ?.toString(),
+                                    ),
+                                )
                             },
                         )
                     },
                 )
 
                 OutlinedTextField(
-                    value = profile.systemPrompt,
-                    onValueChange = { onEdit(profile.copy(systemPrompt = it)) },
+                    value = definition.systemPrompt,
+                    onValueChange = { onEdit(definition.copy(systemPrompt = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt)) },
                     supportingText = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt_hint)) },
                     modifier = Modifier
@@ -391,7 +431,10 @@ private fun SubAgentProfileEditSheet(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.setting_sub_agents_page_cancel))
                 }
-                TextButton(onClick = onConfirm, enabled = profile.name.isNotBlank() && !nameDuplicate) {
+                TextButton(
+                    onClick = onConfirm,
+                    enabled = definition.name.isNotBlank() && !nameDuplicate,
+                ) {
                     Text(stringResource(R.string.setting_sub_agents_page_confirm))
                 }
             }

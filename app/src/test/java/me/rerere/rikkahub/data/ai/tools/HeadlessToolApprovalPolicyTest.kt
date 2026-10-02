@@ -18,7 +18,7 @@ import org.junit.Test
  *
  *  - every tool the user reserved for a per-call confirmation (`NO_ALWAYS_ALLOW`) is refused,
  *  - the microphone group is refused too (nobody present to consent),
- *  - an ordinary tool is never refused — the policy only ever subtracts two named groups,
+ *  - an ordinary tool is never refused — the policy only ever subtracts four named groups,
  *  - a conversation WITH an approval channel is untouched,
  *  - the refusal is a deterministic envelope, so it can never be retried.
  *
@@ -72,11 +72,37 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the refused set is exactly the union of the three groups`() {
+    fun `the expert-library writes are refused, and only in a headless run`() {
+        // P2-06b — a headless run has no approval channel, and rewriting the roster changes what
+        // every later dispatch resolves to. The read-only sibling stays available.
+        assertEquals(
+            setOf("subagent_create", "subagent_update", "subagent_delete"),
+            HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES,
+        )
+        HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES.forEach { name ->
+            assertTrue("$name must be refused", HeadlessToolApprovalPolicy.isRefused(name))
+            assertTrue(
+                "$name detail must point at the roster",
+                HeadlessToolApprovalPolicy.refusalDetail(name)!!.contains("expert library"),
+            )
+            assertNull(
+                "$name must still prompt normally in the foreground",
+                HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = false),
+            )
+            assertNotNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = true))
+        }
+        // The read-only sibling and the dispatch handle are untouched.
+        assertNull(HeadlessToolApprovalPolicy.refusalDetail("subagent_list"))
+        assertNull(HeadlessToolApprovalPolicy.refusalDetail("subagent_dispatch"))
+    }
+
+    @Test
+    fun `the refused set is exactly the union of the four groups`() {
         assertEquals(
             ToolApprovalDefaults.NO_ALWAYS_ALLOW +
                 HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES +
-                HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES,
+                HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES +
+                HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES,
             HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES,
         )
         HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES.forEach { name ->
@@ -85,13 +111,17 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the three groups do not overlap`() {
+    fun `the four groups do not overlap`() {
         val upstream = ToolApprovalDefaults.NO_ALWAYS_ALLOW
         val mic = HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES
         val private = HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES
+        val expertWrites = HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES
         assertTrue("NO_ALWAYS_ALLOW and the microphone group overlap", (upstream intersect mic).isEmpty())
         assertTrue("NO_ALWAYS_ALLOW and the private-data group overlap", (upstream intersect private).isEmpty())
-        assertTrue("the two local groups overlap", (mic intersect private).isEmpty())
+        assertTrue("NO_ALWAYS_ALLOW and the expert-write group overlap", (upstream intersect expertWrites).isEmpty())
+        assertTrue("the microphone and private-data groups overlap", (mic intersect private).isEmpty())
+        assertTrue("the microphone and expert-write groups overlap", (mic intersect expertWrites).isEmpty())
+        assertTrue("the private-data and expert-write groups overlap", (private intersect expertWrites).isEmpty())
     }
 
     // ------------------------------------------------------------- non-refusals

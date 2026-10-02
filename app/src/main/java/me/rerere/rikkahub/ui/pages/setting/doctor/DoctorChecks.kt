@@ -30,7 +30,8 @@ import me.rerere.rikkahub.service.TelegramBotService
 import me.rerere.rikkahub.shizuku.ShizukuManager
 import me.rerere.rikkahub.shizuku.ShizukuStatus
 import me.rerere.rikkahub.subagent.SubAgentModelResolver
-import me.rerere.rikkahub.subagent.SubAgentProfile
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository
 import me.rerere.rikkahub.workflow.repository.WorkflowRepository
 import me.rerere.rikkahub.browser.BrowserPreferences
 import me.rerere.rikkahub.browser.BrowserToolDefaults
@@ -177,6 +178,11 @@ class DoctorChecks(
     private val skillManager: SkillManager? = null,
     // Doctor refresh: backs the service.mcp_servers row. Nullable + defaulted same as the others.
     private val mcpManager: McpManager? = null,
+    // P2-06b — the expert library, now the source of truth for the assistant.subagent_profiles
+    // row. Nullable + defaulted like the fields above so legacy test paths that build a
+    // DoctorChecks without the full DI graph keep compiling; an absent store reads as "no
+    // experts configured", which is exactly what the row then reports.
+    private val agentDefinitionRepository: AgentDefinitionRepository? = null,
 ) {
     suspend fun runAll(): List<DoctorCheck> = withContext(Dispatchers.IO) {
         // Aggregate enabled tools across every assistant. A tool is "in use" if at least
@@ -696,12 +702,16 @@ class DoctorChecks(
                 )
             }
 
-            // Row 4: sub-agent profiles whose configured model no longer resolves. This is
-            // the #28 failure class made visible: a profile with a stale/deleted model id
-            // used to fall back to inheriting the parent's model with no indication anything
-            // was wrong. Reuses SubAgentModelResolver so the Doctor can't drift from the
-            // actual dispatch-time resolution logic.
-            val subAgentStatus = subAgentProfileStatus(settings.subAgents, settings.providers)
+            // Row 4: experts whose configured model no longer resolves. This is the #28
+            // failure class made visible: an expert with a stale/deleted model id used to fall
+            // back to inheriting the parent's model with no indication anything was wrong.
+            // Reuses SubAgentModelResolver so the Doctor can't drift from the actual
+            // dispatch-time resolution logic. P2-06b: the roster lives in the expert library
+            // now, so the row reads its in-memory snapshot instead of Settings.subAgents.
+            val subAgentStatus = subAgentProfileStatus(
+                agentDefinitionRepository?.snapshotBlocking().orEmpty(),
+                settings.providers,
+            )
             add(
                 DoctorCheck(
                     id = "assistant.subagent_profiles",
@@ -1840,23 +1850,24 @@ internal fun galleryOrphanStatus(absolutePaths: List<String>): GalleryOrphanStat
     )
 
 /**
- * Pure decision logic backing the "assistant.subagent_profiles" row: which configured
- * [SubAgentProfile]s have a `modelId` that no longer resolves to a chat model of an
- * enabled provider (the #28 failure class; it used to fail silently at dispatch time).
- * Reuses [SubAgentModelResolver.resolve] itself rather than re-deriving model lookup; a
- * profile's `modelId` is already a resolved [kotlin.uuid.Uuid], so it's passed through as
- * the resolver's string input, exactly like a `subagent_dispatch` caller would.
+ * Pure decision logic backing the "assistant.subagent_profiles" row: which stored experts have
+ * a `modelId` that no longer resolves to a chat model of an enabled provider (the #28 failure
+ * class; it used to fail silently at dispatch time). Reuses [SubAgentModelResolver.resolve]
+ * itself rather than re-deriving model lookup; an expert's `modelId` is the canonical `Uuid`
+ * **string** (P2-06a stores ids as TEXT so the schema carries no experimental uuid type), so it
+ * is handed straight to the resolver as its string input, exactly like a `subagent_dispatch`
+ * caller would.
  */
 internal data class SubAgentProfileStatus(val total: Int, val broken: List<String>)
 
 internal fun subAgentProfileStatus(
-    profiles: List<SubAgentProfile>,
+    definitions: List<AgentDefinition>,
     providers: List<ProviderSetting>,
 ): SubAgentProfileStatus = SubAgentProfileStatus(
-    total = profiles.size,
-    broken = profiles.filter { profile ->
-        val modelId = profile.modelId ?: return@filter false
-        SubAgentModelResolver.resolve(modelId.toString(), providers) is SubAgentModelResolver.Result.Failed
+    total = definitions.size,
+    broken = definitions.filter { definition ->
+        val modelId = definition.modelId ?: return@filter false
+        SubAgentModelResolver.resolve(modelId, providers) is SubAgentModelResolver.Result.Failed
     }.map { it.name },
 )
 

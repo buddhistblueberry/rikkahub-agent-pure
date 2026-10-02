@@ -3,7 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting.doctor
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.subagent.SubAgentProfile
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -83,22 +83,22 @@ class DoctorChecksRefreshTest {
         ),
     )
 
-    @Test fun `profile with no configured model is never broken`() {
-        val profile = SubAgentProfile(name = "inherits", modelId = null)
-        val status = subAgentProfileStatus(listOf(profile), providers)
+    @Test fun `expert with no configured model is never broken`() {
+        val expert = AgentDefinition(id = "d1", name = "inherits", modelId = null)
+        val status = subAgentProfileStatus(listOf(expert), providers)
         assertEquals(1, status.total)
         assertTrue(status.broken.isEmpty())
     }
 
-    @Test fun `profile whose model id resolves is not broken`() {
-        val profile = SubAgentProfile(name = "resolvable", modelId = chatModel.id)
-        val status = subAgentProfileStatus(listOf(profile), providers)
+    @Test fun `expert whose model id resolves is not broken`() {
+        val expert = AgentDefinition(id = "d2", name = "resolvable", modelId = chatModel.id.toString())
+        val status = subAgentProfileStatus(listOf(expert), providers)
         assertTrue(status.broken.isEmpty())
     }
 
-    @Test fun `profile whose model id no longer resolves is broken and named`() {
-        val profile = SubAgentProfile(name = "stale-model", modelId = Uuid.random())
-        val status = subAgentProfileStatus(listOf(profile), providers)
+    @Test fun `expert whose model id no longer resolves is broken and named`() {
+        val expert = AgentDefinition(id = "d3", name = "stale-model", modelId = Uuid.random().toString())
+        val status = subAgentProfileStatus(listOf(expert), providers)
         assertEquals(listOf("stale-model"), status.broken)
     }
 

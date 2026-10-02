@@ -1,9 +1,9 @@
 package me.rerere.rikkahub.subagent
 
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.utils.JsonInstant
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,16 +15,20 @@ import org.junit.Test
 import kotlin.uuid.Uuid
 
 /**
- * P2-04 — a sub-agent's own tool surface.
+ * P2-04, extended by P2-06b — a sub-agent's own tool surface.
  *
  * Two contracts are load-bearing here:
  *
  *  - [SubAgentSurface.resolveChildAssistant] returns `null` (="inherit the parent verbatim") for
- *    every profile that does not define a surface, so the pre-P2-04 behaviour is preserved for
- *    each existing profile — the "model + system prompt" specialists users already have; and
+ *    every expert that does not define a surface, so the pre-P2-04 behaviour is preserved for
+ *    each existing "model + system prompt" specialist; and
  *  - [SubAgentSurface.apply] still applies the headless FLOOR per tool name to whatever surface the
  *    run ends up with, so "child ⊆ parent" is replaced by "child has its own surface, minus the
  *    tools nobody may run unattended" rather than by "child has anything it likes".
+ *
+ * P2-06b moved the overlay itself into [me.rerere.rikkahub.data.agentdef.toAssistant] and widened
+ * "own surface" to include `skills` and the D9 `slug`, so the derived assistant is now assembled in
+ * exactly one place and a namespace-only expert still gets the floor applied.
  */
 class SubAgentSurfaceTest {
 
@@ -45,15 +49,22 @@ class SubAgentSurfaceTest {
         enableSubAgentToolSurface = true,
     )
 
-    private fun profile(
+    /** A stored expert. Only [AgentDefinition.id] + `name` are required by the entity. */
+    private fun definition(
         localTools: List<LocalToolOption>? = null,
         disabledLocalTools: Set<String>? = null,
-        mcpServers: Set<Uuid>? = null,
-    ) = SubAgentProfile(
-        name = "specialist",
+        mcpServers: Set<String>? = null,
+        skills: Set<String>? = null,
+        slug: String? = null,
+        name: String = "specialist",
+    ) = AgentDefinition(
+        id = "def-1",
+        name = name,
         localTools = localTools,
         disabledLocalTools = disabledLocalTools,
         mcpServers = mcpServers,
+        skills = skills,
+        slug = slug,
     )
 
     private fun tool(name: String): Tool = Tool(name = name, description = "") { emptyList() }
@@ -69,18 +80,27 @@ class SubAgentSurfaceTest {
     // ---- resolveChildAssistant --------------------------------------------------------
 
     @Test
-    fun `no profile means inherit`() {
+    fun `no definition means inherit`() {
         assertNull(SubAgentSurface.resolveChildAssistant(parent(), null))
     }
 
     @Test
     fun `no parent assistant means inherit`() {
-        assertNull(SubAgentSurface.resolveChildAssistant(null, profile(localTools = listOf(LocalToolOption.TimeInfo))))
+        assertNull(
+            SubAgentSurface.resolveChildAssistant(
+                null,
+                definition(localTools = listOf(LocalToolOption.TimeInfo)),
+            ),
+        )
     }
 
     @Test
-    fun `a profile that only picks a model and prompt has no surface of its own`() {
-        val plain = SubAgentProfile(name = "plain", description = "d", systemPrompt = "p", modelId = Uuid.random())
+    fun `a definition that only picks a model and prompt has no surface of its own`() {
+        val plain = definition(name = "plain").copy(
+            description = "d",
+            systemPrompt = "p",
+            modelId = Uuid.random().toString(),
+        )
         assertFalse(SubAgentSurface.hasOwnSurface(plain))
         assertNull(SubAgentSurface.resolveChildAssistant(parent(), plain))
     }
@@ -90,28 +110,30 @@ class SubAgentSurfaceTest {
         val parent = parent()
         val child = SubAgentSurface.resolveChildAssistant(
             parent,
-            profile(localTools = listOf(LocalToolOption.SubAgents)),
+            definition(localTools = listOf(LocalToolOption.SubAgents)),
         )
         assertNotNull(child)
         child!!
-        // The one thing the profile had an opinion about.
+        // The one thing the expert had an opinion about.
         assertEquals(listOf(LocalToolOption.SubAgents), child.localTools)
-        // Everything the profile did not mention still comes from the parent.
+        // Everything the expert did not mention still comes from the parent.
         assertEquals(parent.disabledLocalTools, child.disabledLocalTools)
         assertEquals(parent.mcpServers, child.mcpServers)
-        // The child is the SAME assistant for everything except the tool face.
+        // The child is the SAME assistant for everything except the tool face...
         assertEquals(parent.id, child.id)
-        assertEquals(parent.name, child.name)
         assertEquals(parent.enableWebSearch, child.enableWebSearch)
         assertEquals(parent.workspaceId, child.workspaceId)
         assertEquals(parent.enabledSkills, child.enabledSkills)
         assertEquals(parent.enableSubAgentToolSurface, child.enableSubAgentToolSurface)
+        // ...and its name is the expert's, which is what makes the derived assistant readable in
+        // a log even though nothing looks it up by name.
+        assertEquals("specialist", child.name)
     }
 
     @Test
     fun `an explicit empty local tool list is an opinion, not an inheritance`() {
-        // emptyList() != null: the profile asked for a (useless but deliberate) empty surface.
-        val child = SubAgentSurface.resolveChildAssistant(parent(), profile(localTools = emptyList()))
+        // emptyList() != null: the expert asked for a (useless but deliberate) empty surface.
+        val child = SubAgentSurface.resolveChildAssistant(parent(), definition(localTools = emptyList()))
         assertNotNull(child)
         assertTrue(child!!.localTools.isEmpty())
     }
@@ -119,7 +141,10 @@ class SubAgentSurfaceTest {
     @Test
     fun `a per-tool opt-out alone is enough to give the child its own surface`() {
         val parent = parent()
-        val child = SubAgentSurface.resolveChildAssistant(parent, profile(disabledLocalTools = setOf("show_toast")))
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent,
+            definition(disabledLocalTools = setOf("show_toast")),
+        )
         assertNotNull(child)
         assertEquals(setOf("show_toast"), child!!.disabledLocalTools)
         assertEquals(parent.localTools, child.localTools)
@@ -129,7 +154,10 @@ class SubAgentSurfaceTest {
     @Test
     fun `an mcp server choice alone is enough to give the child its own surface`() {
         val parent = parent()
-        val child = SubAgentSurface.resolveChildAssistant(parent, profile(mcpServers = setOf(mcpA, mcpB)))
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent,
+            definition(mcpServers = setOf(mcpA.toString(), mcpB.toString())),
+        )
         assertNotNull(child)
         assertEquals(setOf(mcpA, mcpB), child!!.mcpServers)
         assertEquals(parent.localTools, child.localTools)
@@ -137,13 +165,13 @@ class SubAgentSurfaceTest {
     }
 
     @Test
-    fun `all three fields together are taken from the profile`() {
+    fun `all three tool fields together are taken from the expert`() {
         val child = SubAgentSurface.resolveChildAssistant(
             parent(),
-            profile(
+            definition(
                 localTools = listOf(LocalToolOption.Workflows),
                 disabledLocalTools = setOf("read_sensor", "show_toast"),
-                mcpServers = setOf(mcpB),
+                mcpServers = setOf(mcpB.toString()),
             ),
         )
         assertNotNull(child)
@@ -153,21 +181,66 @@ class SubAgentSurfaceTest {
     }
 
     @Test
+    fun `a skill set alone gives the child its own surface and replaces the parent's skills`() {
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent(),
+            definition(skills = setOf("skill-y")),
+        )
+        assertNotNull(child)
+        assertEquals(setOf("skill-y"), child!!.enabledSkills)
+        // The skills-only expert did not touch the tool face, so that still comes from the parent.
+        assertEquals(parent().localTools, child.localTools)
+    }
+
+    @Test
+    fun `a slug alone gives the child its own surface and a namespace-scoped cold memory dir`() {
+        val child = SubAgentSurface.resolveChildAssistant(parent(), definition(slug = "deep-research"))
+        assertNotNull(child)
+        assertEquals("agents/deep-research/memory", child!!.coldMemoryDir)
+        // The namespace does NOT change the workspace - it is a subdirectory of the parent's.
+        assertEquals(parent().workspaceId, child.workspaceId)
+    }
+
+    @Test
+    fun `an unusable slug does not invent a surface`() {
+        // A slug that normalises to nothing (e.g. an all-CJK name) must not silently claim a
+        // namespace; the definition then has no surface and inherits verbatim.
+        val noNamespace = definition().copy(slug = "  ")
+        assertFalse(SubAgentSurface.hasOwnSurface(noNamespace))
+        assertNull(SubAgentSurface.resolveChildAssistant(parent(), noNamespace))
+    }
+
+    @Test
     fun `the child can carry a tool group the parent does not have`() {
         // The whole point of P2-04: a specialist is not limited to the parent's surface.
         val parent = parent().copy(localTools = listOf(LocalToolOption.TimeInfo))
-        val child = SubAgentSurface.resolveChildAssistant(parent, profile(localTools = listOf(LocalToolOption.SubAgents)))
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent,
+            definition(localTools = listOf(LocalToolOption.SubAgents)),
+        )
         assertEquals(listOf(LocalToolOption.SubAgents), child!!.localTools)
         assertFalse(child.localTools.containsAll(parent.localTools))
     }
 
     @Test
+    fun `a malformed mcp server id is dropped rather than failing the surface`() {
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent(),
+            definition(mcpServers = setOf("not-a-uuid", mcpB.toString())),
+        )
+        assertNotNull(child)
+        assertEquals(setOf(mcpB), child!!.mcpServers)
+    }
+
+    @Test
     fun `hasOwnSurface is true for each field and false for none`() {
         assertFalse(SubAgentSurface.hasOwnSurface(null))
-        assertFalse(SubAgentSurface.hasOwnSurface(SubAgentProfile(name = "a")))
-        assertTrue(SubAgentSurface.hasOwnSurface(profile(localTools = emptyList())))
-        assertTrue(SubAgentSurface.hasOwnSurface(profile(disabledLocalTools = emptySet())))
-        assertTrue(SubAgentSurface.hasOwnSurface(profile(mcpServers = emptySet())))
+        assertFalse(SubAgentSurface.hasOwnSurface(definition()))
+        assertTrue(SubAgentSurface.hasOwnSurface(definition(localTools = emptyList())))
+        assertTrue(SubAgentSurface.hasOwnSurface(definition(disabledLocalTools = emptySet())))
+        assertTrue(SubAgentSurface.hasOwnSurface(definition(mcpServers = emptySet())))
+        assertTrue(SubAgentSurface.hasOwnSurface(definition(skills = emptySet())))
+        assertTrue(SubAgentSurface.hasOwnSurface(definition(slug = "research")))
     }
 
     // ---- freeze registry --------------------------------------------------------------
@@ -251,16 +324,32 @@ class SubAgentSurfaceTest {
 
     @Test
     fun `the floor strips a denied tool the child's own surface asked for`() {
-        // P2-04's core safety claim: a profile that enables an approval-required group gets a
+        // P2-04's core safety claim: an expert that enables an approval-required group gets a
         // surface, but the floor still removes every tool nobody may run unattended.
         val conversation = Uuid.random()
         val child = SubAgentSurface.resolveChildAssistant(
             parent(),
-            profile(localTools = listOf(LocalToolOption.TimeInfo, LocalToolOption.Battery)),
+            definition(localTools = listOf(LocalToolOption.TimeInfo, LocalToolOption.Battery)),
         )
         SubAgentSurface.freeze(conversation, assistant = child)
         val tools = listOf(tool("get_battery_status"), tool("eval_javascript"), tool("record_audio"), tool("ask_user"))
         assertEquals(listOf("get_battery_status"), namesOf(SubAgentSurface.apply(conversation, tools)))
+    }
+
+    @Test
+    fun `the floor also strips the expert-library writers from a child surface`() {
+        // P2-06b: subagent_create/update/delete start with `subagent_`, so the prefix rule keeps
+        // them off every derived child surface even though they are registered on the parent.
+        val conversation = Uuid.random()
+        SubAgentSurface.freeze(conversation, assistant = parent())
+        val tools = listOf(
+            tool("subagent_create"),
+            tool("subagent_update"),
+            tool("subagent_delete"),
+            tool("subagent_list"),
+            tool("search_web"),
+        )
+        assertEquals(listOf("search_web"), namesOf(SubAgentSurface.apply(conversation, tools)))
     }
 
     @Test
@@ -278,7 +367,10 @@ class SubAgentSurfaceTest {
     @Test
     fun `assistantFor hands back exactly the frozen surface assistant`() {
         val conversation = Uuid.random()
-        val child = SubAgentSurface.resolveChildAssistant(parent(), profile(mcpServers = setOf(mcpB)))
+        val child = SubAgentSurface.resolveChildAssistant(
+            parent(),
+            definition(mcpServers = setOf(mcpB.toString())),
+        )
         assertNotNull(child)
         SubAgentSurface.freeze(conversation, assistant = child)
         assertSame(child, SubAgentSurface.assistantFor(conversation))
@@ -319,52 +411,5 @@ class SubAgentSurfaceTest {
         SubAgentSurface.freeze(conversation)
         assertNull(SubAgentSurface.frozenFor(conversation)?.requested)
         assertNull(SubAgentSurface.assistantFor(conversation))
-    }
-
-    // ---- persistence ------------------------------------------------------------------
-
-    @Test
-    fun `a profile with no surface does not grow the persisted json`() {
-        val encoded = JsonInstant.encodeToString(
-            SubAgentProfile.serializer(),
-            SubAgentProfile(id = Uuid.parse("00000000-0000-0000-0000-000000000001"), name = "a"),
-        )
-        // @EncodeDefault(NEVER): the three new fields must be absent while unset, so an existing
-        // settings blob re-encodes byte-for-byte identically.
-        assertFalse(encoded, encoded.contains("localTools"))
-        assertFalse(encoded, encoded.contains("disabledLocalTools"))
-        assertFalse(encoded, encoded.contains("mcpServers"))
-    }
-
-    @Test
-    fun `the three surface fields survive a json round trip`() {
-        val original = SubAgentProfile(
-            id = Uuid.parse("00000000-0000-0000-0000-000000000002"),
-            name = "specialist",
-            localTools = listOf(LocalToolOption.TimeInfo, LocalToolOption.SubAgents),
-            disabledLocalTools = setOf("show_toast"),
-            mcpServers = setOf(mcpA, mcpB),
-        )
-        val restored = JsonInstant.decodeFromString(
-            SubAgentProfile.serializer(),
-            JsonInstant.encodeToString(SubAgentProfile.serializer(), original),
-        )
-        assertEquals(original, restored)
-    }
-
-    @Test
-    fun `a pre-p2-04 profile decodes with every surface field unset`() {
-        // Exactly the shape the store wrote before this card (new fields absent).
-        val legacy = """
-            {"id":"00000000-0000-0000-0000-000000000003","name":"legacy","description":"",
-             "systemPrompt":"be nice","modelId":null,"enabled":true}
-        """.trimIndent()
-        val decoded = JsonInstant.decodeFromString(SubAgentProfile.serializer(), legacy)
-        assertEquals("legacy", decoded.name)
-        assertNull(decoded.localTools)
-        assertNull(decoded.disabledLocalTools)
-        assertNull(decoded.mcpServers)
-        // …and it inherits, i.e. the pre-P2-04 behaviour.
-        assertNull(SubAgentSurface.resolveChildAssistant(parent(), decoded))
     }
 }

@@ -68,6 +68,17 @@ class AgentDefinitionRepository(
 
     suspend fun byId(id: String): AgentDefinition? = dao.byId(id)
 
+    /**
+     * First case-insensitive name match, or null. Backs the roster-write tools, which accept
+     * "an id or a name" for update / delete because "delete the Researcher" is the natural thing
+     * for a model to say. Names cannot be duplicated through the tools — create and update both
+     * reject a case-insensitive clash — so the first row the query returns is deterministic;
+     * a collision introduced outside the tools resolves to `unknown_expert`-or-proceed, never to
+     * a dispatch target, because dispatch goes through [resolveByName], which refuses ambiguity
+     * loudly.
+     */
+    suspend fun byName(name: String): AgentDefinition? = dao.byName(name).firstOrNull()
+
     /** Fresh read + resolve in one step, so a dispatch never uses a stale name list. */
     suspend fun resolveByName(name: String?): AgentDefinitionResolver.Result =
         AgentDefinitionResolver.resolve(name, refresh())

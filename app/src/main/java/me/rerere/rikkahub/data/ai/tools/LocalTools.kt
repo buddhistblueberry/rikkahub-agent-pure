@@ -348,6 +348,10 @@ class LocalTools(
     private val externalAutomationConfig: me.rerere.rikkahub.automation.ExternalAutomationConfig,
     private val gitHubReleaseChecker: me.rerere.rikkahub.reliability.GitHubReleaseChecker,
     private val bugReportBuilder: me.rerere.rikkahub.reliability.BugReportBuilder,
+    // P2-06b — the expert library. Read as a blocking snapshot at tool-construction time (this
+    // factory is not suspend) to list the experts `subagent_dispatch` may name, to feed
+    // `subagent_list kind=experts`, and to back the three roster-write tools.
+    private val agentDefinitionRepository: me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository,
     private val subAgentEngine: me.rerere.rikkahub.subagent.SubAgentEngine,
     private val subAgentRegistry: me.rerere.rikkahub.subagent.SubAgentRegistry,
     private val conversationRepo: me.rerere.rikkahub.data.repository.ConversationRepository,
@@ -958,15 +962,43 @@ class LocalTools(
             // Pass the caller context so the recursion guard inside SubAgentEngine.dispatch
             // can fire — the dispatch tool itself can't read its own coroutine context, but
             // ChatService / cron / workflow / external-automation know who's calling at the
-            // moment they construct the tool list.
+            // moment they construct the tool list. The expert list comes from the library's
+            // blocking snapshot (this factory is not suspend), so the `agent` parameter and the
+            // names it advertises always describe the current roster.
+            val definitions = agentDefinitionRepository.snapshotBlocking()
             tools.add(
                 me.rerere.rikkahub.subagent.subagentDispatchTool(
                     subAgentEngine,
                     invocationContext,
-                    settingsStore.settingsFlow.value.subAgents,
+                    definitions,
                 )
             )
-            tools.add(me.rerere.rikkahub.subagent.subagentListTool(subAgentRegistry))
+            tools.add(me.rerere.rikkahub.subagent.subagentListTool(subAgentRegistry, definitions))
+            // P2-06b — the roster write tools. Registered alongside the reads; each one prompts
+            // per call and refuses outright in a headless conversation.
+            tools.add(
+                me.rerere.rikkahub.subagent.subagentCreateTool(
+                    agentDefinitionRepository,
+                    agentRunRepository,
+                    settingsStore,
+                    invocationContext,
+                )
+            )
+            tools.add(
+                me.rerere.rikkahub.subagent.subagentUpdateTool(
+                    agentDefinitionRepository,
+                    agentRunRepository,
+                    settingsStore,
+                    invocationContext,
+                )
+            )
+            tools.add(
+                me.rerere.rikkahub.subagent.subagentDeleteTool(
+                    agentDefinitionRepository,
+                    agentRunRepository,
+                    invocationContext,
+                )
+            )
             tools.add(me.rerere.rikkahub.subagent.subagentGetTool(subAgentRegistry))
             tools.add(me.rerere.rikkahub.subagent.subagentCancelTool(subAgentRegistry))
         }
