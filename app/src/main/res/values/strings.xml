@@ -841,6 +841,16 @@
   <string name="setting_page_assistant">Assistant</string>
   <string name="setting_page_assistant_desc">Set up personalized assistants (agents)</string>
   <string name="setting_page_built_in_tools">Built-in Tools</string>
+  <string name="setting_provider_page_pricing">价格</string>
+  <string name="setting_provider_page_pricing_desc">每百万 tokens 的美元价格，用于账本计费。缓存读/写留空时回退到输入价。</string>
+  <string name="setting_provider_page_pricing_input">输入（每百万）</string>
+  <string name="setting_provider_page_pricing_output">输出（每百万）</string>
+  <string name="setting_provider_page_pricing_cache_hit">缓存读取（每百万）</string>
+  <string name="setting_provider_page_pricing_cache_write">缓存写入（每百万）</string>
+  <string name="setting_provider_page_pricing_off_peak">空闲时段折扣价</string>
+  <string name="setting_provider_page_pricing_windows">高峰时段（当地时钟）</string>
+  <string name="setting_provider_page_pricing_unpriced">未定价：账本仍记录 tokens，但不为该模型记成本。</string>
+  <string name="setting_provider_page_pricing_clear">清除价格</string>
   <string name="setting_page_built_in_tools_desc">Select built-in tools supported by the model. These tools are directly provided by the API without requiring app support. Currently, this feature is only supported by the official Gemini API.</string>
   <string name="setting_page_built_in_tools_image_generation">Image Generation</string>
   <string name="setting_page_built_in_tools_image_generation_desc">Enable image generation capability</string>

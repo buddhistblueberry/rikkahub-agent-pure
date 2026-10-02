@@ -136,6 +136,7 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.ui.pages.setting.components.ModelPricingPage
 
 @Composable
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
@@ -542,7 +543,7 @@ private fun ModelSettingsForm(
     isEdit: Boolean,
     parentProvider: ProviderSetting? = null
 ) {
-    val pagerState = rememberPagerState { 3 }
+    val pagerState = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
 
     fun setModelId(id: String) {
@@ -591,6 +592,15 @@ private fun ModelSettingsForm(
                     }
                 },
                 text = { Text(stringResource(R.string.setting_page_built_in_tools)) }
+            )
+            Tab(
+                selected = pagerState.currentPage == 3,
+                onClick = {
+                    scope.launch {
+                        pagerState.animateScrollToPage(3)
+                    }
+                },
+                text = { Text(stringResource(R.string.setting_provider_page_pricing)) }
             )
         }
 
@@ -709,6 +719,14 @@ private fun ModelSettingsForm(
                         onUpdateTools = { tools ->
                             onModelChange(model.copy(tools = tools))
                         }
+                    )
+                }
+
+                3 -> {
+                    // 价格页面
+                    ModelPricingPage(
+                        model = model,
+                        onModelChange = onModelChange
                     )
                 }
             }
