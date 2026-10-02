@@ -178,15 +178,19 @@ internal class ClaudeStreamDecoder : StreamChunkDecoder {
             ?: bodyJson["message"]?.jsonObject?.get("usage")?.jsonObject
             ?: return null
         val inputTokens = usageJson["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+        // jsonPrimitiveOrNull, not jsonPrimitive: an explicit null in the payload used to throw.
+        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull
+        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull
         val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
+        val promptTokens = inputTokens + (cachedInputTokens ?: 0) + (cachedCreationTokens ?: 0)
         return TokenUsage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = promptTokens + completionTokens,
-            cachedTokens = cachedInputTokens,
+            cachedTokens = cachedInputTokens ?: 0,
+            // P2-11b: Anthropic reports cache reads and cache writes separately.
+            cachedTokensReported = cachedInputTokens != null,
+            cacheWriteTokens = cachedCreationTokens,
         )
     }
 

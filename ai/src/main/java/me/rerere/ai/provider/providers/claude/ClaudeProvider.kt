@@ -241,7 +241,19 @@ private fun TokenUsage?.sum(other: TokenUsage?): TokenUsage? {
         completionTokens = completionTokens + other.completionTokens,
         cachedTokens = cachedTokens + other.cachedTokens,
         totalTokens = totalTokens + other.totalTokens,
+        // P2-11b: a summation must not silently drop the fields it does not know about.
+        cost = cost ?: other.cost,
+        cachedTokensReported = cachedTokensReported || other.cachedTokensReported,
+        cacheMissTokens = addOptional(cacheMissTokens, other.cacheMissTokens),
+        reasoningTokens = addOptional(reasoningTokens, other.reasoningTokens),
+        cacheWriteTokens = addOptional(cacheWriteTokens, other.cacheWriteTokens),
     )
+}
+
+private fun addOptional(left: Int?, right: Int?): Int? = when {
+    left == null -> right
+    right == null -> left
+    else -> left + right
 }
 
 // Minimax's /anthropic/v1/models returns `{"data": null}` (and the OpenAI-shape
@@ -954,15 +966,19 @@ class ClaudeProvider(private val client: OkHttpClient, context: Context? = null)
             ?: bodyJson["message"]?.jsonObject?.get("usage")?.jsonObject
             ?: return null
         val inputTokens = usageJson["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val cachedInputTokens = usageJson["cache_read_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull
+        val cachedCreationTokens = usageJson["cache_creation_input_tokens"]?.jsonPrimitiveOrNull?.intOrNull
         val completionTokens = usageJson["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-        val promptTokens = inputTokens + cachedInputTokens + cachedCreationTokens
+        val promptTokens = inputTokens + (cachedInputTokens ?: 0) + (cachedCreationTokens ?: 0)
         return TokenUsage(
             promptTokens = promptTokens,
             completionTokens = completionTokens,
             totalTokens = promptTokens + completionTokens,
-            cachedTokens = cachedInputTokens,
+            cachedTokens = cachedInputTokens ?: 0,
+            // P2-11b: Anthropic reports cache reads and cache writes separately. Writes are
+            // billed at their own rate and used to be parsed and then thrown away.
+            cachedTokensReported = cachedInputTokens != null,
+            cacheWriteTokens = cachedCreationTokens,
         )
     }
 }

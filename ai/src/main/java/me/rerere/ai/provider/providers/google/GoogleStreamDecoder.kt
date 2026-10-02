@@ -159,15 +159,18 @@ internal class GoogleStreamDecoder(
     private fun parseUsage(usage: JsonObject?): TokenUsage? {
         if (usage == null) return null
         val promptTokens = usage["promptTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val thoughtTokens = usage["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val cachedTokens = usage["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val thoughtTokens = usage["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull
+        val cachedTokens = usage["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull
         val candidateTokens = usage["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         val totalTokens = usage["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         return TokenUsage(
             promptTokens = promptTokens,
-            completionTokens = candidateTokens + thoughtTokens,
+            completionTokens = candidateTokens + (thoughtTokens ?: 0),
             totalTokens = totalTokens,
-            cachedTokens = cachedTokens,
+            cachedTokens = cachedTokens ?: 0,
+            // P2-11b: presence-based provenance, so an absent field is not read as a zero.
+            cachedTokensReported = cachedTokens != null,
+            reasoningTokens = thoughtTokens,
         )
     }
 

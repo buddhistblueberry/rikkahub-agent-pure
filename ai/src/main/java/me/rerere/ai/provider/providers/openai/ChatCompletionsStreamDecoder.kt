@@ -173,15 +173,21 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
 
     private fun parseUsage(usage: JsonObject?): TokenUsage? {
         if (usage == null) return null
+        // P2-11b: keep the hit count nullable so that a reported zero stays distinguishable
+        // from a provider that does not report cache fields at all.
+        val cacheHitTokens = usage["prompt_tokens_details"]?.jsonObjectOrNull
+            ?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: usage["cached_tokens"]?.jsonPrimitive?.intOrNull
+            ?: usage["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
         return TokenUsage(
             promptTokens = usage["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = usage["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = usage["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            cachedTokens = usage["prompt_tokens_details"]?.jsonObjectOrNull
-                ?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: usage["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: usage["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-                ?: 0,
+            cachedTokens = cacheHitTokens ?: 0,
+            cachedTokensReported = cacheHitTokens != null,
+            cacheMissTokens = usage["prompt_cache_miss_tokens"]?.jsonPrimitive?.intOrNull,
+            reasoningTokens = usage["completion_tokens_details"]?.jsonObjectOrNull
+                ?.get("reasoning_tokens")?.jsonPrimitive?.intOrNull,
         )
     }
 

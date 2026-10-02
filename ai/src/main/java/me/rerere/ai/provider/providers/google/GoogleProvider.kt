@@ -1001,15 +1001,18 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
             return null
         }
         val promptTokens = jsonObject["promptTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val thoughtTokens = jsonObject["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
-        val cachedTokens = jsonObject["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
+        val thoughtTokens = jsonObject["thoughtsTokenCount"]?.jsonPrimitiveOrNull?.intOrNull
+        val cachedTokens = jsonObject["cachedContentTokenCount"]?.jsonPrimitiveOrNull?.intOrNull
         val candidatesTokens = jsonObject["candidatesTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         val totalTokens = jsonObject["totalTokenCount"]?.jsonPrimitiveOrNull?.intOrNull ?: 0
         return TokenUsage(
             promptTokens = promptTokens,
-            completionTokens = candidatesTokens + thoughtTokens,
+            completionTokens = candidatesTokens + (thoughtTokens ?: 0),
             totalTokens = totalTokens,
-            cachedTokens = cachedTokens
+            cachedTokens = cachedTokens ?: 0,
+            // P2-11b: presence-based provenance, so an absent field is not read as a zero.
+            cachedTokensReported = cachedTokens != null,
+            reasoningTokens = thoughtTokens
         )
     }
 
