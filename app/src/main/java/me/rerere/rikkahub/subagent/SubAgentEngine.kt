@@ -18,7 +18,7 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
@@ -356,7 +356,7 @@ class SubAgentEngine(
     private suspend fun currentAssistantCap(parentAssistantId: String): Int {
         val asstUuid = runCatching { Uuid.parse(parentAssistantId) }.getOrNull() ?: return SubAgentDefaults.MAX_PER_ASSISTANT_CAP
         val settings = settingsStore.settingsFlow.first()
-        val asst = settings.assistants.firstOrNull { it.id == asstUuid }
+        val asst = AssistantResolver.byId(settings, asstUuid)
             ?: return SubAgentDefaults.MAX_PER_ASSISTANT_CAP
         return asst.maxConcurrentSubAgents.coerceIn(
             SubAgentDefaults.MIN_PER_ASSISTANT_CAP,
@@ -385,7 +385,7 @@ class SubAgentEngine(
         // disagree — and the tool needs it at tool-CONSTRUCTION time to gate whether the `tools`
         // parameter is even described in the schema.
         val freezeToolSurface =
-            settings.getAssistantById(parentAsstUuid)?.enableSubAgentToolSurface == true
+            AssistantResolver.byId(settings, parentAsstUuid)?.enableSubAgentToolSurface == true
         // #36: resolve `agent` before `model_id` so model_id's own resolution can
         // fall back to the profile's model when model_id is absent - `model_id` still wins
         // when both are given (see SubAgentTools' parameter description).

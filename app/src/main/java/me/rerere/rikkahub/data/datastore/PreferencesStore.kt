@@ -30,6 +30,7 @@ import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.gemini.DENIED_MODEL_IDS
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_COMPRESS_PROMPT
@@ -1087,17 +1088,18 @@ fun Settings.getCompactionContextLength(model: Model?): Int? =
         ?.toInt()
         ?: model?.contextLength
 
-fun Settings.getCurrentAssistant(): Assistant {
-    return this.assistants.find { it.id == assistantId } ?: this.assistants.first()
-}
+/**
+ * P2-01 — every assistant lookup funnels through [AssistantResolver]; these extensions stay
+ * for source compatibility but no longer carry logic of their own.
+ */
+fun Settings.getCurrentAssistant(): Assistant =
+    AssistantResolver.current(this.assistants, assistantId)
 
-fun Settings.getAssistantById(id: Uuid): Assistant? {
-    return this.assistants.find { it.id == id }
-}
+fun Settings.getAssistantById(id: Uuid): Assistant? =
+    AssistantResolver.byId(this.assistants, id)
 
-fun Settings.findAssistantById(id: Uuid): Assistant? {
-    return this.assistants.firstOrNull { it.id == id }
-}
+fun Settings.findAssistantById(id: Uuid): Assistant? =
+    AssistantResolver.byId(this.assistants, id)
 
 fun Settings.getQuickMessagesOfAssistant(assistant: Assistant) =
     quickMessages.filter { it.id in assistant.quickMessageIds }

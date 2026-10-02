@@ -10,6 +10,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.ai.AssistantResolver
+import me.rerere.rikkahub.data.ai.ToolSurfaceResolver
 import me.rerere.rikkahub.data.ai.tools.HeadlessToolApprovalPolicy
 import me.rerere.rikkahub.data.ai.tools.HardlineCommandGuard
 import me.rerere.rikkahub.data.ai.tools.LocalTools
@@ -198,36 +200,24 @@ class WorkflowEngine(
         // fall back to "any assistant with Workflows toggle on" but log loudly — the user's
         // intent might not match what we run.
         val settings = settingsStore.settingsFlow.first()
-        val authoringAssistant = run {
-            val storedId = def.authoringAssistantId
-            val byId = if (storedId != null) {
-                settings.assistants.firstOrNull { it.id.toString() == storedId }
-            } else null
-            if (byId != null) {
-                byId
-            } else {
-                if (storedId != null) {
-                    Log.w(TAG, "fire: authoring assistant $storedId for workflow $workflowId no longer exists; falling back to first-with-Workflows")
-                }
-                settings.assistants.firstOrNull { asst ->
-                    asst.localTools.any { it is me.rerere.rikkahub.data.ai.tools.LocalToolOption.Workflows }
-                }
-            }
-        }
-        if (authoringAssistant == null) {
+        val resolution = AssistantResolver.forWorkflow(settings, def.authoringAssistantId)
+        if (resolution == null) {
             return persistAndReturn(workflowId, firedAtMs, started, WorkflowRunStatus.FAILED,
                 "no_workflows_assistant", "", ledgerId)
         }
+        if (resolution.source == AssistantResolver.Source.WORKFLOW_TOGGLE_FALLBACK &&
+            def.authoringAssistantId != null
+        ) {
+            Log.w(TAG, "fire: authoring assistant ${def.authoringAssistantId} for workflow $workflowId no longer exists; falling back to first-with-Workflows")
+        }
+        val authoringAssistant = resolution.assistant
         // Headless context — sub-agent recursion guard fires from workflow-action
         // dispatch so a workflow's actions can't spawn a sub-agent that re-fires another
         // workflow_run that re-spawns ad infinitum.
-        val tools = localTools.getTools(
-            authoringAssistant.localTools,
-            me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
-                callerAssistantId = authoringAssistant.id.toString(),
-                callerConversationId = null,  // headless workflow fire — no conv
-                isHeadless = true,
-            ),
+        val tools = ToolSurfaceResolver.resolve(
+            localTools = localTools,
+            assistant = authoringAssistant,
+            context = ToolSurfaceResolver.headlessContext(authoringAssistant.id),
         )
 
         // Execute the action sequence. ActionRunner enforces per-action timeout + HARDLINE.

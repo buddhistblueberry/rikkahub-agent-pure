@@ -42,7 +42,6 @@ import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
-import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderManager
@@ -69,6 +68,7 @@ import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.utils.cancelNotification
 import me.rerere.rikkahub.utils.sendNotification
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationLoop
 import me.rerere.rikkahub.data.ai.ContextBudgetPlanner
@@ -76,6 +76,7 @@ import me.rerere.rikkahub.data.ai.ContextCompactionPlanner
 import me.rerere.rikkahub.data.ai.ContextCompactionPresentation
 import me.rerere.rikkahub.data.ai.CompactedMessageView
 import me.rerere.rikkahub.data.ai.ContextCompactionView
+import me.rerere.rikkahub.data.ai.ToolSurfaceResolver
 import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.TOOL_CATALOG_MAX_SUMMARY_CHARS
@@ -118,7 +119,6 @@ import me.rerere.rikkahub.data.datastore.AutoCompactionThresholdMode
 import me.rerere.rikkahub.data.datastore.DEFAULT_AUTO_MODEL_ID
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getCompactionContextLength
 import me.rerere.rikkahub.data.datastore.getContextCompactionTargetTokens
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
@@ -971,8 +971,11 @@ class ChatService(
                 // global current-assistant pointer — otherwise switching assistants mid-
                 // generation makes one conversation preprocess input with another's config.
                 val settings = settingsStore.settingsFlow.first()
-                val assistant = settings.getAssistantById(currentConversation.assistantId)
-                    ?: settings.getCurrentAssistant()
+                val assistant = AssistantResolver.forConversation(
+                    assistants = settings.assistants,
+                    conversationAssistantId = currentConversation.assistantId,
+                    currentAssistantId = settings.assistantId,
+                ).assistant
                 val processedContent = preprocessUserInputParts(content, assistant)
 
                 // 添加消息到列表
@@ -1064,17 +1067,10 @@ class ChatService(
         // common no-match path stays at a single regex scan + an early return.
         // Fast-path is gated on !isHeadless above; pass the caller context so any tools the
         // router fires inherit the right assistant id (workflows / sub-agents / etc).
-        val tools = localTools.getTools(
-            assistant.localTools,
-            me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
-                callerAssistantId = assistant.id.toString(),
-                callerConversationId = conversationId.toString(),
-                isHeadless = false,  // gated above
-                // T-09 / (8) - keep the fast-path lookup honest: if this ever runs for a
-                // conversation whose surface is frozen, it must resolve the same tools the
-                // model was offered.
-                subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
-            ),
+        val tools = ToolSurfaceResolver.resolve(
+            localTools = localTools,
+            assistant = assistant,
+            context = ToolSurfaceResolver.fastPathContext(assistant, conversationId),
         )
         val tool = tools.firstOrNull { it.name == match.toolName } ?: run {
             android.util.Log.d("FastPathRouter", "matched intent=${match.intent} but tool=${match.toolName} not registered for assistant; falling through")
@@ -1360,7 +1356,7 @@ class ChatService(
         if (isWorkspaceToolName(toolName)) {
             val conversation = conversationRepo.getConversationById(conversationId)
             val assistant = conversation?.let {
-                settingsStore.settingsFlow.first().getAssistantById(it.assistantId)
+                AssistantResolver.byId(settingsStore.settingsFlow.first(), it.assistantId)
             }
             val workspaceId = assistant?.workspaceId?.toString()
             val granted = workspaceId != null &&
@@ -1456,7 +1452,7 @@ class ChatService(
                 }
 
                 val settings = settingsStore.settingsFlow.first()
-                val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+                val assistant = AssistantResolver.forConversation(settings, conversation.assistantId).assistant
                 val model = settings.findModelById(
                     conversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
                 ) ?: return RerunToolResult.Failure("no chat model selected")
@@ -1548,20 +1544,21 @@ class ChatService(
         if (assistant.enableWebSearch) {
             addAll(createSearchTools(settings))
         }
-        val invocationCtx = me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
-            callerAssistantId = assistant.id.toString(),
-            callerConversationId = conversationId.toString(),
-            isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId),
-            modelCanSeeImages = Modality.IMAGE in model.inputModalities,
-            // T-04 / (4) - the rebuild path (regenerate) must offer the SAME tool surface as
-            // the first pass, otherwise the subagent_dispatch definition would silently lose
-            // its `include_recent_turns` parameter on a re-run.
-            subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
-            // T-09 / (8) - same reasoning for the freeze: a regenerate on a sub-agent
-            // conversation must see the frozen surface, not the assistant's full one.
-            subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
+        // T-04 / (4) + T-09 / (8) - the rebuild path (regenerate) must offer the SAME tool
+        // surface as the first pass, otherwise the subagent_dispatch definition would
+        // silently lose its `include_recent_turns` / `tools` parameters on a re-run.
+        addAll(
+            ToolSurfaceResolver.resolve(
+                localTools = localTools,
+                assistant = assistant,
+                context = ToolSurfaceResolver.chatContext(
+                    assistant = assistant,
+                    conversationId = conversationId,
+                    model = model,
+                    isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId),
+                ),
+            )
         )
-        addAll(localTools.getTools(assistant.localTools, invocationCtx))
         addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
         // T-06 / (7) - cold memory (Markdown knowledge base). Same on both build paths so a
         // regenerate sees the surface the first pass had. Off unless enabled AND configured.
@@ -1608,8 +1605,11 @@ class ChatService(
         // this generation was queued (multi-assistant crosstalk). Everything downstream
         // (model, memories, tools, sender name) keys off this resolved assistant.
         val initialConversation = getConversationFlow(conversationId).value
-        val assistant = settings.getAssistantById(initialConversation.assistantId)
-            ?: settings.getCurrentAssistant()
+        val assistant = AssistantResolver.forConversation(
+            assistants = settings.assistants,
+            conversationAssistantId = initialConversation.assistantId,
+            currentAssistantId = settings.assistantId,
+        ).assistant
         val model = settings.findModelById(
             initialConversation.chatModelId ?: assistant.chatModelId ?: settings.chatModelId
         )
@@ -1833,27 +1833,23 @@ class ChatService(
                     if (useExternalWebSearch) {
                         addAll(createSearchTools(settings))
                     }
-                    // Pass the caller context so context-aware tools (subagent_dispatch
-                    // recursion guard, workflow_create authoring-id) can read the
-                    // calling conversation + assistant. isHeadless is read from
-                    // HeadlessConversations — true iff this is a cron / sub-agent /
-                    // workflow / external-automation flow.
-                    val invocationCtx = me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
-                        callerAssistantId = assistant.id.toString(),
-                        callerConversationId = conversationId.toString(),
-                        isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations
-                            .isHeadless(conversationId),
-                        // show_image keys its result envelope off this — a text-only model
-                        // gets told it cannot see the image instead of confabulating one.
-                        modelCanSeeImages = Modality.IMAGE in model.inputModalities,
-                        // T-04 / (4) - gates subagent_dispatch's `include_recent_turns`
-                        // parameter (schema AND behaviour).
-                        subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
-                        // T-09 / (8) - gates subagent_dispatch's `tools` parameter (schema AND
-                        // behaviour) and lets the engine know a frozen surface is wanted.
-                        subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
+                    // The caller context tells context-aware tools (subagent_dispatch
+                    // recursion guard, workflow_create authoring-id) who is calling.
+                    // isHeadless is read from HeadlessConversations — true iff this is a
+                    // cron / sub-agent / workflow / external-automation flow.
+                    addAll(
+                        ToolSurfaceResolver.resolve(
+                            localTools = localTools,
+                            assistant = assistant,
+                            context = ToolSurfaceResolver.chatContext(
+                                assistant = assistant,
+                                conversationId = conversationId,
+                                model = model,
+                                isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations
+                                    .isHeadless(conversationId),
+                            ),
+                        )
                     )
-                    addAll(localTools.getTools(assistant.localTools, invocationCtx))
                     addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
                     // T-06 / (7) - cold memory, mirroring the regenerate path above.
                     addAll(createColdMemoryToolsIfConfigured(assistant))
@@ -3508,8 +3504,11 @@ class ChatService(
 
         val currentConversation = getConversationFlow(conversationId).value
         val settings = settingsStore.settingsFlow.first()
-        val assistant = settings.getAssistantById(currentConversation.assistantId)
-            ?: settings.getCurrentAssistant()
+        val assistant = AssistantResolver.forConversation(
+            assistants = settings.assistants,
+            conversationAssistantId = currentConversation.assistantId,
+            currentAssistantId = settings.assistantId,
+        ).assistant
         val processedParts = preprocessUserInputParts(parts, assistant)
         var edited = false
 
