@@ -2221,4 +2221,14 @@
   <string name="workspace_detail_compatibility_mode">相容模式</string>
   <string name="workspace_detail_compatibility_mode_desc">如果終端機無法啟動，請嘗試啟用此選項。這可能會降低效能。適用於新的終端機分頁和後續指令。</string>
   <string name="workspace_detail_settings_save_failed">儲存設定失敗</string>
+  <string name="assistant_page_orchestration_budget">編排 token 上限</string>
+  <string name="assistant_page_orchestration_budget_desc">單次編排（本回合父對話及其派發的全部子 agent）可消耗的輸入 + 輸出 token 上限。留空表示不限。專家可用自己的預算覆蓋此處。</string>
+  <string name="assistant_page_orchestration_budget_no_limit">不限</string>
+  <string name="assistant_page_orchestration_budget_limit">上限：每次編排 %1$s token</string>
+  <string name="assistant_page_orchestration_budget_unlimited">不限（未設預算）</string>
+  <string name="assistant_page_max_concurrent_subagents">並行子 agent 數</string>
+  <string name="assistant_page_max_concurrent_subagents_desc">本助手同一時刻最多在跑的子 agent 數量。</string>
+  <string name="assistant_page_max_concurrent_subagents_hint">取值 %1$d 到 %2$d。</string>
+  <string name="setting_sub_agents_page_token_budget">編排 token 上限</string>
+  <string name="setting_sub_agents_page_token_budget_hint">該專家編排樹的 token 上限。留空則繼承父助手的預算；兩者都為空表示不限。</string>
 </resources>

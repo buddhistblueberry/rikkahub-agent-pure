@@ -44,6 +44,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.ai.tools.ToolSurfaceMode
+import me.rerere.rikkahub.subagent.SubAgentDefaults
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -773,6 +774,128 @@ internal fun AssistantBasicContent(
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.75f),
                     )
                 }
+            }
+        }
+
+        Card(
+            colors = CustomColors.cardColorsOnSurfaceContainer
+        ) {
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_orchestration_budget))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_orchestration_budget_desc))
+                }
+            ) {
+                OutlinedTextField(
+                    value = assistant.orchestrationTokenBudget?.toString() ?: "",
+                    onValueChange = { text ->
+                        val tokens = if (text.isBlank()) {
+                            null
+                        } else {
+                            text.toLongOrNull()?.takeIf { it > 0 }
+                        }
+                        onUpdate(
+                            assistant.copy(
+                                orchestrationTokenBudget = tokens
+                            )
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(stringResource(R.string.assistant_page_orchestration_budget_no_limit))
+                    },
+                    supportingText = {
+                        val budget = assistant.orchestrationTokenBudget
+                        if (budget != null) {
+                            Text(
+                                stringResource(
+                                    R.string.assistant_page_orchestration_budget_limit,
+                                    budget.toString()
+                                )
+                            )
+                        } else {
+                            Text(stringResource(R.string.assistant_page_orchestration_budget_unlimited))
+                        }
+                    }
+                )
+            }
+
+            HorizontalDivider()
+
+            var maxSubAgentsInput by remember(
+                assistant.id,
+                assistant.maxConcurrentSubAgents
+            ) {
+                mutableStateOf(assistant.maxConcurrentSubAgents.toString())
+            }
+            var maxSubAgentsFocused by remember(assistant.id) {
+                mutableStateOf(false)
+            }
+            val subAgentFocusManager = LocalFocusManager.current
+
+            fun commitMaxSubAgents() {
+                val value = maxSubAgentsInput.toIntOrNull()
+                if (value == null) {
+                    maxSubAgentsInput = assistant.maxConcurrentSubAgents.toString()
+                    return
+                }
+                val clamped = value.coerceIn(
+                    SubAgentDefaults.MIN_PER_ASSISTANT_CAP,
+                    SubAgentDefaults.MAX_PER_ASSISTANT_CAP,
+                )
+                maxSubAgentsInput = clamped.toString()
+                if (clamped != assistant.maxConcurrentSubAgents) {
+                    onUpdate(assistant.copy(maxConcurrentSubAgents = clamped))
+                }
+            }
+
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_max_concurrent_subagents))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_max_concurrent_subagents_desc))
+                }
+            ) {
+                OutlinedTextField(
+                    value = maxSubAgentsInput,
+                    onValueChange = { input ->
+                        if (input.all(Char::isDigit) &&
+                            (input.isEmpty() || input.toIntOrNull() != null)
+                        ) {
+                            maxSubAgentsInput = input
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { focusState ->
+                            if (maxSubAgentsFocused && !focusState.isFocused) {
+                                commitMaxSubAgents()
+                            }
+                            maxSubAgentsFocused = focusState.isFocused
+                        },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { subAgentFocusManager.clearFocus() }
+                    ),
+                    singleLine = true,
+                    supportingText = {
+                        Text(
+                            stringResource(
+                                R.string.assistant_page_max_concurrent_subagents_hint,
+                                SubAgentDefaults.MIN_PER_ASSISTANT_CAP,
+                                SubAgentDefaults.MAX_PER_ASSISTANT_CAP,
+                            )
+                        )
+                    }
+                )
             }
         }
     }

@@ -135,6 +135,15 @@ data class Assistant(
     // Appended last on purpose: a new field may never shift the position of an existing one.
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val disabledLocalTools: Set<String> = emptySet(),
+    // P2-07 — per-orchestration token budget for THIS assistant's dispatch trees.
+    // One "orchestration" is a parent turn plus every sub-agent run it fans out; the ledger
+    // sums all of them by `usage_records.parent_run_id` and P2-13 refuses a further dispatch
+    // once the total reaches this ceiling. Null (the default) = unlimited (D8); an expert
+    // overrides it for its own run via `AgentDefinition.tokenBudget`. @EncodeDefault(NEVER)
+    // keeps an assistant that never touched this setting byte-identical in the store.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val orchestrationTokenBudget: Long? = null,
 )
 
 @Serializable
