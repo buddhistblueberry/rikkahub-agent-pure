@@ -202,7 +202,7 @@ internal fun resolveSubAgentModel(
  * its parent's assistant, so that option is still in the list. The load-bearing guard is
  * the trio of `isHeadless` checks (the dispatch tool's entry guard, this engine's dispatch
  * entry, and the parent-notification path). Since T-09 / (8) the frozen tool surface
- * ([SubAgentToolSurface]) additionally removes the `subagent_*` handles from a sub-agent
+ * ([SubAgentSurface]) additionally removes the `subagent_*` handles from a sub-agent
  * conversation altogether, so the model never sees them and never spends a trip on a
  * refusal — but that is a cost optimisation on top of the guards, not a replacement for
  * them. v1: no recursion.
@@ -384,8 +384,8 @@ class SubAgentEngine(
         // ToolInvocationContext: both read the SAME persisted Assistant field, so they cannot
         // disagree — and the tool needs it at tool-CONSTRUCTION time to gate whether the `tools`
         // parameter is even described in the schema.
-        val freezeToolSurface =
-            AssistantResolver.byId(settings, parentAsstUuid)?.enableSubAgentToolSurface == true
+        val parentAssistant = AssistantResolver.byId(settings, parentAsstUuid)
+        val freezeToolSurface = parentAssistant?.enableSubAgentToolSurface == true
         // #36: resolve `agent` before `model_id` so model_id's own resolution can
         // fall back to the profile's model when model_id is absent - `model_id` still wins
         // when both are given (see SubAgentTools' parameter description).
@@ -398,6 +398,10 @@ class SubAgentEngine(
                 return
             }
         }
+        // P2-04 — the child's OWN tool surface, when its profile defines one (local tools /
+        // per-tool opt-out / MCP servers). Null = no surface of its own, so the run keeps
+        // inheriting the parent's assistant verbatim (the pre-P2-04 behaviour).
+        val childAssistant = SubAgentSurface.resolveChildAssistant(parentAssistant, profile)
         val modelResolution = resolveSubAgentModel(
             SubAgentModelResolver.resolve(request.modelId, settings.providers),
             profile,
@@ -434,20 +438,33 @@ class SubAgentEngine(
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
-        // T-09 / (8) — a sub-agent conversation is built from its parent's assistant, so it
-        // inherits that assistant's COMPLETE tool surface (browser, NFC, external storage,
-        // workspace, skills, MCP, the subagent_* handles). Freeze it to the headless-safe subset
-        // for as long as the run lives; ChatService applies the filter at every tool-assembly
-        // site. With the flag off no record is written at all, so `apply` stays an identity and
-        // the child's schemas are byte-for-byte what they were before T-09.
-        if (freezeToolSurface) {
+        // T-09 / (8) + P2-04 — freeze this run's tool surface for as long as it lives; ChatService
+        // applies the filter at every tool-assembly site. A record is written when EITHER knob is
+        // on: the parent assistant's `enableSubAgentToolSurface` (which also narrows the surface to
+        // the dispatcher's `tools` allow-list), or the child's own surface (P2-04). With neither,
+        // no record is written at all, so `apply` stays an identity and the child's schemas are
+        // byte-for-byte what they were.
+        if (freezeToolSurface || childAssistant != null) {
             // Belt and braces: subagent_dispatch already REJECTS a blocked name outright, but the
             // engine is the layer that actually owns the surface, and a future caller (a workflow
             // step, an external automation, a test) could hand us a SubAgentRequest directly.
             // Running the requested names through the policy here means a blocked name can never
             // reach a frozen surface no matter who asked for it. An empty result means "no
             // narrowing", which is exactly what `request.tools == null` means.
-            SubAgentToolSurface.freeze(conv.id, SubAgentToolSurface.safeNames(request.tools.orEmpty()))
+            //
+            // P2-04 — `assistant` is the child's own surface when its profile defined one. The
+            // `tools` allow-list stays gated by the parent's `enableSubAgentToolSurface`: its
+            // schema is only described when that flag is on, so a profile-supplied surface alone
+            // never honours a parameter the model was never told about.
+            SubAgentSurface.freeze(
+                conversationId = conv.id,
+                assistant = childAssistant,
+                requested = if (freezeToolSurface) {
+                    SubAgentToolSurface.safeNames(request.tools.orEmpty())
+                } else {
+                    null
+                },
+            )
         }
         try {
             // Prepend a wrap-up instruction. Some models naturally write a summary paragraph
@@ -504,10 +521,10 @@ class SubAgentEngine(
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } finally {
             HeadlessConversations.unmark(conv.id)
-            // T-09 / (8) — release in the same finally that unmarks the conversation, so a
+            // T-09 / (8) + P2-04 — release in the same finally that unmarks the conversation, so a
             // cancelled / failed / timed-out run cannot leave a stale freeze behind. Releasing is
             // unconditional and safe: removing a record that was never written is a no-op.
-            SubAgentToolSurface.release(conv.id)
+            SubAgentSurface.release(conv.id)
             registry.clearJob(runId)
         }
     }

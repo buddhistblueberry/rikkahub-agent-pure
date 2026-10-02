@@ -1,65 +1,49 @@
 package me.rerere.rikkahub.subagent
 
-import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.ai.tools.ToolApprovalDefaults
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.uuid.Uuid
 
 /**
- * T-09 / (8) — freeze the tool surface of a sub-agent run.
+ * T-09 / (8) + P2-04 — the headless **safety floor**: the per-tool predicate that decides
+ * whether ANY sub-agent may be handed a tool.
  *
  * ## Why this exists
  *
  * A sub-agent is executed as a headless
- * [me.rerere.rikkahub.data.ai.tools.HeadlessConversations] run whose conversation uses the
- * SAME assistant as its parent (`SubAgentEngine.executeRun`: `Conversation.ofId(assistantId =
- * parentAsstUuid)`). Two things follow from that, and both are bad:
+ * [me.rerere.rikkahub.data.ai.tools.HeadlessConversations] run. Two things follow from that:
  *
- *  1. **The child inherits the parent's complete tool surface** — local tools, browser,
- *     external storage, NFC, workspace, skills, MCP, and the `subagent_*` handles themselves.
- *     The `subagent_*` tools are harmless only because three `isHeadless` checks refuse to act
- *     (the engine's recursion guard); they still cost tokens on every single request and invite
- *     the model to waste a whole tool trip discovering that dispatch is refused.
- *  2. **Headless conversations auto-approve every tool.** `ChatService`'s
- *     `isToolAutoApproved` returns true for any conversation registered with
- *     `HeadlessConversations.mark()`, and that check does NOT consult
- *     [ToolApprovalDefaults.NO_ALWAYS_ALLOW]. So a sub-agent can call `eval_javascript`,
- *     `mcp_add`, `skill_install_from_url`, `keystore_generate_key`, `keystore_decrypt`,
- *     `grant_directory_access` or `nfc_write_tag` **unattended** — exactly the "confirm every
- *     single call, never blanket-allow" guarantee those tools are documented to have. That is a
- *     privilege-escalation hole, not a token-count nit: the parent may be prompt-injected, and
- *     the injected instruction now runs in a context that cannot ask the user anything.
+ *  1. **Headless conversations auto-approve every tool.** `ChatService`'s `isToolAutoApproved`
+ *     returns true for any conversation registered with `HeadlessConversations.mark()`, and that
+ *     check does NOT consult [ToolApprovalDefaults.NO_ALWAYS_ALLOW]. So a sub-agent can call
+ *     `eval_javascript`, `mcp_add`, `skill_install_from_url`, `keystore_generate_key`,
+ *     `keystore_decrypt`, `grant_directory_access` or `nfc_write_tag` **unattended** — exactly the
+ *     "confirm every single call, never blanket-allow" guarantee those tools are documented to
+ *     have. That is a privilege-escalation hole, not a token-count nit: the parent may be
+ *     prompt-injected, and the injected instruction now runs in a context that cannot ask the user
+ *     anything.
+ *  2. **A child can end up with a surface nobody chose for it.** The parent's `subagent_dispatch`
+ *     `tools` allow-list used to be a dead parameter, and a sub-agent used to inherit its parent's
+ *     COMPLETE surface (browser, NFC, external storage, workspace, skills, MCP, and the `subagent_*`
+ *     handles themselves). The `subagent_*` tools are harmless only because three `isHeadless`
+ *     checks refuse to act (the engine's recursion guard); they still cost tokens on every single
+ *     request and invite the model to waste a whole tool trip discovering that dispatch is refused.
  *
  * ## What it does
  *
- * [freeze] records, for one conversation id, the surface that sub-agent is allowed to see.
- * [apply] is then called by every `ChatService` tool-assembly site right after the final
- * `List<Tool>` is built (workspace / skill / MCP tools are appended *outside*
- * `LocalTools.getTools`, so the filter has to run on the finished list, not on the options).
+ * [denialReason] is the floor: the one rule that is applied to every tool name that could reach a
+ * sub-agent, wherever that name came from (the parent's surface, a dispatcher-supplied allow-list,
+ * or — since P2-04 — a profile's OWN tool surface). It removes the tools a headless run must never
+ * receive — see [UI_BOUND_TOOL_NAMES], [PRIVACY_SENSITIVE_TOOL_NAMES],
+ * [ToolApprovalDefaults.NO_ALWAYS_ALLOW] and the `subagent_` prefix.
  *
- * The policy is a **deny list plus an optional narrowing allow-list**:
+ * This object is deliberately **pure policy, no state**. The per-conversation record of *which*
+ * surface a run got (and the identity filter that applies this floor to the finished tool list each
+ * time `ChatService` assembles one) lives in [SubAgentSurface].
  *
- *  - [isDenied] removes the tools a headless run must never receive — see
- *    [UI_BOUND_TOOL_NAMES], [PRIVACY_SENSITIVE_TOOL_NAMES],
- *    [ToolApprovalDefaults.NO_ALWAYS_ALLOW] and the `subagent_` prefix.
- *  - the optional `requested` set is whatever the dispatcher passed in `subagent_dispatch`'s
- *    `tools` parameter. That parameter was parsed and then silently dropped before T-09
- *    (nothing ever read `SubAgentRequest.tools`); it now narrows the frozen surface. An absent
- *    or empty array means "no narrowing".
+ * ## Grounded in code, not in guesswork
  *
- * Deliberately NOT done here: intersecting with the caller's exact tool-name list. The parent's
- * names are not reachable from the engine (the options → names mapping lives inside
- * `LocalTools`, and `LocalTools` already depends on this engine, so the engine cannot call it),
- * and the child is assembled from the same assistant anyway — so the deny list is what actually
- * changes anything. Filtering the *finished* child list is strictly stronger than the originally
- * planned "expand the parent's options" (it also covers workspace / skill / MCP tools, which are
- * added outside the options list).
- *
- * ## Off by default, byte-identical when off
- *
- * Nothing writes a freeze record unless the assistant has
- * `enableSubAgentToolSurface` on. [apply] returns the **same `List<Tool>` instance** when there is
- * no record, so a flagged-off install sends exactly the tool schemas it sent before T-09.
+ * Every set below is derived from something the app actually does (a `ToolHostActivity` host, an
+ * `ALWAYS_ASK` registration, a prefix rule), so it cannot drift out of sync with the tool
+ * implementations the way a hand-maintained "risky tools" list would.
  */
 object SubAgentToolSurface {
 
@@ -100,8 +84,9 @@ object SubAgentToolSurface {
      * Both live in [ToolApprovalDefaults.ALWAYS_ASK] (the privacy / hardware-actuation group), so
      * an ordinary conversation prompts the user on every call. A headless one does not: `ChatService
      * .isToolAutoApproved` blanket-approves every tool in a `HeadlessConversations` run without
-     * consulting `NO_ALWAYS_ALLOW`, which is the hole T-09 closes at the surface level. Excluding
-     * them here means a prompt-injected parent cannot turn its sub-agent into a silent recorder.
+     * consulting `NO_ALWAYS_ALLOW`, which is the hole the floor closes at the surface level.
+     * Excluding them here means a prompt-injected parent cannot turn its sub-agent into a silent
+     * recorder.
      *
      * Not listed: `transcribe_audio_file` (reads existing files, records nothing) and the
      * merely-screen-visible `share` / `open_file` / `launch_app` / `show_toast` /
@@ -151,58 +136,4 @@ object SubAgentToolSurface {
      */
     fun safeNames(callerToolNames: Collection<String>): Set<String> =
         callerToolNames.filterNot { isDenied(it) }.toSet()
-
-    /**
-     * The frozen surface of one sub-agent conversation.
-     *
-     * @param requested the names the dispatcher asked for, or null when it asked for no
-     * narrowing. Never empty: an empty array is treated as "not specified" so a model that sends
-     * `"tools": []` by accident still gets a working sub-agent instead of a tool-less one.
-     */
-    data class FrozenSurface(val requested: Set<String>?)
-
-    private val frozen = ConcurrentHashMap<Uuid, FrozenSurface>()
-
-    /**
-     * Freeze [conversationId] to the headless-safe surface (optionally narrowed to [requested]).
-     * Called by the engine right after the sub-agent conversation exists, and released in the same
-     * `finally` that unmarks it as headless.
-     */
-    fun freeze(conversationId: Uuid, requested: Collection<String>? = null): FrozenSurface {
-        val surface = FrozenSurface(requested = requested?.filterNot { it.isBlank() }?.toSet()?.takeIf { it.isNotEmpty() })
-        frozen[conversationId] = surface
-        return surface
-    }
-
-    /** Drop the record. After this [apply] is an identity again for this conversation. */
-    fun release(conversationId: Uuid) {
-        frozen.remove(conversationId)
-    }
-
-    /** The record for [conversationId], or null when the conversation was never frozen. */
-    fun frozenFor(conversationId: Uuid): FrozenSurface? = frozen[conversationId]
-
-    /**
-     * Filter [tools] down to the frozen surface of [conversationId].
-     *
-     * **Identity contract:** with no freeze record — i.e. every conversation in an install that
-     * never turns the feature on, and every non-sub-agent conversation in one that does — the
-     * same `List<Tool>` instance is returned, so the schemas handed to the model are
-     * byte-for-byte what they were.
-     */
-    fun apply(conversationId: Uuid, tools: List<Tool>): List<Tool> {
-        val surface = frozenFor(conversationId) ?: return tools
-        val requested = surface.requested
-        val kept = tools.filter { tool ->
-            !isDenied(tool.name) && (requested == null || tool.name in requested)
-        }
-        // Nothing to remove -> hand back the original instance so identity stays observable
-        // instead of silently producing an equal-but-new list.
-        return if (kept.size == tools.size) tools else kept
-    }
-
-    /** Test hook: drop every record. Never called from production code. */
-    fun clearAll() {
-        frozen.clear()
-    }
 }
