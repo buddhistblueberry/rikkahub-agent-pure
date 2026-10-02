@@ -68,6 +68,23 @@ class UsageCallRecorderTest {
     }
 
     @Test
+    fun `a frozen cost and its price version reach the row`() = runBlocking {
+        val dao = FakeDao()
+        UsageCallRecorder.record(
+            ledger = ledgerFor(dao),
+            usage = reportedUsage,
+            context = UsageCallContext(purpose = UsagePurpose.MAIN),
+            modelId = "deepseek-chat",
+            costMicros = 1232,
+            priceVersionId = "abcd1234",
+        )
+
+        val row = dao.rows.single()
+        assertEquals(1232L, row.costMicros)
+        assertEquals("abcd1234", row.priceVersionId)
+    }
+
+    @Test
     fun `an unreported usage writes nothing rather than a zero row`() = runBlocking {
         val dao = FakeDao()
         val outcome = UsageCallRecorder.record(
