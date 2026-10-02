@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -40,8 +40,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -52,7 +54,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
@@ -63,7 +67,16 @@ import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.agentdef.AgentDefinition
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionDraft
 import me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository
+import me.rerere.rikkahub.data.agentdef.LocalToolGroups
+import me.rerere.rikkahub.data.agentdef.NamespaceProblem
+import me.rerere.rikkahub.data.agentdef.surfaceSummary
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.files.SkillMetadata
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -77,17 +90,25 @@ import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
 
 /**
- * P2-06b — the expert library.
+ * P2-06b / P2-06c — the expert library.
  *
- * #36 shipped this screen over the DataStore-backed `Settings.subAgents` list; P2-06b retires that
- * list and backs the same screen with [AgentDefinitionRepository] (its own `agent_definitions.db`).
- * The UI is otherwise deliberately unchanged: this is the "mechanical" half of the source-of-truth
- * switch, so the expert-editing *surface* (tool face, MCP servers, skills, the D9 namespace picker)
- * stays a P2-06c concern while list / add / edit / delete keep working today.
+ * #36 shipped this screen over the DataStore-backed `Settings.subAgents` list; P2-06b retired that
+ * list and backed the same screen with [AgentDefinitionRepository] (its own `agent_definitions.db`).
+ * P2-06c is the second half: the screen now edits the expert's whole **surface** — the local-tool
+ * groups, the per-tool opt-outs, the MCP servers, the skills and the D9 namespace — instead of
+ * only its name / prompt / model.
+ *
+ * The editing state is an [AgentDefinitionDraft], not an [AgentDefinition], because four of those
+ * fields (and the namespace) are **tri-state** on disk: `null` means "inherit the parent
+ * assistant", which is different from "own an empty set". A switch cannot express the third state,
+ * so the draft keeps it explicit and every row here is a two-step "inherit ⇄ own" header plus the
+ * picker that only appears once the user has chosen *own*. The pure half of that lives in
+ * `AgentDefinitionDraft` and is unit-tested; what is here is the binding.
  *
  * Name resolution for `subagent_dispatch` is case-insensitive, so a second expert whose name only
  * differs by case would make dispatch ambiguous. That is rejected here (as before) rather than being
- * allowed to reach the resolver at dispatch time.
+ * allowed to reach the resolver at dispatch time — and so is a namespace two experts would share,
+ * because that would mix their memory folders.
  */
 @Composable
 fun SettingSubAgentsPage(
@@ -99,26 +120,27 @@ fun SettingSubAgentsPage(
     val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val editState = useEditState<AgentDefinition> { edited ->
+    val editState = useEditState<AgentDefinitionDraft> { draft ->
         // A create and an update differ only in whether the row already exists. `update` refuses to
         // insert (a stale id must not resurrect a deleted expert), so the branch is explicit.
+        val stored = draft.toDefinition()
         scope.launch {
-            if (definitions.any { it.id == edited.id }) {
-                agentDefinitionRepository.update(edited)
+            if (definitions.any { it.id == stored.id }) {
+                agentDefinitionRepository.update(stored)
             } else {
                 agentDefinitionRepository.create(
-                    name = edited.name,
-                    description = edited.description,
-                    systemPrompt = edited.systemPrompt,
-                    modelId = edited.modelId,
-                    enabled = edited.enabled,
-                    localTools = edited.localTools,
-                    disabledLocalTools = edited.disabledLocalTools,
-                    mcpServers = edited.mcpServers,
-                    skills = edited.skills,
-                    slug = edited.slug,
-                    tokenBudget = edited.tokenBudget,
-                    id = edited.id,
+                    name = stored.name,
+                    description = stored.description,
+                    systemPrompt = stored.systemPrompt,
+                    modelId = stored.modelId,
+                    enabled = stored.enabled,
+                    localTools = stored.localTools,
+                    disabledLocalTools = stored.disabledLocalTools,
+                    mcpServers = stored.mcpServers,
+                    skills = stored.skills,
+                    slug = stored.slug,
+                    tokenBudget = stored.tokenBudget,
+                    id = stored.id,
                 )
             }
         }
@@ -173,7 +195,7 @@ fun SettingSubAgentsPage(
                     items(definitions, key = { it.id }) { definition ->
                         AgentDefinitionCard(
                             definition = definition,
-                            onEdit = { editState.open(definition) },
+                            onEdit = { editState.open(AgentDefinitionDraft.of(definition)) },
                             onDelete = { scope.launch { agentDefinitionRepository.delete(definition.id) } },
                         )
                     }
@@ -187,7 +209,7 @@ fun SettingSubAgentsPage(
                     .offset(y = -ScreenOffset),
             ) {
                 Button(onClick = {
-                    editState.open(AgentDefinition(id = Uuid.random().toString(), name = ""))
+                    editState.open(AgentDefinitionDraft(id = Uuid.random().toString()))
                 }) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
@@ -206,10 +228,11 @@ fun SettingSubAgentsPage(
     }
 
     if (editState.isEditing) {
-        editState.currentState?.let { state ->
+        editState.currentState?.let { draft ->
             AgentDefinitionEditSheet(
-                definition = state,
+                draft = draft,
                 providers = settings.providers,
+                mcpServers = settings.mcpServers,
                 existingDefinitions = definitions,
                 onDismiss = { editState.dismiss() },
                 onConfirm = { editState.confirm() },
@@ -227,6 +250,23 @@ private fun AgentDefinitionCard(
 ) {
     val swipeState = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
+    val summary = definition.surfaceSummary()
+    // `listOfNotNull` (not `buildList`) so every `stringResource` is evaluated in the composable
+    // scope at this call site rather than inside a builder lambda.
+    val surfaceLine = listOfNotNull(
+        if (summary.ownLocalTools) {
+            stringResource(R.string.setting_sub_agents_page_badge_tools, summary.localToolCount)
+        } else null,
+        if (summary.ownsMcpServers) {
+            stringResource(R.string.setting_sub_agents_page_badge_mcp, summary.mcpServerCount)
+        } else null,
+        if (summary.ownsSkills) {
+            stringResource(R.string.setting_sub_agents_page_badge_skills, summary.skillCount)
+        } else null,
+        summary.namespace?.let {
+            stringResource(R.string.setting_sub_agents_page_badge_namespace, it)
+        },
+    ).joinToString(" · ")
 
     SwipeToDismissBox(
         state = swipeState,
@@ -284,6 +324,15 @@ private fun AgentDefinitionCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (surfaceLine.isNotEmpty()) {
+                        Text(
+                            text = surfaceLine,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     if (!definition.enabled) {
                         Tag(type = TagType.WARNING) {
                             Text(stringResource(R.string.setting_sub_agents_page_disabled))
@@ -298,26 +347,174 @@ private fun AgentDefinitionCard(
     }
 }
 
+/**
+ * One inheritable surface group: a header ("inherit the parent ⇄ own") and, once the user owns it,
+ * the picker. Keeping the header and the picker in one place is what makes the tri-state visible —
+ * an empty picker and "not configured" would otherwise look identical.
+ */
+@Composable
+private fun SurfaceGroup(
+    title: String,
+    subtitle: String,
+    own: Boolean,
+    ownSummary: String,
+    onOwnChange: (Boolean) -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(text = title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = if (own) ownSummary else subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = own, onCheckedChange = onOwnChange)
+        }
+        if (own) {
+            content()
+        }
+    }
+}
+
+/** A compact picker row: a label and a switch. */
+@Composable
+private fun PickerRow(
+    label: String,
+    description: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(text = label, style = MaterialTheme.typography.bodyMedium)
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/**
+ * The option → title mapping. A `when` over the sealed [LocalToolOption] with no `else` branch, so
+ * adding a tool group to the build fails the build here instead of silently rendering a blank row
+ * (the same reason [LocalToolGroups.all] is explicit). The resources are the ones the assistant's
+ * own local-tools page uses, so the two screens name a group identically.
+ */
+@Composable
+private fun localToolTitle(option: LocalToolOption): String = stringResource(
+    when (option) {
+        LocalToolOption.JavascriptEngine -> R.string.assistant_page_local_tools_javascript_engine_title
+        LocalToolOption.TimeInfo -> R.string.assistant_page_local_tools_time_info_title
+        LocalToolOption.Clipboard -> R.string.assistant_page_local_tools_clipboard_title
+        LocalToolOption.Tts -> R.string.assistant_page_local_tools_tts_title
+        LocalToolOption.AskUser -> R.string.assistant_page_local_tools_ask_user_title
+        LocalToolOption.Battery -> R.string.assistant_page_local_tools_battery_title
+        LocalToolOption.UsageLedger -> R.string.assistant_page_local_tools_usage_ledger_title
+        LocalToolOption.AudioInfo -> R.string.assistant_page_local_tools_audio_info_title
+        LocalToolOption.TelephonyInfo -> R.string.assistant_page_local_tools_telephony_title
+        LocalToolOption.WifiInfo -> R.string.assistant_page_local_tools_wifi_title
+        LocalToolOption.Sensors -> R.string.assistant_page_local_tools_sensors_title
+        LocalToolOption.StorageInfo -> R.string.assistant_page_local_tools_storage_title
+        LocalToolOption.Toast -> R.string.assistant_page_local_tools_toast_title
+        LocalToolOption.Notification -> R.string.assistant_page_local_tools_notification_title
+        LocalToolOption.Share -> R.string.assistant_page_local_tools_share_title
+        LocalToolOption.Torch -> R.string.assistant_page_local_tools_torch_title
+        LocalToolOption.Vibrate -> R.string.assistant_page_local_tools_vibrate_title
+        LocalToolOption.Brightness -> R.string.assistant_page_local_tools_brightness_title
+        LocalToolOption.Volume -> R.string.assistant_page_local_tools_volume_title
+        LocalToolOption.Location -> R.string.assistant_page_local_tools_location_title
+        LocalToolOption.Contacts -> R.string.assistant_page_local_tools_contacts_title
+        LocalToolOption.CallLog -> R.string.assistant_page_local_tools_call_log_title
+        LocalToolOption.SmsInbox -> R.string.assistant_page_local_tools_sms_inbox_title
+        LocalToolOption.CameraPhoto -> R.string.assistant_page_local_tools_camera_photo_title
+        LocalToolOption.MicRecorder -> R.string.assistant_page_local_tools_mic_recorder_title
+        LocalToolOption.SpeechToText -> R.string.assistant_page_local_tools_speech_to_text_title
+        LocalToolOption.Fingerprint -> R.string.assistant_page_local_tools_fingerprint_title
+        LocalToolOption.NotificationListener -> R.string.assistant_page_local_tools_notifications_title
+        LocalToolOption.MediaPlayer -> R.string.assistant_page_local_tools_media_player_title
+        LocalToolOption.MediaScanner -> R.string.assistant_page_local_tools_media_scanner_title
+        LocalToolOption.Download -> R.string.assistant_page_local_tools_download_title
+        LocalToolOption.CronJobs -> R.string.assistant_page_local_tools_cron_jobs_title
+        LocalToolOption.Files -> R.string.assistant_page_local_tools_files_title
+        LocalToolOption.Ssh -> R.string.assistant_page_local_tools_ssh_title
+        LocalToolOption.TelegramBot -> R.string.assistant_page_local_tools_telegram_title
+        LocalToolOption.McpControl -> R.string.assistant_page_local_tools_mcp_control_title
+        LocalToolOption.ExternalAutomation -> R.string.assistant_page_local_tools_external_automation_title
+        LocalToolOption.Reliability -> R.string.assistant_page_local_tools_reliability_title
+        LocalToolOption.SubAgents -> R.string.assistant_page_local_tools_sub_agents_title
+        LocalToolOption.CostGuards -> R.string.assistant_page_local_tools_cost_guards_title
+        LocalToolOption.Workflows -> R.string.assistant_page_local_tools_workflows_title
+        LocalToolOption.SkillImport -> R.string.assistant_page_local_tools_skill_import_title
+        LocalToolOption.JsSkills -> R.string.assistant_page_local_tools_js_skills_title
+        LocalToolOption.SystemIntents -> R.string.assistant_page_local_tools_system_intents_title
+        LocalToolOption.Browser -> R.string.assistant_page_local_tools_browser_title
+        LocalToolOption.SmsSend -> R.string.assistant_page_local_tools_sms_send_title
+        LocalToolOption.Wallpaper -> R.string.assistant_page_local_tools_wallpaper_title
+        LocalToolOption.Keystore -> R.string.assistant_page_local_tools_keystore_title
+        LocalToolOption.Nfc -> R.string.assistant_page_local_tools_nfc_title
+        LocalToolOption.ExternalStorage -> R.string.assistant_page_local_tools_external_storage_title
+        LocalToolOption.Archive -> R.string.assistant_page_local_tools_archive_title
+        LocalToolOption.Shizuku -> R.string.assistant_page_local_tools_shizuku_title
+        LocalToolOption.ScreenAutomation -> R.string.assistant_page_local_tools_screen_automation_title
+        LocalToolOption.AppLauncher -> R.string.assistant_page_local_tools_app_launcher_title
+        LocalToolOption.Termux -> R.string.assistant_page_local_tools_termux_title
+        LocalToolOption.KeyboardControl -> R.string.assistant_page_local_tools_keyboard_title
+    },
+)
+
 @Composable
 private fun AgentDefinitionEditSheet(
-    definition: AgentDefinition,
+    draft: AgentDefinitionDraft,
     providers: List<ProviderSetting>,
+    mcpServers: List<McpServerConfig>,
     existingDefinitions: List<AgentDefinition>,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
-    onEdit: (AgentDefinition) -> Unit,
+    onEdit: (AgentDefinitionDraft) -> Unit,
 ) {
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
     val scope = rememberCoroutineScope()
-    // Resolution matches experts by name case-insensitively (AgentDefinitionResolver); saving a
-    // second expert with a name that only differs by case would make dispatch ambiguous, so reject
-    // it here rather than letting the ambiguity reach the resolver at dispatch time.
-    val nameDuplicate = existingDefinitions.any {
-        it.id != definition.id && it.name.isNotBlank() &&
-            it.name.equals(definition.name, ignoreCase = true)
+    val nameDuplicate = draft.nameClash(existingDefinitions)
+    val namespaceProblem = draft.namespaceProblem(existingDefinitions)
+
+    // Skills are read from disk once when the sheet opens. The list is small and only rendered
+    // when the user asks for a custom skill set, so a one-shot load beats a flow here.
+    val skillManager = koinInject<SkillManager>()
+    var skills by remember { mutableStateOf<List<SkillMetadata>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        skills = withContext(Dispatchers.IO) {
+            runCatching { skillManager.listSkills() }.getOrDefault(emptyList())
+        }
     }
 
     ModalBottomSheet(
@@ -355,8 +552,8 @@ private fun AgentDefinitionEditSheet(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OutlinedTextField(
-                    value = definition.name,
-                    onValueChange = { onEdit(definition.copy(name = it)) },
+                    value = draft.name,
+                    onValueChange = { onEdit(draft.copy(name = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_name)) },
                     singleLine = true,
                     isError = nameDuplicate,
@@ -367,8 +564,8 @@ private fun AgentDefinitionEditSheet(
                 )
 
                 OutlinedTextField(
-                    value = definition.description,
-                    onValueChange = { onEdit(definition.copy(description = it)) },
+                    value = draft.description,
+                    onValueChange = { onEdit(draft.copy(description = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_description)) },
                     supportingText = { Text(stringResource(R.string.setting_sub_agents_page_description_hint)) },
                     modifier = Modifier.fillMaxWidth(),
@@ -378,8 +575,8 @@ private fun AgentDefinitionEditSheet(
                     label = { Text(stringResource(R.string.setting_sub_agents_page_enabled)) },
                     tail = {
                         Switch(
-                            checked = definition.enabled,
-                            onCheckedChange = { onEdit(definition.copy(enabled = it)) },
+                            checked = draft.enabled,
+                            onCheckedChange = { onEdit(draft.copy(enabled = it)) },
                         )
                     },
                 )
@@ -392,7 +589,7 @@ private fun AgentDefinitionEditSheet(
                             // The store keeps the model id as its canonical Uuid string; the picker
                             // speaks Uuid. A value that no longer parses (hand-edited data) reads as
                             // "no model chosen" here rather than crashing the sheet.
-                            modelId = definition.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
+                            modelId = draft.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
                             providers = providers,
                             type = ModelType.CHAT,
                             allowClear = true,
@@ -401,7 +598,7 @@ private fun AgentDefinitionEditSheet(
                                 // default modelId is "" - no real model ever has a blank
                                 // provider model id, so that's the clear signal.
                                 onEdit(
-                                    definition.copy(
+                                    draft.copy(
                                         modelId = model.id
                                             .takeIf { model.modelId.isNotBlank() }
                                             ?.toString(),
@@ -413,8 +610,8 @@ private fun AgentDefinitionEditSheet(
                 )
 
                 OutlinedTextField(
-                    value = definition.systemPrompt,
-                    onValueChange = { onEdit(definition.copy(systemPrompt = it)) },
+                    value = draft.systemPrompt,
+                    onValueChange = { onEdit(draft.copy(systemPrompt = it)) },
                     label = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt)) },
                     supportingText = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt_hint)) },
                     modifier = Modifier
@@ -422,6 +619,196 @@ private fun AgentDefinitionEditSheet(
                         .height(160.dp),
                     minLines = 4,
                 )
+
+                Text(
+                    text = stringResource(R.string.setting_sub_agents_page_surface_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.setting_sub_agents_page_surface_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                // ---- local tool groups ----------------------------------------------------
+                SurfaceGroup(
+                    title = stringResource(R.string.setting_sub_agents_page_surface_tools),
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                    own = draft.ownsLocalTools,
+                    ownSummary = stringResource(
+                        R.string.setting_sub_agents_page_surface_own_count,
+                        draft.localTools?.size ?: 0,
+                    ),
+                    onOwnChange = { own ->
+                        onEdit(if (own) draft.ownLocalTools() else draft.inheritLocalTools())
+                    },
+                ) {
+                    LocalToolGroups.all.forEach { option ->
+                        PickerRow(
+                            label = localToolTitle(option),
+                            checked = draft.localTools.orEmpty().contains(option),
+                            onCheckedChange = { onEdit(draft.toggleLocalTool(option, it)) },
+                        )
+                    }
+                }
+
+                // ---- per-tool opt-outs ----------------------------------------------------
+                // P2-02 semantics: a name in this set stays hidden even while its group is on. The
+                // candidate names come from the live factory so they cannot drift from the surface
+                // the model actually receives; when the expert inherits its groups there is no
+                // parent list to enumerate, so the whole catalogue is used as the candidate pool.
+                val localToolFactory = koinInject<LocalTools>()
+                SurfaceGroup(
+                    title = stringResource(R.string.setting_sub_agents_page_surface_disabled_tools),
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                    own = draft.ownsDisabledTools,
+                    ownSummary = stringResource(
+                        R.string.setting_sub_agents_page_surface_own_count,
+                        draft.disabledLocalTools?.size ?: 0,
+                    ),
+                    onOwnChange = { own ->
+                        onEdit(if (own) draft.ownDisabledTools() else draft.inheritDisabledTools())
+                    },
+                ) {
+                    val toolNames = remember(draft.localTools) {
+                        runCatching {
+                            localToolFactory.getTools(draft.localTools ?: LocalToolGroups.all)
+                                .map { it.name }
+                                .distinct()
+                                .sorted()
+                        }.getOrDefault(emptyList())
+                    }
+                    if (toolNames.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.setting_sub_agents_page_surface_no_tools),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        toolNames.forEach { toolName ->
+                            PickerRow(
+                                label = toolName,
+                                checked = draft.disabledLocalTools.orEmpty().contains(toolName),
+                                onCheckedChange = { onEdit(draft.toggleDisabledTool(toolName, it)) },
+                            )
+                        }
+                    }
+                }
+
+                // ---- MCP servers ----------------------------------------------------------
+                val enabledServers = mcpServers.filter { it.commonOptions.enable }
+                SurfaceGroup(
+                    title = stringResource(R.string.setting_sub_agents_page_surface_mcp),
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                    own = draft.ownsMcpServers,
+                    ownSummary = stringResource(
+                        R.string.setting_sub_agents_page_surface_own_count,
+                        draft.mcpServers?.size ?: 0,
+                    ),
+                    onOwnChange = { own ->
+                        onEdit(if (own) draft.ownMcpServers() else draft.inheritMcpServers())
+                    },
+                ) {
+                    if (enabledServers.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.setting_sub_agents_page_surface_no_mcp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        enabledServers.forEach { server ->
+                            val id = server.id.toString()
+                            PickerRow(
+                                label = server.commonOptions.name,
+                                checked = draft.mcpServers.orEmpty().contains(id),
+                                onCheckedChange = { onEdit(draft.toggleMcpServer(id, it)) },
+                            )
+                        }
+                    }
+                }
+
+                // ---- skills ---------------------------------------------------------------
+                SurfaceGroup(
+                    title = stringResource(R.string.setting_sub_agents_page_surface_skills),
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                    own = draft.ownsSkills,
+                    ownSummary = stringResource(
+                        R.string.setting_sub_agents_page_surface_own_count,
+                        draft.skills?.size ?: 0,
+                    ),
+                    onOwnChange = { own ->
+                        onEdit(if (own) draft.ownSkills() else draft.inheritSkills())
+                    },
+                ) {
+                    if (skills.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.setting_sub_agents_page_surface_no_skills),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        skills.forEach { skill ->
+                            PickerRow(
+                                label = skill.name,
+                                description = skill.description.ifBlank { null },
+                                checked = draft.skills.orEmpty().contains(skill.name),
+                                onCheckedChange = { onEdit(draft.toggleSkill(skill.name, it)) },
+                            )
+                        }
+                    }
+                }
+
+                // ---- D9 namespace ---------------------------------------------------------
+                SurfaceGroup(
+                    title = stringResource(R.string.setting_sub_agents_page_surface_namespace),
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_namespace_off),
+                    own = draft.namespaceOn,
+                    ownSummary = draft.namespacePreview()
+                        ?: stringResource(R.string.setting_sub_agents_page_surface_namespace_unsaved),
+                    onOwnChange = { own ->
+                        onEdit(
+                            if (own) draft.withNamespace(draft.suggestedNamespace())
+                            else draft.clearNamespace(),
+                        )
+                    },
+                ) {
+                    OutlinedTextField(
+                        value = draft.namespaceInput.orEmpty(),
+                        onValueChange = { onEdit(draft.withNamespace(it)) },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_label)) },
+                        singleLine = true,
+                        isError = namespaceProblem == NamespaceProblem.EMPTY,
+                        supportingText = {
+                            Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_hint))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    draft.namespacePreview()?.let { preview ->
+                        Text(
+                            text = stringResource(R.string.setting_sub_agents_page_surface_namespace_preview, preview),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    when (namespaceProblem) {
+                        NamespaceProblem.EMPTY -> Text(
+                            text = stringResource(R.string.setting_sub_agents_page_surface_namespace_error_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+
+                        NamespaceProblem.DUPLICATE -> Text(
+                            text = stringResource(
+                                R.string.setting_sub_agents_page_surface_namespace_error_duplicate,
+                                draft.namespaceSlug().orEmpty(),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+
+                        null -> Unit
+                    }
+                }
             }
 
             Row(
@@ -433,7 +820,7 @@ private fun AgentDefinitionEditSheet(
                 }
                 TextButton(
                     onClick = onConfirm,
-                    enabled = definition.name.isNotBlank() && !nameDuplicate,
+                    enabled = draft.canSave(existingDefinitions),
                 ) {
                     Text(stringResource(R.string.setting_sub_agents_page_confirm))
                 }
