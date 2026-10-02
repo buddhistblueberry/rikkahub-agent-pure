@@ -14,6 +14,7 @@ import me.rerere.ai.ui.ServerToolMetadata
 import me.rerere.ai.ui.ServerToolProtocol
 import me.rerere.ai.ui.ServerToolStatus
 import me.rerere.ai.ui.StreamChunk
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.ui.toMetadata
 import me.rerere.ai.util.json
 import me.rerere.ai.util.parseErrorDetail
