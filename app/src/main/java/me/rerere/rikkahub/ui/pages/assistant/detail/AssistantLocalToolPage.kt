@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dokar.sonner.ToastType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
 import me.rerere.rikkahub.data.ai.tools.local.TermuxIntegration
 import me.rerere.rikkahub.data.model.Assistant
@@ -1268,6 +1269,51 @@ private fun AssistantLocalToolContent(
                     )
                 }
             )
+        }
+
+        // P2-02 - per-tool overrides. The group switches above add/remove a whole
+        // LocalToolOption; this lets the user hide ONE tool inside a still-enabled group
+        // (e.g. keep `sensors` on but drop `read_sensor`). The names come from the live
+        // factory so they can never drift from the surface the model actually receives.
+        val localToolFactory = koinInject<LocalTools>()
+        val liveToolNames = remember(assistant.localTools) {
+            localToolFactory.getTools(assistant.localTools).map { it.name }
+        }
+        if (liveToolNames.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.assistant_page_local_tools_individual_title),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+            )
+            Text(
+                text = stringResource(R.string.assistant_page_local_tools_individual_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+            )
+            CardGroup {
+                liveToolNames.forEach { toolName ->
+                    item(
+                        headlineContent = { Text(toolName) },
+                        trailingContent = {
+                            Switch(
+                                checked = toolName !in assistant.disabledLocalTools,
+                                onCheckedChange = { next ->
+                                    onUpdateAssistant { current ->
+                                        current.copy(
+                                            disabledLocalTools = if (next) {
+                                                current.disabledLocalTools - toolName
+                                            } else {
+                                                current.disabledLocalTools + toolName
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        },
+                    )
+                }
+            }
         }
     }
 }

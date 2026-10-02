@@ -724,6 +724,7 @@ class LocalTools(
     fun getTools(
         options: List<LocalToolOption>,
         invocationContext: ToolInvocationContext = ToolInvocationContext.EMPTY,
+        disabledToolNames: Set<String> = emptySet(),
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) {
@@ -1081,6 +1082,11 @@ class LocalTools(
         // Centralised opt-in to needsApproval. Tool factories themselves don't have to know
         // whether their op is destructive — ToolApprovalDefaults is the single source of
         // truth, and the GenerationHandler / Telegram/in-app prompt path keys off needsApproval.
+        // P2-02 - drop the names the assistant opted out of, IN PLACE: workflow_create was
+        // built above with a knownToolNamesProvider closure over this very list, so it must
+        // not advertise a tool that is no longer on the surface. An empty set mutates nothing.
+        LocalToolFilter.removeDisabled(tools, disabledToolNames)
+
         return tools.map { t ->
             val withApproval = if (ToolApprovalDefaults.requiresApproval(t.name)) {
                 t.copy(needsApproval = { true })

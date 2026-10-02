@@ -48,7 +48,12 @@ object ToolSurfaceResolver {
         localTools: LocalTools,
         assistant: Assistant,
         context: ToolInvocationContext,
-    ): List<Tool> = localTools.getTools(assistant.localTools, context)
+    ): List<Tool> = localTools.getTools(
+        options = assistant.localTools,
+        invocationContext = context,
+        // P2-02 - the per-tool deny-list rides along with the option list it refines.
+        disabledToolNames = assistant.disabledLocalTools,
+    )
 
     /**
      * Interactive turn / tool-loop / rerun rebuild — the model is about to receive these
