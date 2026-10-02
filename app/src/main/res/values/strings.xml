@@ -2621,4 +2621,14 @@
   <string name="workspace_detail_settings_save_failed">Failed to save settings</string>
   <string name="assistant_page_local_tools_individual_title">Individual tools</string>
   <string name="assistant_page_local_tools_individual_desc">Turn a single tool off to hide it from the model even while its group stays on.</string>
+  <string name="assistant_page_orchestration_budget">Orchestration token budget</string>
+  <string name="assistant_page_orchestration_budget_desc">Ceiling on the input + output tokens one dispatch tree may spend, counting the parent turn and every sub-agent it fans out. Leave empty for unlimited. An expert can override it with its own budget.</string>
+  <string name="assistant_page_orchestration_budget_no_limit">Unlimited</string>
+  <string name="assistant_page_orchestration_budget_limit">Limit: %1$s tokens per orchestration</string>
+  <string name="assistant_page_orchestration_budget_unlimited">Unlimited (no budget set)</string>
+  <string name="assistant_page_max_concurrent_subagents">Concurrent sub-agents</string>
+  <string name="assistant_page_max_concurrent_subagents_desc">How many sub-agent runs this assistant may have in flight at once.</string>
+  <string name="assistant_page_max_concurrent_subagents_hint">Between %1$d and %2$d.</string>
+  <string name="setting_sub_agents_page_token_budget">Orchestration token budget</string>
+  <string name="setting_sub_agents_page_token_budget_hint">Ceiling for this expert's dispatch tree. Leave empty to inherit the parent assistant's budget; unlimited when both are empty.</string>
 </resources>

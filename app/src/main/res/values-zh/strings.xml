@@ -2297,4 +2297,14 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_detail_settings_save_failed">保存设置失败</string>
   <string name="assistant_page_local_tools_individual_title">逐工具开关</string>
   <string name="assistant_page_local_tools_individual_desc">关闭单个工具，使其在所属分组仍开启时也不对模型可见。</string>
+  <string name="assistant_page_orchestration_budget">编排 token 上限</string>
+  <string name="assistant_page_orchestration_budget_desc">单次编排（本轮父对话及其派发的全部子 agent）可消耗的输入 + 输出 token 上限。留空表示不限。专家可用自己的预算覆盖此处。</string>
+  <string name="assistant_page_orchestration_budget_no_limit">不限</string>
+  <string name="assistant_page_orchestration_budget_limit">上限：每次编排 %1$s token</string>
+  <string name="assistant_page_orchestration_budget_unlimited">不限（未设预算）</string>
+  <string name="assistant_page_max_concurrent_subagents">并发子 agent 数</string>
+  <string name="assistant_page_max_concurrent_subagents_desc">本助手同一时刻最多在跑的子 agent 数量。</string>
+  <string name="assistant_page_max_concurrent_subagents_hint">取值 %1$d 到 %2$d。</string>
+  <string name="setting_sub_agents_page_token_budget">编排 token 上限</string>
+  <string name="setting_sub_agents_page_token_budget_hint">该专家编排树的 token 上限。留空则继承父助手的预算；两者都为空表示不限。</string>
 </resources>

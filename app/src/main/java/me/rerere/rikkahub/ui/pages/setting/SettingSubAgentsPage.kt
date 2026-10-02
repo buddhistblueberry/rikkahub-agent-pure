@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -702,6 +704,29 @@ private fun AgentDefinitionEditSheet(
                         .fillMaxWidth()
                         .height(160.dp),
                     minLines = 4,
+                )
+
+                // P2-07 — the expert's own orchestration ceiling. A blank field stores null,
+                // which means "inherit the parent assistant's budget"; a positive number
+                // overrides it for any dispatch that names this expert.
+                OutlinedTextField(
+                    value = draft.tokenBudget?.toString() ?: "",
+                    onValueChange = { text ->
+                        onEdit(
+                            draft.copy(
+                                tokenBudget = if (text.isBlank()) {
+                                    null
+                                } else {
+                                    text.toLongOrNull()?.takeIf { it > 0 }
+                                },
+                            ),
+                        )
+                    },
+                    label = { Text(stringResource(R.string.setting_sub_agents_page_token_budget)) },
+                    supportingText = { Text(stringResource(R.string.setting_sub_agents_page_token_budget_hint)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Text(
