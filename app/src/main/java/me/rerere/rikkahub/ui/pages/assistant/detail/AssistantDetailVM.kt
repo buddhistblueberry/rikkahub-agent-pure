@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
@@ -61,7 +62,7 @@ class AssistantDetailVM(
     val assistant: StateFlow<Assistant> = settingsStore
         .settingsFlow
         .map { settings ->
-            settings.assistants.find { it.id == assistantId } ?: Assistant()
+            AssistantResolver.byId(settings, assistantId) ?: Assistant()
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = Assistant()
         )
@@ -191,7 +192,7 @@ class AssistantDetailVM(
     fun updateAssistant(transform: (Assistant) -> Assistant) {
         viewModelScope.launch {
             settingsStore.update { current ->
-                val prior = current.assistants.firstOrNull { it.id == assistantId }
+                val prior = AssistantResolver.byId(current, assistantId)
                     ?: return@update current
                 val next = transform(prior)
                 checkAvatarDelete(old = prior, new = next)

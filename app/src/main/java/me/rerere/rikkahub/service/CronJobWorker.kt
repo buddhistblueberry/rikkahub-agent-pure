@@ -21,9 +21,10 @@ import me.rerere.rikkahub.data.agentrun.AgentRunKind
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
+import me.rerere.rikkahub.data.ai.AssistantResolver
+import me.rerere.rikkahub.data.ai.ToolSurfaceResolver
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.datastore.findAssistantById
 import me.rerere.rikkahub.data.db.entity.ScheduledJobEntity
 import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
 import me.rerere.rikkahub.data.model.Conversation
@@ -361,17 +362,14 @@ class CronJobWorker(
         val assistantUuid = runCatching { Uuid.parse(job.assistantId) }.getOrNull()
             ?: return Triple("failed", "bad_assistant_id:${job.assistantId}", null)
         val settings = settingsStore.settingsFlow.first()
-        val assistant = settings.findAssistantById(assistantUuid)
+        val assistant = AssistantResolver.byId(settings, assistantUuid)
             ?: return Triple("failed", "assistant_not_found", null)
         // Headless context — sub-agent recursion guard fires from this dispatch path so
         // a cron job's direct-mode action sequence cannot itself spawn a sub-agent.
-        val tools = localTools.getTools(
-            assistant.localTools,
-            me.rerere.rikkahub.data.ai.tools.ToolInvocationContext(
-                callerAssistantId = assistantUuid.toString(),
-                callerConversationId = null,  // direct-mode has no conversation
-                isHeadless = true,
-            ),
+        val tools = ToolSurfaceResolver.resolve(
+            localTools = localTools,
+            assistant = assistant,
+            context = ToolSurfaceResolver.headlessContext(assistantUuid),
         )
         val seq = directRunner.run(parsed, tools)
         return Triple(seq.finalOutcome, seq.errorMessage, null)

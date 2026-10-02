@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
@@ -207,7 +208,7 @@ fun Route.conversationRoutes(
             chatService.initializeConversation(uuid)
             val conversation = chatService.getConversationFlow(uuid).first()
             val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.assistants.firstOrNull { it.id == conversation.assistantId }
+            val assistant = AssistantResolver.byId(settings, conversation.assistantId)
                 ?: throw NotFoundException("Assistant not found")
             if (!assistant.allowConversationPromptInjection) {
                 throw BadRequestException("Conversation prompt injection is not enabled for this assistant")
@@ -515,7 +516,7 @@ private suspend fun applyInitialConversationInjections(
 
     val conversation = chatService.getConversationFlow(conversationId).first()
     val settings = settingsStore.settingsFlow.first()
-    val assistant = settings.assistants.firstOrNull { it.id == conversation.assistantId }
+    val assistant = AssistantResolver.byId(settings, conversation.assistantId)
         ?: throw NotFoundException("Assistant not found")
     if (!assistant.allowConversationPromptInjection) {
         if (modeInjectionIds.orEmpty().isNotEmpty() || lorebookIds.orEmpty().isNotEmpty()) {

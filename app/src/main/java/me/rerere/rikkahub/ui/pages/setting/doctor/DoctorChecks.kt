@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
@@ -673,7 +674,7 @@ class DoctorChecks(
                 val tgAssistant = tg.assistantId.let { id ->
                     runCatching {
                         val uuid = kotlin.uuid.Uuid.parse(id)
-                        assistants.find { it.id == uuid }
+                        AssistantResolver.byId(assistants, uuid)
                     }.getOrNull()
                 }
                 add(
