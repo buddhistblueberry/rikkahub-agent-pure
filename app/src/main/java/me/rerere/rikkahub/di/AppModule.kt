@@ -175,6 +175,7 @@ val appModule = module {
 
     single {
         LocalTools(
+            usageRecordDao = get(),
             context = get(),
             eventBus = get(),
             cameraResultBuffer = get(),

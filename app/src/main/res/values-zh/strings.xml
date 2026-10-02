@@ -1177,6 +1177,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_audio_info_title">音频信息</string>
   <string name="assistant_page_local_tools_battery_desc">读取电量、充电状态、充电方式、温度和健康度。</string>
   <string name="assistant_page_local_tools_battery_title">电池</string>
+  <string name="assistant_page_local_tools_usage_ledger_title">用量账本</string>
+  <string name="assistant_page_local_tools_usage_ledger_desc">读取用量账本：把每次模型往返的 token、缓存命中与冻结成本导出为 CSV 或 JSON。</string>
   <string name="assistant_page_local_tools_brightness_desc">读取和设置屏幕亮度。设置需要 WRITE_SETTINGS 权限。</string>
   <string name="assistant_page_local_tools_brightness_title">亮度</string>
   <string name="assistant_page_local_tools_browser_desc">AI 驱动的网页浏览器。17 个可单独开关的工具 — 在 设置 → 浏览器 中配置读/写访问权限。</string>

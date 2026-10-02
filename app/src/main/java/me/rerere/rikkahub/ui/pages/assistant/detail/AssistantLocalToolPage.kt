@@ -352,6 +352,20 @@ private fun AssistantLocalToolContent(
             )
             item(
                 headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_usage_ledger_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_usage_ledger_desc))
+                },
+                trailingContent = {
+                    PermissionedSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.UsageLedger),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.UsageLedger, it) }
+                    )
+                }
+            )
+            item(
+                headlineContent = {
                     Text(stringResource(R.string.assistant_page_local_tools_audio_info_title))
                 },
                 supportingContent = {
