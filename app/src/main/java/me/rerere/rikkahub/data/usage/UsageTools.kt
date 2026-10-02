@@ -419,19 +419,19 @@ private suspend fun applyPriceTable(
     val cleared = mutableListOf<String>()
     var changed = false
     val newProviders = settings.providers.map { provider ->
-        val newModels = provider.models.map { model ->
+        var updated = provider
+        provider.models.forEach { model ->
             val next = wanted["${provider.id}:${model.id}"]
-            if (next == model.pricing) {
-                model
-            } else {
-                if (next == null && model.pricing != null) {
-                    cleared += "${provider.name}/${model.modelId}"
-                }
-                changed = true
-                model.copy(pricing = next)
+            if (next == model.pricing) return@forEach
+            if (next == null && model.pricing != null) {
+                cleared += "${provider.name}/${model.modelId}"
             }
+            changed = true
+            // ProviderSetting is sealed: only the concrete subclass knows how to rebuild
+            // itself around a changed model, and that is what editModel is for.
+            updated = updated.editModel(model.copy(pricing = next))
         }
-        if (newModels == provider.models) provider else provider.copy(models = newModels)
+        updated
     }
     if (changed) {
         settingsStore.update { it.copy(providers = newProviders) }
