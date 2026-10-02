@@ -76,11 +76,23 @@ fun ModelPricingPage(
         }
     }
 
+    val candidate = read.pricing?.withWindows(windows.windows)
+
     val note = when {
         read.error != null -> read.error
         windows.error != null -> windows.error
-        read.pricing == null -> stringResource(R.string.setting_provider_page_pricing_unpriced)
-        else -> null
+        candidate == null -> stringResource(R.string.setting_provider_page_pricing_unpriced)
+        else -> UsagePriceTable.validate(
+            PriceTableSpec(
+                entries = listOf(
+                    UsagePriceTable.fromModelPricing(
+                        providerName = model.modelId.ifBlank { "model" },
+                        modelId = model.modelId.ifBlank { "model" },
+                        pricing = candidate,
+                    )
+                )
+            )
+        ).rejected.firstOrNull()?.reason
     }
     val noteIsError = read.error != null || windows.error != null
 
