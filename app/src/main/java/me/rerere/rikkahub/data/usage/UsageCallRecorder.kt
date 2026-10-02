@@ -32,6 +32,8 @@ internal object UsageCallRecorder {
         context: UsageCallContext,
         providerName: String? = null,
         modelId: String? = null,
+        costMicros: Long? = null,
+        priceVersionId: String? = null,
         streaming: Boolean = false,
         latencyMs: Long? = null,
     ): Outcome {
@@ -43,6 +45,8 @@ internal object UsageCallRecorder {
                     usage = usage,
                     providerId = providerName,
                     modelId = modelId,
+                    costMicros = costMicros,
+                    priceVersionId = priceVersionId,
                     assistantId = context.assistantId,
                     conversationId = context.conversationId,
                     runId = context.runId,

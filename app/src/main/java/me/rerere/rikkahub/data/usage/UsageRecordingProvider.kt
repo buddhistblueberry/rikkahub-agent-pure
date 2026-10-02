@@ -33,12 +33,22 @@ internal class UsageRecordingProvider<T : ProviderSetting>(
     ): TextGenerationResult {
         val startedAt = System.currentTimeMillis()
         val result = delegate.generateText(providerSetting, messages, params)
+        // P2-11d - price the call now and freeze the result: editing the price row later must
+        // not rewrite what this call already cost. Unpriced models yield null, never zero.
+        val price = UsagePriceResolver.ratesAt(
+            pricing = params.model.pricing,
+            atEpochMs = startedAt,
+            fallbackInputPerToken = params.model.pricePromptPerToken,
+            fallbackOutputPerToken = params.model.priceCompletionPerToken,
+        )
         val outcome = UsageCallRecorder.record(
             ledger = ledger,
             usage = result.usage,
             context = currentUsageCallContext() ?: UsageCallContext(),
             providerName = providerSetting.name,
             modelId = params.model.modelId,
+            costMicros = result.usage?.let { UsagePriceResolver.costMicros(it, price?.rates) },
+            priceVersionId = UsagePriceResolver.priceVersionId(price),
             latencyMs = System.currentTimeMillis() - startedAt,
         )
         if (outcome is UsageCallRecorder.Outcome.Failed) {

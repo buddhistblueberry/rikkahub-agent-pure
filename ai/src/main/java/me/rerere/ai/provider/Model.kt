@@ -22,6 +22,11 @@ data class Model(
     val supportedParameters: List<String> = emptyList(),
     val pricePromptPerToken: Double? = null,
     val priceCompletionPerToken: Double? = null,
+    /**
+     * P2-11d - explicit user-owned pricing for this model, including off-peak rates. Null
+     * falls back to the per-token metadata above and then to no cost at all.
+     */
+    val pricing: ModelPricing? = null,
 )
 
 @Serializable
