@@ -68,6 +68,8 @@ import java.io.File
 import java.io.IOException
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.usage.UsageCallContext
+import me.rerere.rikkahub.data.usage.UsagePurpose
 
 private const val TAG = "GenerationHandler"
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
@@ -632,6 +634,7 @@ class GenerationLoop(
                         transformers = inputTransformers,
                         model = model,
                         providerImpl = providerImpl,
+                        stepIndex = stepIndex,
                         provider = provider,
                         tools = toolsInternal,
                         memories = memories ?: emptyList(),
@@ -1288,6 +1291,7 @@ class GenerationLoop(
         conversationModeInjectionIds: Set<Uuid> = emptySet(),
         conversationLorebookIds: Set<Uuid> = emptySet(),
         workspaceCwd: String? = null,
+        stepIndex: Int = 0,
     ) {
         val internalMessages = buildList {
             // Conversation-level system prompt override (upstream): when the assistant
@@ -1449,11 +1453,11 @@ class GenerationLoop(
                         )
                     },
                 ) {
-                    providerImpl.generateText(
+                    withContext(UsageCallContext(purpose = if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN, conversationId = conversationId?.toString(), assistantId = assistant.id.toString())) { providerImpl.generateText(
                         providerSetting = provider,
                         messages = internalMessages,
                         params = params,
-                    )
+                    ) }
                 }
                 messages = messages.handleTextGenerationResult(result = result, model = model)
                 onUpdateMessages(messages)

@@ -55,6 +55,10 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import me.rerere.rikkahub.data.usage.UsageLedger
+import me.rerere.rikkahub.data.usage.UsageLedgerDatabase
+import me.rerere.rikkahub.data.usage.UsageLedgerDatabaseFactory
+import me.rerere.rikkahub.data.usage.decorateForUsage
 
 val dataSourceModule = module {
     single {
@@ -65,6 +69,12 @@ val dataSourceModule = module {
         val context: Context = get()
         AppDatabaseFactory.create(context)
     }
+
+    // P2-11c - the usage ledger lives in its own database file (see UsageLedgerDatabase for
+    // why), so a telemetry retention sweep can never touch the chat database.
+    single { UsageLedgerDatabaseFactory.create(context = get()) }
+    single { get<UsageLedgerDatabase>().usageRecordDao() }
+    single { UsageLedger(get()) }
 
     single {
         AssistantTemplateLoader(settingsStore = get())
@@ -323,7 +333,12 @@ val dataSourceModule = module {
         val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = get()
         val codexRepository: CodexAccountRepository = get()
         val json: Json = get()
+        val usageLedger: UsageLedger = get()
         ProviderManager(client = get(), context = get()).also { pm ->
+            // P2-11c2 - every provider handed out gets wrapped, so each model round trip
+            // writes one ledger row. Installed on the raw accessor so both getProvider and
+            // getProviderByType are covered exactly once.
+            pm.providerDecorator = { provider -> decorateForUsage(provider, usageLedger) }
             pm.registerProvider(
                 "local_litert",
                 me.rerere.locallm.litert.LiteRtProvider(

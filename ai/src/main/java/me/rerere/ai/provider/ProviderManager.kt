@@ -38,8 +38,19 @@ class ProviderManager(client: OkHttpClient, context: Context) {
      * @param name Provider名称
      * @return Provider实例，如果不存在则返回null
      */
+    /**
+     * Optional decorator applied to every provider this manager hands out.
+     *
+     * The app installs one to attach its usage ledger (P2-11c2). It hangs off the raw
+     * accessor rather than [getProviderByType] so that both entry points are covered exactly
+     * once, and it defaults to null, which returns the registered instances untouched: code
+     * that installs nothing keeps the pre-existing behaviour byte for byte.
+     */
+    var providerDecorator: ((Provider<*>) -> Provider<*>)? = null
+
     fun getProvider(name: String): Provider<*> {
-        return providers[name] ?: throw IllegalArgumentException("Provider not found: $name")
+        val provider = providers[name] ?: throw IllegalArgumentException("Provider not found: $name")
+        return providerDecorator?.invoke(provider) ?: provider
     }
 
     /**

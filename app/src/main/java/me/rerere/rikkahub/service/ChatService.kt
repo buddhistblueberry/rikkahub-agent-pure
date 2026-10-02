@@ -147,6 +147,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.usage.UsageCallContext
+import me.rerere.rikkahub.data.usage.UsagePurpose
 
 private const val TAG = "ChatService"
 private const val COMPACTION_REQUEST_TIMEOUT_MS = 3 * 60_000L
@@ -2351,7 +2353,7 @@ class ChatService(
             }
 
             val providerHandler = providerManager.getProviderByType(provider)
-            val result = providerHandler.generateText(
+            val result = withContext(UsageCallContext(purpose = UsagePurpose.TITLE, conversationId = conversation.id.toString())) { providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
                     UIMessage.user(
@@ -2362,7 +2364,7 @@ class ChatService(
                     ),
                 ),
                 params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
-            )
+            ) }
 
             applyTitle(result.message.toText().trim().ifBlank { fallback })
         }.onFailure {
@@ -2401,7 +2403,7 @@ class ChatService(
             }
 
             val providerHandler = providerManager.getProviderByType(provider)
-            val result = providerHandler.generateText(
+            val result = withContext(UsageCallContext(purpose = UsagePurpose.SUGGESTION, conversationId = conversationId.toString())) { providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
                     UIMessage.user(
@@ -2412,7 +2414,7 @@ class ChatService(
                     )
                 ),
                 params = backgroundTextGenerationParams(model, settings.fastModelReasoningLevel),
-            )
+            ) }
             val suggestions =
                 result.message.toText().split("\n").map { it.trim() }
                     .filter { it.isNotBlank() }
@@ -2957,13 +2959,13 @@ class ChatService(
             }
 
             val result = withTimeout(COMPACTION_REQUEST_TIMEOUT_MS) {
-                providerHandler.generateText(
+                withContext(UsageCallContext(purpose = UsagePurpose.COMPACTION, conversationId = conversation.id.toString())) { providerHandler.generateText(
                     providerSetting = provider,
                     messages = listOf(UIMessage.user(prompt)),
                     params = backgroundTextGenerationParams(model).copy(
                         maxTokens = requestedTargetTokens,
                     ),
-                )
+                ) }
             }
 
             return result.message.toText().trim()

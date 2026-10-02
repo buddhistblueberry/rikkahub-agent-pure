@@ -19,6 +19,9 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
+import me.rerere.rikkahub.data.usage.UsageCallContext
+import me.rerere.rikkahub.data.usage.UsagePurpose
+import kotlinx.coroutines.withContext
 
 class TranslationHandler(
     private val providerManager: ProviderManager,
@@ -65,7 +68,7 @@ class TranslationHandler(
         } else {
             // Use Qwen MT model with special translation options
             val messages = listOf(UIMessage.user(sourceText))
-            val result = providerHandler.generateText(
+            val result = withContext(UsageCallContext(purpose = UsagePurpose.TRANSLATION)) { providerHandler.generateText(
                 providerSetting = provider,
                 messages = messages,
                 params = TextGenerationParams(
@@ -85,7 +88,7 @@ class TranslationHandler(
                         )
                     ),
                 ),
-            )
+            ) }
             val translatedText = result.message.toText()
 
             if (translatedText.isNotBlank()) {
