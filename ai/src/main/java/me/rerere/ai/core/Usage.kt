@@ -23,6 +23,9 @@ data class TokenUsage(
     val cacheMissTokens: Int? = null,
     // Provider-reported reasoning/thinking tokens, when the provider exposes them.
     val reasoningTokens: Int? = null,
+    // Provider-reported cache-write tokens (Anthropic `cache_creation_input_tokens`). Writes
+    // are billed at their own rate, so they must not be folded into hits or misses.
+    val cacheWriteTokens: Int? = null,
 )
 
 fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
@@ -63,5 +66,6 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         cachedTokensReported = (this?.cachedTokensReported ?: false) || other.cachedTokensReported,
         cacheMissTokens = other.cacheMissTokens ?: this?.cacheMissTokens,
         reasoningTokens = other.reasoningTokens ?: this?.reasoningTokens,
+        cacheWriteTokens = other.cacheWriteTokens ?: this?.cacheWriteTokens,
     )
 }

@@ -90,4 +90,16 @@ class UsageTest {
         assertEquals(5, merged.cachedTokens)
         assertEquals(1, merged.cacheMissTokens)
     }
+
+    @Test
+    fun `cache write tokens survive the merge`() {
+        val kept = TokenUsage(cacheWriteTokens = 25, cachedTokensReported = true)
+            .merge(TokenUsage(completionTokens = 1))
+        assertEquals(25, kept.cacheWriteTokens)
+
+        val upgraded = TokenUsage().merge(TokenUsage(cacheWriteTokens = 9))
+        assertEquals(9, upgraded.cacheWriteTokens)
+
+        assertNull(TokenUsage().merge(TokenUsage()).cacheWriteTokens)
+    }
 }
