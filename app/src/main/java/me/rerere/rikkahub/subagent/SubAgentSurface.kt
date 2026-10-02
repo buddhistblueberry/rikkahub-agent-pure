@@ -1,12 +1,16 @@
 package me.rerere.rikkahub.subagent
 
 import me.rerere.ai.core.Tool
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
+import me.rerere.rikkahub.data.agentdef.AgentNamespace
+import me.rerere.rikkahub.data.agentdef.toAssistant
 import me.rerere.rikkahub.data.model.Assistant
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 
 /**
- * P2-04 — a sub-agent run's OWN tool surface, and the per-conversation record of it.
+ * P2-04, extended by P2-06b — a sub-agent run's OWN tool surface, and the per-conversation
+ * record of it.
  *
  * ## Why
  *
@@ -20,14 +24,26 @@ import kotlin.uuid.Uuid
  *    ([SubAgentToolSurface]), because a headless run cannot ask the user anything — not an
  *    accident of which assistant happened to be the parent.
  *
- * [resolveChildAssistant] turns a [SubAgentProfile]'s own surface fields into a *derived* assistant
- * (parent + the three overridden tool fields), which is the one thing [ChatService]'s tool
- * assembly needs to build the child's list. Everything else the run needs — model, system prompt,
- * memories, compaction, permissions — keeps coming from the parent, exactly as before.
+ * [resolveChildAssistant] turns an expert [AgentDefinition] into a *derived* assistant
+ * (parent + the expert's own surface), which is the one thing [ChatService]'s tool assembly needs
+ * to build the child's list. Everything else the run needs — model, system prompt, memories,
+ * compaction, permissions — keeps coming from the parent, exactly as before.
+ *
+ * ## P2-06b — the definition is the surface
+ *
+ * Before P2-06b this object carried its own three-field overlay (`localTools` /
+ * `disabledLocalTools` / `mcpServers` copied off a `SubAgentProfile`). The expert library now
+ * stores those same fields plus `skills` and the D9 `slug`, and
+ * [me.rerere.rikkahub.data.agentdef.toAssistant] already knows how to overlay all of them, so the
+ * overlay lives in exactly one place and the surface cannot drift from a dispatch that resolves
+ * the same definition. `skills` and `slug` (which sets `coldMemoryDir` to `agents/<slug>/memory`)
+ * therefore count as "this expert has a surface of its own" too: a definition that only names a
+ * namespace still gets a derived child assistant, and every tool on it still passes through the
+ * headless floor in [apply].
  *
  * ## Off by default, byte-identical when off
  *
- * No record is written unless the profile defines a surface ([resolveChildAssistant] returns
+ * No record is written unless the definition defines a surface ([resolveChildAssistant] returns
  * non-null) or the parent assistant has `enableSubAgentToolSurface` on ([SubAgentEngine]). With no
  * record, [apply] returns the **same `List<Tool>` instance** and [assistantFor] returns null, so an
  * install that configures neither sends exactly the tool schemas it sent before P2-04.
@@ -37,43 +53,47 @@ object SubAgentSurface {
     // ---- child surface synthesis (pure) ------------------------------------------------
 
     /**
-     * The assistant a sub-agent run's tool list should be assembled from, given its [profile].
+     * The assistant a sub-agent run's tool list should be assembled from, given its [definition].
      *
      * Returns `null` — "inherit the parent verbatim" — when there is nothing to override: no
-     * profile at all, no parent assistant (a deleted parent), or a profile whose three surface
-     * fields are all unset. That is the pre-P2-04 behaviour, and it is the answer for every profile
-     * that only picks a model / system prompt (the overwhelmingly common case).
+     * definition at all, no parent assistant (a deleted parent), or a definition whose every
+     * surface field is unset. That is the pre-P2-04 behaviour, and it is the answer for every
+     * expert that only picks a model / system prompt (the overwhelmingly common case).
      *
-     * When at least one field is set, the parent is copied with each field taken from the profile
-     * when it has an opinion and from the parent otherwise:
+     * When at least one field is set, the parent is copied with each field taken from the
+     * definition when it has an opinion and from the parent otherwise — the overlay itself lives in
+     * [toAssistant], so this function and a dispatch that resolves the same definition can never
+     * disagree about what "the expert's surface" is.
      *
-     *  - `localTools` — `null` inherits; otherwise the exact option groups the child gets.
-     *  - `disabledLocalTools` — `null` inherits; otherwise the per-tool opt-out for the child.
-     *  - `mcpServers` — `null` inherits; otherwise the MCP servers the child may use.
-     *
-     * The `id` is deliberately **not** changed: the child stays "the same assistant" for every
-     * context-aware tool (`assistantId` in the invocation context, memory scoping, the recursion
-     * guard). Only the tool surface is the child's own. (Per-agent namespaces are P2-06.)
+     * The `id` is deliberately **not** changed (see [toAssistant]): the child stays "the same
+     * assistant" for every context-aware tool (`assistantId` in the invocation context, memory
+     * scoping, the recursion guard). Only the tool surface is the child's own.
      */
-    fun resolveChildAssistant(parent: Assistant?, profile: SubAgentProfile?): Assistant? {
-        if (parent == null || profile == null) return null
-        if (!hasOwnSurface(profile)) return null
-        return parent.copy(
-            localTools = profile.localTools ?: parent.localTools,
-            disabledLocalTools = profile.disabledLocalTools ?: parent.disabledLocalTools,
-            mcpServers = profile.mcpServers ?: parent.mcpServers,
-        )
+    fun resolveChildAssistant(parent: Assistant?, definition: AgentDefinition?): Assistant? {
+        if (parent == null || definition == null) return null
+        if (!hasOwnSurface(definition)) return null
+        return definition.toAssistant(parent)
     }
 
     /**
-     * True when [profile] defines any part of its own tool surface. A profile with all three
-     * fields null is a "model + prompt" specialist and inherits the parent's whole surface.
+     * True when [definition] defines any part of its own tool surface. A definition with every
+     * surface field null is a "model + prompt" specialist and inherits the parent's whole surface.
+     *
+     * P2-06b: `skills` and `slug` are surface fields too. A definition that only names a private
+     * namespace (D9) still gets a derived child assistant, so the namespace — and the headless
+     * floor over the tools the child ends up with — is applied in P2-06b rather than waiting for
+     * the UI card.
      */
-    fun hasOwnSurface(profile: SubAgentProfile?): Boolean =
-        profile != null && (
-            profile.localTools != null ||
-                profile.disabledLocalTools != null ||
-                profile.mcpServers != null
+    fun hasOwnSurface(definition: AgentDefinition?): Boolean =
+        definition != null && (
+            definition.localTools != null ||
+                definition.disabledLocalTools != null ||
+                definition.mcpServers != null ||
+                definition.skills != null ||
+                // A slug is only a surface when it normalises to a usable namespace: a blank or
+                // otherwise unusable value leaves `coldMemoryDir` on the parent's, so claiming a
+                // surface for it would derive a child that differs in nothing.
+                AgentNamespace.normalizeSlug(definition.slug) != null
             )
 
     // ---- per-conversation frozen record -------------------------------------------------

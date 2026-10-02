@@ -13,8 +13,10 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.agentdef.AgentDefinition
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionResolver
 
-private fun errEnv(error: String, detail: String): List<UIMessagePart> {
+internal fun errEnv(error: String, detail: String): List<UIMessagePart> {
     val obj = buildJsonObject {
         put("error", error)
         put("detail", detail)
@@ -44,22 +46,24 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
 }
 
 /**
- * Phase 11 — sub-agent dispatch + observation tools. The four register only when the
+ * Phase 11 — sub-agent dispatch + observation tools. They register only when the
  * assistant has the `Sub-agents` Local Tools toggle on, AND the calling conversation is
  * NOT itself headless (the engine refuses recursive dispatch — these tools are not
  * useful inside a sub-agent run).
+ *
+ * P2-06b — the `agent` argument now names an [AgentDefinition] in the expert library rather
+ * than a DataStore-backed `SubAgentProfile`. The list is passed in fresh at tool-construction
+ * time (the same way the profile list used to be), so the description below and whether `agent`
+ * is offered at all always reflect what is configured right now.
  */
 
 fun subagentDispatchTool(
     engine: SubAgentEngine,
     callerContext: me.rerere.rikkahub.data.ai.tools.ToolInvocationContext =
         me.rerere.rikkahub.data.ai.tools.ToolInvocationContext.EMPTY,
-    // #36: named sub-agent profiles, passed in fresh at tool-construction time (the
-    // caller reads them from current settings) so the description below - and whether `agent`
-    // is offered as a parameter at all - always reflects what's configured right now.
-    profiles: List<SubAgentProfile> = emptyList(),
+    definitions: List<AgentDefinition> = emptyList(),
 ): Tool {
-    val enabledProfiles = SubAgentProfileResolver.enabledProfiles(profiles)
+    val enabledDefinitions = AgentDefinitionResolver.enabledDefinitions(definitions)
     val description = buildString {
         append(
             """
@@ -81,11 +85,11 @@ fun subagentDispatchTool(
                 Always Allow if the user trusts the assistant to delegate freely.
             """.trimIndent()
         )
-        if (enabledProfiles.isNotEmpty()) {
+        if (enabledDefinitions.isNotEmpty()) {
             appendLine()
             appendLine()
-            append("Named sub-agent profiles (pass the name as `agent`):\n")
-            append(enabledProfiles.joinToString("\n") { "- ${it.name}: ${it.description}" })
+            append("Named experts (pass the name as `agent`):\n")
+            append(enabledDefinitions.joinToString("\n") { "- ${it.name}: ${it.description}" })
         }
     }
     return Tool(
@@ -96,15 +100,15 @@ fun subagentDispatchTool(
                 properties = buildJsonObject {
                     put("task", buildJsonObject { put("type", "string") })
                     put("label", buildJsonObject { put("type", "string") })
-                    if (enabledProfiles.isNotEmpty()) {
+                    if (enabledDefinitions.isNotEmpty()) {
                         put("agent", buildJsonObject {
                             put("type", "string")
                             put(
                                 "description",
-                                "Name of a configured sub-agent profile (case-insensitive), " +
-                                    "supplying that profile's model and system prompt. Unknown " +
+                                "Name of a configured expert (case-insensitive), " +
+                                    "supplying that expert's model and system prompt. Unknown " +
                                     "names fail the dispatch and the error lists the valid " +
-                                    "names. model_id, if also given, wins over the profile's " +
+                                    "names. model_id, if also given, wins over the expert's " +
                                     "model.",
                             )
                         })
@@ -116,8 +120,8 @@ fun subagentDispatchTool(
                             "Model for this sub-agent: a model uuid, a provider model id, or a " +
                                 "display name (case-insensitive exact match). Ambiguous or unknown " +
                                 "values fail the dispatch and the error lists the valid options. " +
-                                "Takes precedence over agent's model. Omit to inherit the agent " +
-                                "profile's model (if agent is set) or the parent assistant's model.",
+                                "Takes precedence over agent's model. Omit to inherit the " +
+                                "expert's model (if agent is set) or the parent assistant's model.",
                         )
                     })
                     put("system_prompt", buildJsonObject { put("type", "string") })
@@ -263,38 +267,108 @@ fun subagentDispatchTool(
     )
 }
 
-fun subagentListTool(registry: SubAgentRegistry): Tool = Tool(
-    name = "subagent_list",
-    description = """
-        List sub-agent runs visible to this assistant. Set active_only=true to omit
-        terminal runs. Read-only.
-    """.trimIndent().replace("\n", " "),
-    parameters = {
-        InputSchema.Obj(
-            properties = buildJsonObject {
-                put("active_only", buildJsonObject { put("type", "boolean") })
-            },
-            required = emptyList(),
-        )
-    },
-    execute = { args ->
-        val activeOnly = args.jsonObject["active_only"]?.jsonPrimitive?.booleanOrNull ?: false
-        val list = registry.list(activeOnly)
-        val arr = buildJsonArray {
-            list.forEach { addJsonObject {
-                put("id", it.id)
-                put("label", it.label)
-                put("status", it.status.name)
-                if (it.modelId != null) put("model_id", it.modelId)
-                put("started_at_ms", it.startedAtMs)
-                put("trip_count", it.tripCount)
-            } }
+/**
+ * P2-06b — one listing tool for both halves of the sub-agent feature: the live RUNS (what this
+ * tool has always returned) and the stored EXPERTS (`AgentDefinition`, what used to be listed
+ * only as free text in `subagent_dispatch`'s description).
+ *
+ * `kind` is offered — and honoured — only when at least one expert exists. An install with no
+ * experts therefore sends a `subagent_list` schema byte-for-byte identical to the pre-P2-06b
+ * one, which is the whole point of the roster decision: no new tool, no schema churn for
+ * installs that never touch the feature. When experts do exist, `runs` (the default) is still
+ * exactly the old output, `experts` lists the library, and `all` returns both.
+ */
+fun subagentListTool(
+    registry: SubAgentRegistry,
+    definitions: List<AgentDefinition> = emptyList(),
+): Tool {
+    // Gate on ALL definitions (not just the enabled ones): an all-disabled library still has
+    // something worth showing, and a library that exists must never silently fall back to the
+    // pre-P2-06b schema.
+    val offersDefinitions = definitions.isNotEmpty()
+    return Tool(
+        name = "subagent_list",
+        description = buildString {
+            append(
+                """
+                    List sub-agent runs visible to this assistant. Set active_only=true to omit
+                    terminal runs. Read-only.
+                """.trimIndent().replace("\n", " ")
+            )
+            if (offersDefinitions) {
+                append(" ")
+                append(
+                    "Pass kind=\"experts\" to list the configured experts instead (their names, " +
+                        "ids and properties) — read this before calling subagent_update or " +
+                        "subagent_delete so you can pass the right expert. kind=\"all\" returns both."
+                )
+            }
+        },
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("active_only", buildJsonObject { put("type", "boolean") })
+                    if (offersDefinitions) {
+                        put("kind", buildJsonObject {
+                            put("type", "string")
+                            put(
+                                "description",
+                                "Which collection to list: \"runs\" (default, live sub-agent runs), " +
+                                    "\"experts\" (the stored expert definitions), or \"all\".",
+                            )
+                        })
+                    }
+                },
+                required = emptyList(),
+            )
+        },
+        execute = { args ->
+            val params = args.jsonObject
+            val activeOnly = params["active_only"]?.jsonPrimitive?.booleanOrNull ?: false
+            // With no library configured `kind` is not even described, so a stale value is
+            // ignored rather than honoured — the same rule T-04/T-09 apply to their gated
+            // parameters. Default is "runs", i.e. the pre-P2-06b behaviour.
+            val kind = if (offersDefinitions) {
+                params["kind"]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase() ?: KIND_RUNS
+            } else {
+                KIND_RUNS
+            }
+            if (kind != KIND_RUNS && kind != KIND_EXPERTS && kind != KIND_ALL) {
+                return@Tool errEnv(
+                    "invalid_kind",
+                    "kind must be one of \"$KIND_RUNS\", \"$KIND_EXPERTS\" or \"$KIND_ALL\"; got \"$kind\"",
+                )
+            }
+            val runsJson = if (kind != KIND_EXPERTS) encodeRuns(registry, activeOnly) else null
+            val expertsJson = if (kind != KIND_RUNS) encodeDefinitions(definitions) else null
+            listOf(UIMessagePart.Text(buildJsonObject {
+                if (runsJson != null) put("runs", runsJson)
+                if (expertsJson != null) put("experts", expertsJson)
+            }.toString()))
+        },
+    )
+}
+
+private const val KIND_RUNS = "runs"
+private const val KIND_EXPERTS = "experts"
+private const val KIND_ALL = "all"
+
+private fun encodeRuns(registry: SubAgentRegistry, activeOnly: Boolean) = buildJsonArray {
+    registry.list(activeOnly).forEach { run ->
+        addJsonObject {
+            put("id", run.id)
+            put("label", run.label)
+            put("status", run.status.name)
+            if (run.modelId != null) put("model_id", run.modelId)
+            put("started_at_ms", run.startedAtMs)
+            put("trip_count", run.tripCount)
         }
-        listOf(UIMessagePart.Text(buildJsonObject {
-            put("runs", arr)
-        }.toString()))
-    },
-)
+    }
+}
+
+private fun encodeDefinitions(definitions: List<AgentDefinition>) = buildJsonArray {
+    definitions.forEach { add(encodeDefinition(it)) }
+}
 
 fun subagentGetTool(registry: SubAgentRegistry): Tool = Tool(
     name = "subagent_get",

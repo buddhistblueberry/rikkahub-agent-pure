@@ -165,6 +165,14 @@ object ToolApprovalDefaults {
         // have no entry here.
         "subagent_dispatch",
 
+        // P2-06b — the roster WRITE tools. Approval-required for the same reason as
+        // subagent_dispatch above: a stored expert becomes dispatchable immediately, and
+        // deleting one changes what every later `agent` name resolves to, so the user reviews
+        // the change before it lands. subagent_list stays read-only and has no entry here.
+        "subagent_create",
+        "subagent_update",
+        "subagent_delete",
+
         // Workflows (Phase 12) — every mutator goes through the existing approval flow
         // with a human-readable summary rendered by WorkflowApprovalRenderer. workflow_run
         // fires immediately on approve, with HARDLINE still applied to every action.

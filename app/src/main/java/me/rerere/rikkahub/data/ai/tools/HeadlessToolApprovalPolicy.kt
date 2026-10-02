@@ -13,7 +13,7 @@ import kotlinx.serialization.json.put
  * [HeadlessConversations.mark] (cron / sub-agent / workflow / skill-tester /
  * external-automation), on the reasoning that the user pre-authorised the schedule itself at
  * job-creation time and there is no UI to prompt at fire time. The reasoning is sound for the
- * ordinary tool set, and wrong for the three groups below — those are exactly the tools whose
+ * ordinary tool set, and wrong for the four groups below — those are exactly the tools whose
  * *point* is that a human looks at each call.
  *
  * The refusal has to be an **explicit one**. Flipping the tool to `Pending` instead would break
@@ -99,22 +99,45 @@ object HeadlessToolApprovalPolicy {
     )
 
     /**
+     * P2-06b — the expert-library WRITE tools (`subagent_create` / `subagent_update` /
+     * `subagent_delete`). Not a privacy surface: these are here because the roster is what every
+     * later dispatch resolves against. An unattended cron job must not be able to hand itself a
+     * new expert, quietly edit the one the user tuned, or delete it out from under them — there
+     * is nobody to approve the change. In an ordinary conversation each call still prompts (all
+     * three are in [ToolApprovalDefaults.ALWAYS_ASK]), so nothing is subtracted from an attended
+     * run.
+     *
+     * Second layer: `SubAgentToolSurface` already denies the `subagent_` prefix to any sub-agent
+     * surface, so a sub-agent run — itself headless — never even sees these handles. This entry
+     * is what covers cron / workflow / external-automation conversations, which keep their full
+     * tool list.
+     */
+    val EXPERT_WRITE_TOOL_NAMES: Set<String> = setOf(
+        "subagent_create",
+        "subagent_update",
+        "subagent_delete",
+    )
+
+    /**
      * Every tool this policy refuses in a headless run: the per-call-confirmation set
-     * ([ToolApprovalDefaults.NO_ALWAYS_ALLOW]), [PRIVACY_SENSITIVE_TOOL_NAMES], and
-     * [PRIVATE_DATA_TOOL_NAMES].
+     * ([ToolApprovalDefaults.NO_ALWAYS_ALLOW]), [PRIVACY_SENSITIVE_TOOL_NAMES],
+     * [PRIVATE_DATA_TOOL_NAMES] and [EXPERT_WRITE_TOOL_NAMES].
      *
      * `NO_ALWAYS_ALLOW` is derived rather than hardcoded, so a tool added to it upstream is
      * covered here without a second edit — the direction that fails safe. The two local sets
      * are spelled out on purpose: they are policy, not a mirror of an upstream constant.
      */
     val REFUSED_TOOL_NAMES: Set<String> =
-        ToolApprovalDefaults.NO_ALWAYS_ALLOW + PRIVACY_SENSITIVE_TOOL_NAMES + PRIVATE_DATA_TOOL_NAMES
+        ToolApprovalDefaults.NO_ALWAYS_ALLOW + PRIVACY_SENSITIVE_TOOL_NAMES +
+            PRIVATE_DATA_TOOL_NAMES + EXPERT_WRITE_TOOL_NAMES
 
     /**
      * Why [toolName] must not run in a headless conversation, or null when it may.
      *
-     * The two groups get different wording because the operator-facing fix differs: one needs
-     * a person to confirm the call, the other needs a person to be *present*.
+     * Each group gets its own wording because the operator-facing fix differs: one needs a
+     * person to confirm the call, the next needs a person to be *present*, the last needs the
+     * user to manage the roster themselves — from the settings screen, or a conversation where
+     * they can approve the call.
      */
     fun refusalDetail(toolName: String): String? {
         val name = toolName.trim()
@@ -134,6 +157,11 @@ object HeadlessToolApprovalPolicy {
                     "camera or screen, notifications — or overwrites the assistant's persistent " +
                     "notes. This conversation has no approval channel, so nobody is there to " +
                     "consent. It cannot run unattended."
+            name in EXPERT_WRITE_TOOL_NAMES ->
+                "$name rewrites the expert library, which is the set of named specialists " +
+                    "subagent_dispatch resolves. This conversation has no approval channel, so " +
+                    "the user cannot review the change. Ask the user to create or edit experts " +
+                    "from the settings screen, or run the dispatch without one."
             else -> null
         }
     }

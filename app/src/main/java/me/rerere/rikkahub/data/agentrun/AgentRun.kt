@@ -128,6 +128,15 @@ enum class AgentRunKind(val wire: String) {
     Telegram("telegram"),
     ExternalAutomation("external_automation"),
 
+    /**
+     * P2-06b — a write against the expert library (create / update / delete). One row per
+     * call, marked terminal whether it succeeded or failed, like [PriceTable] above. The
+     * metadata is deliberately metadata-only: the operation, the expert's id/name, and the
+     * names of the fields that changed — never the definition's prompt text, because the
+     * ledger stores no content.
+     */
+    AgentDefWrite("agent_def_write"),
+
     /** A write of the model price table (P2-11d-3). */
     PriceTable("price_table");
 

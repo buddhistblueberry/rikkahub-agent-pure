@@ -29,6 +29,11 @@ class SubAgentToolSurfaceTest {
         assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason("subagent_cancel"))
         // Prefix rule, not a fixed list — a future handle is covered without editing the file.
         assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason("subagent_something_new"))
+        // P2-06b — the roster WRITE handles. A sub-agent run is itself headless, so it may not
+        // rewrite the roster it was dispatched from.
+        assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason("subagent_create"))
+        assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason("subagent_update"))
+        assertEquals("tool_unavailable_headless", SubAgentToolSurface.denialReason("subagent_delete"))
     }
 
     @Test

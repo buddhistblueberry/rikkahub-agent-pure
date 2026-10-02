@@ -113,6 +113,8 @@ val appModule = module {
             // Phase 24 — unified AgentRun ledger writer. No DI cycle: AgentRunRepository
             // depends only on its DAO.
             agentRunRepo = get(),
+            // P2-06b — the expert library, the source of truth for a dispatch's `agent` name.
+            agentDefinitionRepository = get(),
         )
     }
 
@@ -193,6 +195,7 @@ val appModule = module {
             externalAutomationConfig = get(),
             gitHubReleaseChecker = get(),
             bugReportBuilder = get(),
+            agentDefinitionRepository = get(),
             subAgentEngine = get(),
             subAgentRegistry = get(),
             conversationRepo = get(),
@@ -316,6 +319,8 @@ val appModule = module {
             // Doctor refresh: skills.* and service.mcp_servers rows.
             skillManager = get(),
             mcpManager = get(),
+            // P2-06b: the expert library behind the assistant.subagent_profiles row.
+            agentDefinitionRepository = get(),
         )
     }
 }
