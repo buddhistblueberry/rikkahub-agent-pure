@@ -55,6 +55,9 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionDatabase
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionDatabaseFactory
+import me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository
 import me.rerere.rikkahub.data.usage.UsageLedger
 import me.rerere.rikkahub.data.usage.UsageLedgerDatabase
 import me.rerere.rikkahub.data.usage.UsageLedgerDatabaseFactory
@@ -75,6 +78,14 @@ val dataSourceModule = module {
     single { UsageLedgerDatabaseFactory.create(context = get()) }
     single { get<UsageLedgerDatabase>().usageRecordDao() }
     single { UsageLedger(get()) }
+
+    // P2-06 - the expert library also lives in its own database file (see
+    // AgentDefinitionDatabase for why). Unlike the usage ledger this holds USER data, so a
+    // future shape change ships a real migration rather than dropping and recreating the
+    // file. Nothing in the expert path joins against the chat database.
+    single { AgentDefinitionDatabaseFactory.create(context = get()) }
+    single { get<AgentDefinitionDatabase>().agentDefinitionDao() }
+    single { AgentDefinitionRepository(dao = get(), appScope = get()) }
 
     single {
         AssistantTemplateLoader(settingsStore = get())
