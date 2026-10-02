@@ -1,6 +1,9 @@
 package me.rerere.rikkahub.subagent
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.Serializable
+import me.rerere.rikkahub.data.ai.tools.LenientLocalToolListSerializer
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import kotlin.uuid.Uuid
 
 /**
@@ -194,6 +197,17 @@ object SubAgentRequestValidator {
  * NAME instead of memorizing a model uuid. Resolved by [SubAgentProfileResolver]. `modelId` null
  * means the profile itself defers to the parent's model, mirroring the "null = inherit"
  * convention already used by [SubAgentRequest.modelId].
+ *
+ * P2-04 — a profile may also carry its OWN tool surface. Until P2-04 a sub-agent conversation was
+ * built from its parent's assistant, so the child's surface was necessarily a subset of the
+ * parent's; these three fields (all `null` = inherit, i.e. the pre-P2-04 behaviour) let a
+ * specialist be handed a tool group the parent keeps off its own face, or a different MCP server
+ * set. What still constrains it is the headless floor — [SubAgentToolSurface] — not the parent's
+ * choices (see [SubAgentSurface.resolveChildAssistant]).
+ *
+ * Appended last on purpose: a new field may never shift the position of an existing one, and
+ * `@EncodeDefault(NEVER)` keeps every profile that does not set them byte-for-byte identical in
+ * the settings store.
  */
 @Serializable
 data class SubAgentProfile(
@@ -203,4 +217,11 @@ data class SubAgentProfile(
     val systemPrompt: String = "",
     val modelId: Uuid? = null,
     val enabled: Boolean = true,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    @Serializable(with = LenientLocalToolListSerializer::class)
+    val localTools: List<LocalToolOption>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val disabledLocalTools: Set<String>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val mcpServers: Set<Uuid>? = null,
 )

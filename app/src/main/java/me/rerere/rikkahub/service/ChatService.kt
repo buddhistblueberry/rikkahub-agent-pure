@@ -1541,7 +1541,12 @@ class ChatService(
         model: Model,
         settings: Settings,
     ): List<Tool> = buildList {
-        if (assistant.enableWebSearch) {
+        // P2-04 — a sub-agent run may carry its OWN tool surface ([SubAgentSurface]). For every
+        // other conversation this is the `assistant` argument itself, so the list built below is
+        // exactly what it was before.
+        val surfaceAssistant = me.rerere.rikkahub.subagent.SubAgentSurface
+            .assistantFor(conversationId) ?: assistant
+        if (surfaceAssistant.enableWebSearch) {
             addAll(createSearchTools(settings))
         }
         // T-04 / (4) + T-09 / (8) - the rebuild path (regenerate) must offer the SAME tool
@@ -1550,29 +1555,37 @@ class ChatService(
         addAll(
             ToolSurfaceResolver.resolve(
                 localTools = localTools,
-                assistant = assistant,
+                assistant = surfaceAssistant,
                 context = ToolSurfaceResolver.chatContext(
-                    assistant = assistant,
+                    assistant = surfaceAssistant,
                     conversationId = conversationId,
                     model = model,
                     isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId),
                 ),
             )
         )
-        addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
+        addAll(createWorkspaceToolsIfReady(surfaceAssistant.workspaceId?.toString(), conversation.workspaceCwd))
         // T-06 / (7) - cold memory (Markdown knowledge base). Same on both build paths so a
         // regenerate sees the surface the first pass had. Off unless enabled AND configured.
-        addAll(createColdMemoryToolsIfConfigured(assistant))
-        if (assistant.enabledSkills.isNotEmpty()) {
+        addAll(createColdMemoryToolsIfConfigured(surfaceAssistant))
+        if (surfaceAssistant.enabledSkills.isNotEmpty()) {
             addAll(
                 createSkillTools(
-                    enabledSkills = assistant.enabledSkills,
+                    enabledSkills = surfaceAssistant.enabledSkills,
                     allSkills = skillManager.listSkills(),
                     skillManager = skillManager,
                 )
             )
         }
-        mcpManager.getAllAvailableTools().forEach { (serverId, serverName, mcpTool) ->
+        // P2-04 — an inherited child (surfaceAssistant === assistant) keeps the global
+        // current-assistant MCP resolution it has always used; only an explicitly surfaced child
+        // resolves MCP against its own assistant.
+        val mcpTools = if (surfaceAssistant === assistant) {
+            mcpManager.getAllAvailableTools()
+        } else {
+            mcpManager.getAllAvailableTools(surfaceAssistant)
+        }
+        mcpTools.forEach { (serverId, serverName, mcpTool) ->
             val mcpToolName = me.rerere.rikkahub.data.ai.mcp.buildMcpToolName(serverId, serverName, mcpTool.name)
             add(
                 Tool(
@@ -1590,7 +1603,7 @@ class ChatService(
         // T-09 / (8) - a sub-agent conversation sees its frozen, headless-safe surface; every
         // other conversation gets this exact list back by reference (apply is an identity when
         // the conversation was never frozen).
-    }.let { me.rerere.rikkahub.subagent.SubAgentToolSurface.apply(conversationId, it) }
+    }.let { me.rerere.rikkahub.subagent.SubAgentSurface.apply(conversationId, it) }
 
     // ---- 处理消息补全 ----
 
@@ -1830,6 +1843,10 @@ class ChatService(
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
+                    // P2-04 — the child's own tool surface when this conversation is a sub-agent
+                    // run that has one; otherwise this is the resolved assistant itself.
+                    val surfaceAssistant = me.rerere.rikkahub.subagent.SubAgentSurface
+                        .assistantFor(conversationId) ?: assistant
                     if (useExternalWebSearch) {
                         addAll(createSearchTools(settings))
                     }
@@ -1840,9 +1857,9 @@ class ChatService(
                     addAll(
                         ToolSurfaceResolver.resolve(
                             localTools = localTools,
-                            assistant = assistant,
+                            assistant = surfaceAssistant,
                             context = ToolSurfaceResolver.chatContext(
-                                assistant = assistant,
+                                assistant = surfaceAssistant,
                                 conversationId = conversationId,
                                 model = model,
                                 isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations
@@ -1850,19 +1867,19 @@ class ChatService(
                             ),
                         )
                     )
-                    addAll(createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), conversation.workspaceCwd))
+                    addAll(createWorkspaceToolsIfReady(surfaceAssistant.workspaceId?.toString(), conversation.workspaceCwd))
                     // T-06 / (7) - cold memory, mirroring the regenerate path above.
-                    addAll(createColdMemoryToolsIfConfigured(assistant))
-                    if (assistant.enabledSkills.isNotEmpty()) {
+                    addAll(createColdMemoryToolsIfConfigured(surfaceAssistant))
+                    if (surfaceAssistant.enabledSkills.isNotEmpty()) {
                         addAll(
                             createSkillTools(
-                                enabledSkills = assistant.enabledSkills,
+                                enabledSkills = surfaceAssistant.enabledSkills,
                                 allSkills = skillManager.listSkills(),
                                 skillManager = skillManager,
                             )
                         )
                     }
-                    if (assistant.enableCompactContextTool) {
+                    if (surfaceAssistant.enableCompactContextTool) {
                         // T-02 / ② - model-initiated compaction. Reuses the manual compress
                         // pipeline end-to-end (see compactConversationFromTool) instead of
                         // re-implementing summarisation. Default OFF: when the flag is unset
@@ -1881,7 +1898,14 @@ class ChatService(
                             )
                         )
                     }
-                    val allMcpTools = mcpManager.getAllAvailableTools().also { allTools ->
+                    // P2-04 — an inherited child (surfaceAssistant === assistant) keeps the
+                    // global current-assistant MCP resolution; an explicitly surfaced child
+                    // resolves MCP against its own assistant.
+                    val allMcpTools = (if (surfaceAssistant === assistant) {
+                        mcpManager.getAllAvailableTools()
+                    } else {
+                        mcpManager.getAllAvailableTools(surfaceAssistant)
+                    }).also { allTools ->
                         // Upstream name validation: a server name that isn't pure
                         // English+digits would produce an invalid `mcp__<name>__tool`
                         // surface, so surface it as an error rather than emit a tool the
@@ -1903,7 +1927,7 @@ class ChatService(
                             return
                         }
                     }
-                    if (assistant.toolSurfaceMode == ToolSurfaceMode.PROGRESSIVE_CATALOG) {
+                    if (surfaceAssistant.toolSurfaceMode == ToolSurfaceMode.PROGRESSIVE_CATALOG) {
                         // T-03 / (1) - progressive tool exposure. MCP schemas are the expensive
                         // part of the surface (one entry per remote tool, all of them opaque to
                         // us), so in this mode they are replaced by a two-tool discovery pair.
@@ -1938,7 +1962,7 @@ class ChatService(
                             add(buildMcpTool(serverId, serverName, tool))
                         }
                     }
-                }.let { me.rerere.rikkahub.subagent.SubAgentToolSurface.apply(conversationId, it) },
+                }.let { me.rerere.rikkahub.subagent.SubAgentSurface.apply(conversationId, it) },
             ).onCompletion { completionCause ->
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)

@@ -25,6 +25,7 @@ import me.rerere.oauth.OAuthLoopbackCallbackServer
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.saveUploadFromBytes
 import me.rerere.rikkahub.utils.JsonInstant
@@ -103,9 +104,22 @@ class McpManager(
 
     fun getStatus(config: McpServerConfig): Flow<McpStatus> = sessionRegistry.getStatus(config.id)
 
-    fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> {
+    fun getAllAvailableTools(): List<Triple<Uuid, String, McpTool>> =
+        availableToolsFor(settingsStore.settingsFlow.value.getCurrentAssistant())
+
+    /**
+     * P2-04 — the same list, computed for an explicit [assistant] rather than the global
+     * "current" one. A sub-agent with its own surface (see
+     * [me.rerere.rikkahub.subagent.SubAgentSurface]) must see ITS OWN MCP servers, and the child
+     * conversation's assistant is not reachable through [getCurrentAssistant] (that pointer tracks
+     * the assistant the UI is showing, not the headless run). The no-arg overload above is
+     * untouched, so every existing caller keeps today's behaviour byte-for-byte.
+     */
+    fun getAllAvailableTools(assistant: Assistant): List<Triple<Uuid, String, McpTool>> =
+        availableToolsFor(assistant)
+
+    private fun availableToolsFor(assistant: Assistant): List<Triple<Uuid, String, McpTool>> {
         val settings = settingsStore.settingsFlow.value
-        val assistant = settings.getCurrentAssistant()
         return settings.mcpServers
             .filter { it.commonOptions.enable && it.id in assistant.mcpServers }
             .flatMap { server ->
