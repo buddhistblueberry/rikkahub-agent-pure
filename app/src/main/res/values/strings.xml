@@ -2180,6 +2180,14 @@
   <string name="setting_sub_agents_page_badge_mcp">MCP %1$d</string>
   <string name="setting_sub_agents_page_badge_skills">Skills %1$d</string>
   <string name="setting_sub_agents_page_badge_namespace">agents/%1$s</string>
+  <string name="setting_sub_agents_page_palette_title">Tool palette</string>
+  <string name="setting_sub_agents_page_palette_desc">Search the local tool directory. Every entry is served from the LOCAL source, and the badge shows where a row came from. Find which group a tool belongs to before turning it on.</string>
+  <string name="setting_sub_agents_page_palette_search">Search tools</string>
+  <string name="setting_sub_agents_page_palette_summary">%1$d groups · %2$d tools in the local directory. Type a keyword to search.</string>
+  <string name="setting_sub_agents_page_palette_no_match">No tool matched. Try another keyword.</string>
+  <string name="setting_sub_agents_page_palette_group_off">Group off</string>
+  <string name="setting_sub_agents_page_palette_enable_group">Turn on</string>
+  <string name="setting_sub_agents_page_palette_disable">Disable</string>
 
   <!-- BrowserAiStripe redesign: outcome-aware, localized action trail -->
   <string name="browser_ai_stripe_stop">Stop</string>

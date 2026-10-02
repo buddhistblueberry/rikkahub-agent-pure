@@ -262,11 +262,16 @@ fun buildToolCatalogTools(
 )
 
 /**
- * Full, untruncated, ranked match list. Kept private so the scoring logic has a single
- * home: [ToolCatalog.search] truncates it, and `tool_search` reuses it to compute the
- * untruncated `total` without duplicating the scoring.
+ * Full, untruncated, ranked match list — the single home of the scoring logic.
+ *
+ * [ToolCatalog.search] truncates it, and `tool_search` reuses it to compute the untruncated
+ * `total` without duplicating the scoring. P2-05 widened it from `private` to `internal` for one
+ * more caller: [LocalToolPalette], the expert editor's palette. The 8-hit cap is a *response*
+ * budget for a model, not a bound a human scrolling a list should inherit, so the palette ranks
+ * with this and applies its own (larger) bound instead. Nothing about the function changed — the
+ * body, the ordering and the tie-break are exactly what they were.
  */
-private fun ToolCatalog.matchAll(query: String): List<ToolCatalogEntry> {
+internal fun ToolCatalog.matchAll(query: String): List<ToolCatalogEntry> {
     val q = query.trim().lowercase()
     if (q.isEmpty()) return emptyList()
     val tokens = q.split(Regex("[^a-z0-9]+")).filter { it.length >= 2 }

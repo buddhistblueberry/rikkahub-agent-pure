@@ -73,7 +73,10 @@ import me.rerere.rikkahub.data.agentdef.LocalToolGroups
 import me.rerere.rikkahub.data.agentdef.NamespaceProblem
 import me.rerere.rikkahub.data.agentdef.surfaceSummary
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.data.ai.tools.LocalToolInventory
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.data.ai.tools.LocalToolPalette
+import me.rerere.rikkahub.data.ai.tools.LocalToolPaletteHit
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.files.SkillMetadata
@@ -422,6 +425,87 @@ private fun PickerRow(
 }
 
 /**
+ * How many palette hits the sheet lists.
+ *
+ * The 8-hit cap inside `ToolCatalog` bounds a *response* for a model; a human scrolling a list
+ * gets a bigger one, still bounded so a one-letter query cannot compose a thousand rows.
+ */
+private const val TOOL_PALETTE_MAX_HITS = 30
+
+/**
+ * P2-05 - one row of the local tool palette.
+ *
+ * The palette is a second way to reach the *same* state the "Disabled tools" section below owns:
+ * the switch is exactly [AgentDefinitionDraft.toggleDisabledTool]. The badge prints the row's real
+ * `ToolCatalogSource` (`LOCAL`) rather than a label this screen made up, so what the user reads is
+ * the provenance the catalogue handed back.
+ *
+ * A tool whose group is off is still listed: that is what a directory is for. You find the tool,
+ * you see why it is missing from the surface, and one tap turns its group on.
+ */
+@Composable
+private fun ToolPaletteRow(
+    hit: LocalToolPaletteHit,
+    groupTitle: String,
+    groupEnabled: Boolean,
+    disabled: Boolean,
+    onDisabledChange: (Boolean) -> Unit,
+    onEnableGroup: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = hit.name, style = MaterialTheme.typography.bodyMedium)
+                Tag(type = TagType.INFO) { Text(hit.source.name) }
+            }
+            Text(
+                text = "$groupTitle · ${hit.summary}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!groupEnabled) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_sub_agents_page_palette_group_off),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = onEnableGroup) {
+                        Text(stringResource(R.string.setting_sub_agents_page_palette_enable_group))
+                    }
+                }
+            }
+        }
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Switch(checked = disabled, onCheckedChange = onDisabledChange)
+            Text(
+                text = stringResource(R.string.setting_sub_agents_page_palette_disable),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
  * The option → title mapping. A `when` over the sealed [LocalToolOption] with no `else` branch, so
  * adding a tool group to the build fails the build here instead of silently rendering a blank row
  * (the same reason [LocalToolGroups.all] is explicit). The resources are the ones the assistant's
@@ -630,6 +714,85 @@ private fun AgentDefinitionEditSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
+                // ---- P2-05 palette: the local tool directory, searchable ------------------
+                // Built from the live factory, one group at a time: grouping is what gives every
+                // row an owner ("which group is this tool in?") without re-deriving the factory's
+                // if/else ladder here. 56 calls, all cheap object construction, once per sheet.
+                // A failure hides the section instead of taking the sheet down with it.
+                val localToolFactory = koinInject<LocalTools>()
+                val toolPalette = remember {
+                    runCatching {
+                        LocalToolPalette.build(
+                            LocalToolGroups.all.map { group ->
+                                LocalToolInventory(
+                                    group = group,
+                                    tools = localToolFactory.getTools(listOf(group)),
+                                )
+                            },
+                        )
+                    }.getOrNull()
+                }
+                var paletteQuery by rememberSaveable { mutableStateOf("") }
+                if (toolPalette != null) {
+                    // An inherited expert has no list to read: the sheet cannot see the parent
+                    // assistant's groups, so it treats "inherit" as "everything on" - the same
+                    // convention the disabled-tool candidate pool below uses.
+                    val effectiveGroups = draft.localTools ?: LocalToolGroups.all
+                    Text(
+                        text = stringResource(R.string.setting_sub_agents_page_palette_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_sub_agents_page_palette_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = paletteQuery,
+                        onValueChange = { paletteQuery = it },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_palette_search)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (paletteQuery.isBlank()) {
+                        Text(
+                            text = stringResource(
+                                R.string.setting_sub_agents_page_palette_summary,
+                                toolPalette.groups.size,
+                                toolPalette.size,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        val hits = toolPalette.matchAll(paletteQuery).take(TOOL_PALETTE_MAX_HITS)
+                        if (hits.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.setting_sub_agents_page_palette_no_match),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            hits.forEach { hit ->
+                                ToolPaletteRow(
+                                    hit = hit,
+                                    groupTitle = localToolTitle(hit.group),
+                                    groupEnabled = effectiveGroups.contains(hit.group),
+                                    disabled = draft.disabledLocalTools.orEmpty().contains(hit.name),
+                                    onDisabledChange = { disabled ->
+                                        onEdit(draft.toggleDisabledTool(hit.name, disabled))
+                                    },
+                                    onEnableGroup = {
+                                        // Owning an empty set and adding exactly this group: the
+                                        // user asked for one group, not for a guessed starting set.
+                                        onEdit(draft.ownLocalTools().toggleLocalTool(hit.group, true))
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // ---- local tool groups ----------------------------------------------------
                 SurfaceGroup(
                     title = stringResource(R.string.setting_sub_agents_page_surface_tools),
@@ -657,7 +820,6 @@ private fun AgentDefinitionEditSheet(
                 // candidate names come from the live factory so they cannot drift from the surface
                 // the model actually receives; when the expert inherits its groups there is no
                 // parent list to enumerate, so the whole catalogue is used as the candidate pool.
-                val localToolFactory = koinInject<LocalTools>()
                 SurfaceGroup(
                     title = stringResource(R.string.setting_sub_agents_page_surface_disabled_tools),
                     subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),

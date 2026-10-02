@@ -2130,6 +2130,14 @@
   <string name="setting_sub_agents_page_badge_mcp">MCP %1$d</string>
   <string name="setting_sub_agents_page_badge_skills">技能 %1$d</string>
   <string name="setting_sub_agents_page_badge_namespace">agents/%1$s</string>
+  <string name="setting_sub_agents_page_palette_title">工具調色盤</string>
+  <string name="setting_sub_agents_page_palette_desc">搜尋本機工具目錄。條目全部由 LOCAL 源提供，徽章標出來源。先看清工具屬於哪一組，再決定開關。</string>
+  <string name="setting_sub_agents_page_palette_search">搜尋工具</string>
+  <string name="setting_sub_agents_page_palette_summary">本機目錄共 %1$d 組 · %2$d 個工具。輸入關鍵詞開始搜尋。</string>
+  <string name="setting_sub_agents_page_palette_no_match">沒有符合的工具，換個關鍵詞試試。</string>
+  <string name="setting_sub_agents_page_palette_group_off">組未開啟</string>
+  <string name="setting_sub_agents_page_palette_enable_group">開啟該組</string>
+  <string name="setting_sub_agents_page_palette_disable">停用</string>
   <string name="backup_page_import_overwrite_confirm">匯入備份將覆寫應用程式資料。是否繼續？</string>
   <string name="setting_page_preferences_network">網路</string>
   <string name="setting_page_preferences_network_desc">User-Agent 和網路請求設定</string>

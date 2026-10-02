@@ -2149,6 +2149,14 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_sub_agents_page_badge_mcp">MCP %1$d</string>
   <string name="setting_sub_agents_page_badge_skills">技能 %1$d</string>
   <string name="setting_sub_agents_page_badge_namespace">agents/%1$s</string>
+  <string name="setting_sub_agents_page_palette_title">工具调色板</string>
+  <string name="setting_sub_agents_page_palette_desc">搜索本地工具目录。条目全部由 LOCAL 源提供，徽章标出来源。先看清工具属于哪一组，再决定开关。</string>
+  <string name="setting_sub_agents_page_palette_search">搜索工具</string>
+  <string name="setting_sub_agents_page_palette_summary">本地目录共 %1$d 组 · %2$d 个工具。输入关键词开始搜索。</string>
+  <string name="setting_sub_agents_page_palette_no_match">没有匹配的工具，换个关键词试试。</string>
+  <string name="setting_sub_agents_page_palette_group_off">组未开启</string>
+  <string name="setting_sub_agents_page_palette_enable_group">开启该组</string>
+  <string name="setting_sub_agents_page_palette_disable">禁用</string>
   <string name="backup_page_import_overwrite_confirm">导入备份会覆盖 App 数据，是否继续</string>
   <string name="setting_page_preferences_network">网络</string>
   <string name="setting_page_preferences_network_desc">User-Agent 和网络请求设置</string>
