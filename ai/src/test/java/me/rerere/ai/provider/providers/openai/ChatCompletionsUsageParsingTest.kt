@@ -7,6 +7,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.util.KeyRoulette
 import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -62,5 +63,25 @@ class ChatCompletionsUsageParsingTest {
             0,
             usage("""{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}""")?.cachedTokens
         )
+    }
+
+    // P2-11a: cache fields carry provenance, so an unreported field is never read as a zero.
+    @Test
+    fun `cache provenance separates an unreported field from a real zero`() {
+        fun usage(jsonStr: String) =
+            parseTokenUsage(Json.parseToJsonElement(jsonStr).jsonObject)!!
+
+        // DeepSeek reports hit + miss; a hit of 0 must stay distinguishable from "no field".
+        val deepseek = usage("""{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":2}""")
+        assertEquals(true, deepseek.cachedTokensReported)
+        assertEquals(0, deepseek.cachedTokens)
+        assertEquals(2, deepseek.cacheMissTokens)
+
+        // No cache field at all: cachedTokens stays 0 for backward compatibility, but the
+        // provenance flag says unknown, so hit-rate statistics can exclude this record.
+        val silent = usage("""{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}""")
+        assertEquals(false, silent.cachedTokensReported)
+        assertNull(silent.cacheMissTokens)
+        assertNull(silent.reasoningTokens)
     }
 }
