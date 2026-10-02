@@ -50,7 +50,18 @@ fun ModelPricingPage(
 ) {
     val stored = model.pricing
     var draft by remember(stored) { mutableStateOf(RateDraft.of(stored)) }
-    var windowsText by remember(stored) { mutableStateOf(UsagePeakWindowText.format(stored?.peakWindows.orEmpty())) }
+    val storedSpec = remember(stored) {
+        stored?.let {
+            UsagePriceTable.fromModelPricing(
+                providerName = model.modelId.ifBlank { "model" },
+                modelId = model.modelId.ifBlank { "model" },
+                pricing = it,
+            )
+        }
+    }
+    var windowsText by remember(stored) {
+        mutableStateOf(UsagePeakWindowText.format(storedSpec?.peakWindows.orEmpty()))
+    }
 
     val read = draft.read()
     val windows = UsagePeakWindowText.parse(windowsText)
