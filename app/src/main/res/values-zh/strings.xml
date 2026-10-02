@@ -2264,4 +2264,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_detail_compatibility_mode">兼容模式</string>
   <string name="workspace_detail_compatibility_mode_desc">如果终端无法启动，请尝试启用此功能。这可能会降低性能。适用于新的终端标签页及后续命令。</string>
   <string name="workspace_detail_settings_save_failed">保存设置失败</string>
+  <string name="assistant_page_local_tools_individual_title">逐工具开关</string>
+  <string name="assistant_page_local_tools_individual_desc">关闭单个工具，使其在所属分组仍开启时也不对模型可见。</string>
 </resources>

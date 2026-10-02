@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.model
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.core.MessageRole
@@ -126,6 +127,14 @@ data class Assistant(
     // which registers no tools at all.
     // Appended last on purpose: a new field may never shift the position of an existing one.
     val coldMemoryDir: String? = null,
+    // P2-02 - per-tool opt-out. `localTools` toggles a whole LocalToolOption group; this set
+    // removes individual tools (matched on their exact `Tool.name`) from an otherwise-enabled
+    // group, at the single assembly point (`LocalTools.getTools`). Empty (the default) is a
+    // strict no-op: the assembled surface AND the persisted JSON stay exactly as they were,
+    // which is why the field is `@EncodeDefault(NEVER)` under the store's `encodeDefaults`.
+    // Appended last on purpose: a new field may never shift the position of an existing one.
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val disabledLocalTools: Set<String> = emptySet(),
 )
 
 @Serializable
