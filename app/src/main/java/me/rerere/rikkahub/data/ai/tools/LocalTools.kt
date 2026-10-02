@@ -152,6 +152,8 @@ sealed class LocalToolOption {
     data object AskUser : LocalToolOption()
 
     @Serializable @SerialName("battery")        data object Battery        : LocalToolOption()
+
+    @Serializable @SerialName("usage_ledger") data object UsageLedger : LocalToolOption()
     @Serializable @SerialName("audio_info")     data object AudioInfo      : LocalToolOption()
     @Serializable @SerialName("telephony_info") data object TelephonyInfo  : LocalToolOption()
     @Serializable @SerialName("wifi_info")      data object WifiInfo       : LocalToolOption()
@@ -329,6 +331,7 @@ private const val EVAL_JS_TIMEOUT_MS = 5_000L
 
 class LocalTools(
     private val context: Context,
+    private val usageRecordDao: me.rerere.rikkahub.data.usage.UsageRecordDao,
     private val eventBus: AppEventBus,
     private val cameraResultBuffer: CameraResultBuffer,
     private val biometricResultBuffer: BiometricResultBuffer,
@@ -739,6 +742,10 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Battery)) {
             tools.add(batteryTool(context))
+        }
+
+        if (options.contains(LocalToolOption.UsageLedger)) {
+            tools.add(me.rerere.rikkahub.data.usage.usageExportTool(usageRecordDao))
         }
         if (options.contains(LocalToolOption.AudioInfo)) {
             tools.add(audioInfoTool(context))

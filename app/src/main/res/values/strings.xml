@@ -1212,6 +1212,8 @@
   <string name="assistant_page_local_tools_audio_info_title">Audio info</string>
   <string name="assistant_page_local_tools_battery_desc">Read battery level, charging state, plug type, temperature, and health.</string>
   <string name="assistant_page_local_tools_battery_title">Battery</string>
+  <string name="assistant_page_local_tools_usage_ledger_title">Usage ledger</string>
+  <string name="assistant_page_local_tools_usage_ledger_desc">Read the usage ledger: export per-call tokens, cache hits and frozen cost as CSV or JSON.</string>
   <string name="assistant_page_local_tools_brightness_desc">Read and set screen brightness. Setting requires WRITE_SETTINGS.</string>
   <string name="assistant_page_local_tools_brightness_title">Brightness</string>
   <string name="assistant_page_local_tools_download_desc">Download files from URLs into the public Downloads folder, and save text content (notes, transcripts, jokes, scripts) as files there.</string>
