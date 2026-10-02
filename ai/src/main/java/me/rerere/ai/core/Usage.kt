@@ -11,6 +11,18 @@ data class TokenUsage(
     // Provider-reported generation cost in USD (OpenRouter `usage.cost`). Null when the
     // provider doesn't report it. Nullable + defaulted so older persisted messages decode fine.
     val cost: Double? = null,
+    // --- P2-11a: provenance, so that a missing report is never read as a real zero ---------
+    // `cachedTokens == 0` is ambiguous: it means either "the provider reported a cache miss"
+    // or "this provider does not report cache fields at all". Averaging both groups together
+    // is what made the cache hit rate untrustworthy. Producers set this flag to true only
+    // when they actually saw a cache field in the payload.
+    val cachedTokensReported: Boolean = false,
+    // Provider-reported cache-miss tokens (DeepSeek `prompt_cache_miss_tokens`). Null when
+    // unreported. Note that `promptTokens - cachedTokens` is NOT a safe substitute: some
+    // providers exclude cached tokens from promptTokens and others include them.
+    val cacheMissTokens: Int? = null,
+    // Provider-reported reasoning/thinking tokens, when the provider exposes them.
+    val reasoningTokens: Int? = null,
 )
 
 fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
@@ -24,7 +36,16 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
     } else {
         this?.completionTokens ?: 0
     }
-    val totalTokens = promptTokens + completionTokens
+    // P2-11a: keep the provider-reported total instead of recomputing it from the two halves.
+    // Some providers count tokens that prompt+completion does not cover (reasoning, cache
+    // read/write), so recomputing silently diverges from the value the provider billed.
+    // Verified no-op for every recorded stream trace: all of them satisfy total == p + c.
+    val reportedTotal = if (other.totalTokens > 0) {
+        other.totalTokens
+    } else {
+        this?.totalTokens ?: 0
+    }
+    val totalTokens = if (reportedTotal > 0) reportedTotal else promptTokens + completionTokens
     val cachedTokens = if (other.cachedTokens > 0) {
         other.cachedTokens
     } else {
@@ -37,5 +58,10 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         totalTokens = totalTokens,
         cachedTokens = cachedTokens,
         cost = cost,
+        // `cachedTokens` deliberately keeps its historical merge rule (overwrite when the
+        // incoming chunk is non-zero). The provenance fields use last-non-null-wins.
+        cachedTokensReported = (this?.cachedTokensReported ?: false) || other.cachedTokensReported,
+        cacheMissTokens = other.cacheMissTokens ?: this?.cacheMissTokens,
+        reasoningTokens = other.reasoningTokens ?: this?.reasoningTokens,
     )
 }

@@ -1000,16 +1000,23 @@ class ChatCompletionsAPI(
 
     private fun parseTokenUsage(jsonObject: JsonObject?): TokenUsage? {
         if (jsonObject == null) return null
+        // P2-11a: pull the hit count out first so that we can tell a reported zero apart
+        // from a provider that simply does not report cache fields at all.
+        // 各 provider 汇报缓存命中的字段形状不统一，按方言兜底解析（#1576）：
+        // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
+        val cacheHitTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
+            ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
+            ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
         return TokenUsage(
             promptTokens = jsonObject["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             completionTokens = jsonObject["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
             totalTokens = jsonObject["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-            // 各 provider 汇报缓存命中的字段形状不统一，按方言兜底解析（#1576）：
-            // OpenAI 嵌套 -> Moonshot 顶层 cached_tokens -> DeepSeek prompt_cache_hit_tokens
-            cachedTokens = jsonObject["prompt_tokens_details"]?.jsonObjectOrNull?.get("cached_tokens")?.jsonPrimitive?.intOrNull
-                ?: jsonObject["cached_tokens"]?.jsonPrimitive?.intOrNull
-                ?: jsonObject["prompt_cache_hit_tokens"]?.jsonPrimitive?.intOrNull
-                ?: 0,
+            cachedTokens = cacheHitTokens ?: 0,
+            // P2-11a: unreported is not the same as a reported zero.
+            cachedTokensReported = cacheHitTokens != null,
+            cacheMissTokens = jsonObject["prompt_cache_miss_tokens"]?.jsonPrimitive?.intOrNull,
+            // Optional OpenAI-style detail block (absent for most providers -> null).
+            reasoningTokens = jsonObject["completion_tokens_details"]?.jsonObjectOrNull?.get("reasoning_tokens")?.jsonPrimitive?.intOrNull,
             // OpenRouter reports the generation cost (USD) here when the request asks for it
             // via usage:{include:true}. Other OpenAI-compatible providers omit it -> null.
             cost = jsonObject["cost"]?.jsonPrimitive?.doubleOrNull
