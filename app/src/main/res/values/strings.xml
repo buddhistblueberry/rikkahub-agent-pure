@@ -2630,5 +2630,5 @@
   <string name="assistant_page_max_concurrent_subagents_desc">How many sub-agent runs this assistant may have in flight at once.</string>
   <string name="assistant_page_max_concurrent_subagents_hint">Between %1$d and %2$d.</string>
   <string name="setting_sub_agents_page_token_budget">Orchestration token budget</string>
-  <string name="setting_sub_agents_page_token_budget_hint">Ceiling for this expert's dispatch tree. Leave empty to inherit the parent assistant's budget; unlimited when both are empty.</string>
+  <string name="setting_sub_agents_page_token_budget_hint">Ceiling for this expert\'s dispatch tree. Leave empty to inherit the parent assistant\'s budget; unlimited when both are empty.</string>
 </resources>
