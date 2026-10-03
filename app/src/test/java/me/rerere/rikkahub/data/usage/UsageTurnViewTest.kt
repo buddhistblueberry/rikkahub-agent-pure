@@ -8,6 +8,57 @@ import org.junit.Test
 
 class UsageTurnViewTest {
 
+    @Test
+    fun `tokens per second uses only the calls that reported a latency`() {
+        val view = TurnUsageView(
+            calls = listOf(
+                call(output = 100, latencyMs = 2_000),
+                call(output = 50, latencyMs = 1_000),
+                call(output = 999, latencyMs = null),
+            ),
+            inputTokens = 0,
+            outputTokens = 1_149,
+            cacheHitTokens = 0,
+            cachePromptTokens = 0,
+            cacheReported = false,
+            providerCostUsd = null,
+            costMicros = null,
+        )
+
+        assertEquals(150L, view.measuredOutputTokens)
+        assertEquals(3_000L, view.generationMs)
+        assertEquals(50.0, view.tokensPerSecond!!, 1e-9)
+    }
+
+    @Test
+    fun `tokens per second is null when no call reported a latency`() {
+        val view = TurnUsageView(
+            calls = listOf(call(output = 10, latencyMs = null)),
+            inputTokens = 0,
+            outputTokens = 10,
+            cacheHitTokens = 0,
+            cachePromptTokens = 0,
+            cacheReported = false,
+            providerCostUsd = null,
+            costMicros = null,
+        )
+
+        assertNull(view.tokensPerSecond)
+    }
+
+    private fun call(output: Int, latencyMs: Long?): UsageCallView = UsageCallView(
+        purpose = UsagePurpose.MAIN.name,
+        inputTokens = 0,
+        outputTokens = output,
+        cachedTokens = 0,
+        cachedTokensReported = false,
+        providerCostUsd = null,
+        costMicros = null,
+        latencyMs = latencyMs,
+        streaming = true,
+        atMs = 0L,
+    )
+
     private fun row(
         id: String,
         atMs: Long,
