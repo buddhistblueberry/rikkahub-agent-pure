@@ -2358,4 +2358,16 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_sub_agent_archive">子智能体会话归档</string>
   <string name="assistant_page_sub_agent_archive_desc">新派发的子智能体会话会归入此文件夹，不再混在主聊天列表；没有对话的文件夹仍可删除。</string>
   <string name="assistant_page_sub_agent_archive_none">不归入</string>
+  <string name="stats_page_daily_title">每日用量</string>
+  <string name="stats_page_daily_window">近 %1$d 天</string>
+  <string name="stats_page_daily_total">区间合计</string>
+  <string name="stats_page_daily_average">日均</string>
+  <string name="stats_page_daily_peak">峰值日</string>
+  <string name="stats_page_daily_calls">调用次数</string>
+  <string name="stats_page_daily_calls_legend">每日调用</string>
+  <string name="stats_page_usage_group_conversation">对话</string>
+  <string name="stats_page_usage_group_subagent">子智能体</string>
+  <string name="stats_page_usage_group_automation">自动化</string>
+  <string name="stats_page_usage_group_assistant">助手辅助</string>
+  <string name="stats_page_usage_group_other">其他</string>
 </resources>

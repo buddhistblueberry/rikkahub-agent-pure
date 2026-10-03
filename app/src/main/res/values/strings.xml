@@ -2674,4 +2674,16 @@
   <string name="assistant_page_sub_agent_archive">Sub-agent conversation archive</string>
   <string name="assistant_page_sub_agent_archive_desc">New sub-agent conversations are filed into this folder, keeping them out of the main chat list. A folder with no conversations can still be deleted.</string>
   <string name="assistant_page_sub_agent_archive_none">Do not file</string>
+  <string name="stats_page_daily_title">Daily usage</string>
+  <string name="stats_page_daily_window">Last %1$d days</string>
+  <string name="stats_page_daily_total">Window total</string>
+  <string name="stats_page_daily_average">Daily average</string>
+  <string name="stats_page_daily_peak">Busiest day</string>
+  <string name="stats_page_daily_calls">Calls</string>
+  <string name="stats_page_daily_calls_legend">calls / day</string>
+  <string name="stats_page_usage_group_conversation">Conversation</string>
+  <string name="stats_page_usage_group_subagent">Sub-agent</string>
+  <string name="stats_page_usage_group_automation">Automation</string>
+  <string name="stats_page_usage_group_assistant">Assistant tasks</string>
+  <string name="stats_page_usage_group_other">Other</string>
 </resources>
