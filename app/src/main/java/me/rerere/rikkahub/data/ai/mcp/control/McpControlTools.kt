@@ -354,7 +354,7 @@ fun mcpAddTool(settingsStore: SettingsStore, manager: McpManager): Tool = Tool(
     name = "mcp_add",
     description = """
         Add a new MCP server. Pass transport="sse" or "streamable_http", a unique name (≤60
-        chars), an http(s) url, optional enabled (default true), and optional headers as a
+        chars), an http(s) url, optional enabled (default false), and optional headers as a
         list of {name, value} pairs (max 32 entries; sensitive values like Authorization or
         X-Api-Key are redacted in display layers but stored verbatim).
 
@@ -387,7 +387,7 @@ fun mcpAddTool(settingsStore: SettingsStore, manager: McpManager): Tool = Tool(
                 })
                 put("enabled", buildJsonObject {
                     put("type", "boolean")
-                    put("description", "Whether the server is enabled on creation. Defaults to true.")
+                    put("description", "Whether the server is enabled on creation. Defaults to false; an explicit true still wins.")
                 })
                 put("headers", buildJsonObject {
                     put("type", "array")
@@ -507,7 +507,8 @@ fun mcpUpdateTool(settingsStore: SettingsStore, manager: McpManager): Tool = Too
         Replace an existing MCP server's configuration in one shot. Body matches mcp_add plus
         an `id` field. Internally tears down the old client and adds the new one to ensure
         transport / URL / header changes take effect. The tool list is preserved across
-        the update; sync runs automatically after re-add.
+        the update; sync runs automatically after re-add. When `enabled` is omitted the
+        server keeps its current state — an update is not an install.
 
         Like mcp_add, "Always Allow" is intentionally NOT offered: a hostile updated config
         could exfiltrate everything the assistant has access to.
@@ -519,7 +520,14 @@ fun mcpUpdateTool(settingsStore: SettingsStore, manager: McpManager): Tool = Too
                 put("transport", buildJsonObject { put("type", "string") })
                 put("name", buildJsonObject { put("type", "string") })
                 put("url", buildJsonObject { put("type", "string") })
-                put("enabled", buildJsonObject { put("type", "boolean") })
+                put("enabled", buildJsonObject {
+                    put("type", "boolean")
+                    put(
+                        "description",
+                        "Whether the server is enabled after the update. When omitted the " +
+                            "server keeps its current state (an update is not an install).",
+                    )
+                })
                 put("headers", buildJsonObject {
                     put("type", "array")
                     put("items", buildJsonObject {
@@ -549,7 +557,6 @@ fun mcpUpdateTool(settingsStore: SettingsStore, manager: McpManager): Tool = Too
         }
         val rawName = params["name"]?.jsonPrimitive?.contentOrNull ?: ""
         val rawUrl = params["url"]?.jsonPrimitive?.contentOrNull ?: ""
-        val enabled = params["enabled"]?.jsonPrimitive?.booleanOrNull ?: true
         val headers = parseHeaders(params["headers"])
         val timeoutSec = (params["connect_timeout_seconds"]?.jsonPrimitive?.intOrNull ?: DEFAULT_CONNECT_TIMEOUT_SECONDS)
             .coerceIn(1, MAX_CONNECT_TIMEOUT_SECONDS)
@@ -557,6 +564,9 @@ fun mcpUpdateTool(settingsStore: SettingsStore, manager: McpManager): Tool = Too
         val all = settingsStore.settingsFlow.value.mcpServers
         val old = all.firstOrNull { it.id == serverId }
             ?: return@Tool errEnv("unknown_mcp_server_id", "no MCP server registered with id $serverId")
+        // D5 - an update is not an install. When `enabled` is omitted, keep the server's
+        // current state instead of flipping it back on; an explicit value still wins.
+        val enabled = params["enabled"]?.jsonPrimitive?.booleanOrNull ?: old.commonOptions.enable
         val urlCheck = McpUrlGuard.check(rawUrl, headless = McpUrlGuard.currentlyHeadless())
         if (urlCheck is McpUrlGuard.Result.Reject) {
             return@Tool errEnv(urlCheck.error, urlCheck.detail)
