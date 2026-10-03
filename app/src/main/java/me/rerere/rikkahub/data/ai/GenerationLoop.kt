@@ -69,6 +69,7 @@ import java.io.IOException
 import kotlin.time.Clock
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.usage.UsageCallContext
+import me.rerere.rikkahub.data.usage.UsageRunContexts
 import me.rerere.rikkahub.data.usage.UsagePurpose
 
 private const val TAG = "GenerationHandler"
@@ -1379,11 +1380,17 @@ class GenerationLoop(
                 // one below, so it carries the same ambient context. It was previously left
                 // unwrapped, which (once the decorator started wrapping `streamText`) would have
                 // filed every streamed call as UNKNOWN with no conversation / assistant.
+                // P2-12d — a sub-agent conversation carries a run attribution registered by
+                // SubAgentEngine; interactive turns resolve to null and keep today's context.
+                val usageAttribution = conversationId?.let { UsageRunContexts.get(it.toString()) }
                 withContext(
                     UsageCallContext(
-                        purpose = if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
+                        purpose = usageAttribution?.purpose
+                            ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
                         conversationId = conversationId?.toString(),
                         assistantId = assistant.id.toString(),
+                        runId = usageAttribution?.runId,
+                        parentRunId = usageAttribution?.parentRunId,
                     )
                 ) {
                     providerImpl.streamText(
@@ -1465,7 +1472,17 @@ class GenerationLoop(
                         )
                     },
                 ) {
-                    withContext(UsageCallContext(purpose = if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN, conversationId = conversationId?.toString(), assistantId = assistant.id.toString())) { providerImpl.generateText(
+                    val usageAttribution = conversationId?.let { UsageRunContexts.get(it.toString()) }
+                    withContext(
+                        UsageCallContext(
+                            purpose = usageAttribution?.purpose
+                                ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
+                            conversationId = conversationId?.toString(),
+                            assistantId = assistant.id.toString(),
+                            runId = usageAttribution?.runId,
+                            parentRunId = usageAttribution?.parentRunId,
+                        )
+                    ) { providerImpl.generateText(
                         providerSetting = provider,
                         messages = internalMessages,
                         params = params,
