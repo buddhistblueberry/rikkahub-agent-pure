@@ -111,6 +111,7 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                 item {
                     StatsGrid(
                         stats = stats,
+                        ledger = ledgerStats,
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
@@ -309,7 +310,15 @@ private fun HeatmapCell(alpha: Float, sizeDp: Int) {
 }
 
 @Composable
-private fun StatsGrid(stats: AppStats, modifier: Modifier = Modifier) {
+private fun StatsGrid(stats: AppStats, ledger: LedgerStatsView?, modifier: Modifier = Modifier) {
+    // D1 - the token cards read the ledger's grand total, the same source the section below
+    // uses, so the two can never disagree. Counts (conversations / messages / launches) stay on
+    // the message DB. `ledger` is null until it loads (or if the read fails); the cards then
+    // fall back to the old `message.usage` numbers instead of blanking out.
+    val total = ledger?.total
+    val promptTokens = total?.inputTokens ?: stats.totalPromptTokens
+    val completionTokens = total?.outputTokens ?: stats.totalCompletionTokens
+    val cachedTokens = total?.cacheHitTokens ?: stats.totalCachedTokens
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -339,32 +348,32 @@ private fun StatsGrid(stats: AppStats, modifier: Modifier = Modifier) {
                 modifier = Modifier.weight(1f),
                 icon = HugeIcons.Cpu,
                 label = stringResource(R.string.stats_page_input_tokens),
-                value = formatTokens(stats.totalPromptTokens),
+                value = formatTokens(promptTokens),
             )
             StatCard(
                 modifier = Modifier.weight(1f),
                 icon = HugeIcons.Cpu,
                 label = stringResource(R.string.stats_page_output_tokens),
-                value = formatTokens(stats.totalCompletionTokens),
+                value = formatTokens(completionTokens),
             )
         }
-        if (stats.totalCachedTokens > 0) {
+        if (cachedTokens > 0) {
             StatCard(
                 modifier = Modifier.fillMaxWidth(),
                 icon = HugeIcons.Zap,
                 label = stringResource(R.string.stats_page_cached_tokens),
-                value = formatTokens(stats.totalCachedTokens),
+                value = formatTokens(cachedTokens),
             )
             // Input tokens already include the cached ones, so the rate is the share of input
             // served from cache. Surfacing it (issue #23) is what lets a user tell an unstable
             // prompt prefix apart from an inherently expensive workload.
-            if (stats.totalPromptTokens > 0) {
-                val hit = stats.totalCachedTokens.coerceAtMost(stats.totalPromptTokens)
+            if (promptTokens > 0) {
+                val hit = cachedTokens.coerceAtMost(promptTokens)
                 StatCard(
                     modifier = Modifier.fillMaxWidth(),
                     icon = HugeIcons.Zap,
                     label = stringResource(R.string.stats_page_cache_hit_rate),
-                    value = "${hit * 100 / stats.totalPromptTokens}%",
+                    value = "${hit * 100 / promptTokens}%",
                 )
             }
         }
@@ -619,9 +628,9 @@ private fun OrchestrationChildRow(node: OrchestrationNode) {
 }
 
 /**
- * The four rankings of the ledger window. Kept apart from [StatsGrid] on purpose: that grid reads
- * `message.usage` from the message JSON across all history, while everything here reads
- * `usage_records` and only covers the 90-day retention window, so the two are never summed.
+ * The four rankings of the ledger window. [StatsGrid]'s token cards read the same ledger grand
+ * total since D1; only its conversation / message / launch counts still come from the message and
+ * settings stores, so no number here is ever added to a differently-windowed one.
  */
 @Composable
 private fun LedgerStatsSection(
