@@ -13,8 +13,11 @@ import me.rerere.rikkahub.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.data.db.dao.MessageNodeDAO
 import me.rerere.rikkahub.data.db.dao.getMessageCountPerDay
 import me.rerere.rikkahub.data.db.dao.getTokenStats
+import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.usage.LedgerStatsView
+import me.rerere.rikkahub.data.usage.OrchestrationTree
+import me.rerere.rikkahub.data.usage.OrchestrationTreeFactory
 import me.rerere.rikkahub.data.usage.UsageLedger
 import me.rerere.rikkahub.data.usage.UsageLedgerDefaults
 import me.rerere.rikkahub.data.usage.UsageStatsFactory
@@ -38,6 +41,7 @@ class StatsVM(
     private val messageNodeDAO: MessageNodeDAO,
     private val settingsStore: SettingsStore,
     private val usageLedger: UsageLedger,
+    private val agentRunRepository: AgentRunRepository,
 ) : ViewModel() {
 
     private val _stats = MutableStateFlow(AppStats())
@@ -54,6 +58,17 @@ class StatsVM(
     /** assistant id -> display name, so the "by assistant" ranking shows names, not UUIDs. */
     private val _assistantNames = MutableStateFlow<Map<String, String>>(emptyMap())
     val assistantNames = _assistantNames.asStateFlow()
+
+    /**
+     * P2-12d - the parent→child dispatches, or null before they load (and if the read fails,
+     * matching [ledgerStats]). An empty list means "loaded, but no sub-agent runs recorded".
+     */
+    private val _orchestrationTrees = MutableStateFlow<List<OrchestrationTree>?>(null)
+    val orchestrationTrees = _orchestrationTrees.asStateFlow()
+
+    /** conversation id -> title, so a dispatch is headed by the conversation that made it. */
+    private val _conversationTitles = MutableStateFlow<Map<String, String>>(emptyMap())
+    val conversationTitles = _conversationTitles.asStateFlow()
 
     init {
         viewModelScope.launch { loadStats() }
@@ -99,6 +114,7 @@ class StatsVM(
         )
 
         loadLedger()
+        loadOrchestration()
     }
 
     /**
@@ -129,4 +145,37 @@ class StatsVM(
             )
         }.onSuccess { _ledgerStats.value = it }
     }
+
+    /**
+     * P2-12d - read the newest runs and price each sub-agent dispatch with the ledger rows that
+     * carry its run id.
+     *
+     * The tree's shape comes from `agent_runs`, which only ever holds a sub-agent row once a
+     * dispatch happened; the numbers come from `usage_records`, which only carries a run id from
+     * P2-12d onwards. Best effort, exactly like [loadLedger]: a failed read leaves
+     * [orchestrationTrees] null and the section stays hidden.
+     *
+     * The ledger read starts at the oldest run in the window, so a run whose calls predate the
+     * 50-row window still gets its numbers without reading the whole 90-day ledger.
+     */
+    private suspend fun loadOrchestration() {
+        runCatching {
+            val runs = agentRunRepository.getRecent(ORCHESTRATION_RUN_LIMIT)
+            if (runs.isEmpty()) return@runCatching emptyList<OrchestrationTree>()
+
+            val sinceMs = runs.minOf { it.createdAtMs }
+            val rows = usageLedger.recordsSince(sinceMs, UsageLedgerDefaults.STATS_QUERY_LIMIT)
+            _conversationTitles.value = withContext(Dispatchers.IO) {
+                conversationDAO.getAll().first().associate { it.id to it.title }
+            }
+            OrchestrationTreeFactory.build(runs = runs, records = rows)
+        }.onSuccess { _orchestrationTrees.value = it }
+    }
 }
+
+/**
+ * P2-12d - how many of the newest `agent_runs` rows the orchestration tree reads. 50 matches the
+ * default window [AgentRunRepository.getRecent] offers, so the tree stays in step with the rest
+ * of the ledger UI.
+ */
+private const val ORCHESTRATION_RUN_LIMIT = 50

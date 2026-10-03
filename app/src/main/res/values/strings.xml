@@ -1169,6 +1169,15 @@
   <string name="stats_page_ledger_expand">Show all %1$d</string>
   <string name="stats_page_ledger_collapse">Show less</string>
   <string name="stats_page_ledger_calls">%1$d calls</string>
+  <string name="stats_page_orchestration_title">Orchestration tree</string>
+  <string name="stats_page_orchestration_window">Last 50 runs</string>
+  <string name="stats_page_orchestration_empty">No sub-agent dispatches recorded yet.</string>
+  <string name="stats_page_orchestration_unknown_parent">Unknown conversation</string>
+  <string name="stats_page_orchestration_children">%1$d runs</string>
+  <string name="stats_page_orchestration_expand">Show all %1$d</string>
+  <string name="stats_page_orchestration_collapse">Show less</string>
+  <string name="stats_page_orchestration_calls">%1$d calls</string>
+  <string name="stats_page_orchestration_no_calls">no ledger rows</string>
   <string name="stop">Stop</string>
   <string name="tag_input_dialog_create_new">Create New Tag</string>
   <string name="tag_input_dialog_existing_tags">Existing Tags</string>

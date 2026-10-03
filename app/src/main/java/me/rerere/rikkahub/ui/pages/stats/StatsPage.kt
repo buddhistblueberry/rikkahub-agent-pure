@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.usage.LedgerStatsView
+import me.rerere.rikkahub.data.usage.OrchestrationNode
+import me.rerere.rikkahub.data.usage.OrchestrationTree
 import me.rerere.rikkahub.data.usage.UsagePurpose
 import me.rerere.rikkahub.data.usage.UsageStatBucket
 import me.rerere.rikkahub.data.usage.UsageStatsFactory
@@ -67,6 +70,8 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
     val stats by vm.stats.collectAsStateWithLifecycle()
     val ledgerStats by vm.ledgerStats.collectAsStateWithLifecycle()
     val assistantNames by vm.assistantNames.collectAsStateWithLifecycle()
+    val orchestrationTrees by vm.orchestrationTrees.collectAsStateWithLifecycle()
+    val conversationTitles by vm.conversationTitles.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -114,6 +119,15 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                         LedgerStatsSection(
                             view = ledger,
                             assistantNames = assistantNames,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                }
+                orchestrationTrees?.let { trees ->
+                    item {
+                        OrchestrationSection(
+                            trees = trees,
+                            conversationTitles = conversationTitles,
                             modifier = Modifier.padding(horizontal = 8.dp),
                         )
                     }
@@ -411,6 +425,178 @@ private fun formatTokens(count: Long): String = when {
 
 /** Rows shown per dimension before the "show all" toggle appears. */
 private const val LEDGER_COLLAPSED_ROWS = 5
+private const val ORCHESTRATION_COLLAPSED_ROWS = 5
+
+/**
+ * P2-12d — the parent→child orchestration tree: the newest sub-agent dispatches, one card per
+ * parent conversation.
+ *
+ * Kept apart from the ledger rankings on purpose: those aggregate every model call in the window by
+ * one dimension, while this shows *who dispatched whom*. A run with no ledger rows still appears
+ * (with zero calls), because the dispatch itself is the interesting event — the missing rows only
+ * say the calls came in before P2-12d started recording a run id.
+ */
+@Composable
+private fun OrchestrationSection(
+    trees: List<OrchestrationTree>,
+    conversationTitles: Map<String, String>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.stats_page_orchestration_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(R.string.stats_page_orchestration_window),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (trees.isEmpty()) {
+            Card(colors = CustomColors.cardColorsOnSurfaceContainer) {
+                Text(
+                    text = stringResource(R.string.stats_page_orchestration_empty),
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            trees.forEach { tree ->
+                OrchestrationTreeCard(
+                    tree = tree,
+                    parentTitle = tree.parentConversationId?.let { conversationTitles[it] },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrchestrationTreeCard(
+    tree: OrchestrationTree,
+    parentTitle: String?,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shown = if (expanded) tree.children else tree.children.take(ORCHESTRATION_COLLAPSED_ROWS)
+
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = parentTitle
+                        ?: stringResource(R.string.stats_page_orchestration_unknown_parent),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.stats_page_orchestration_children, tree.childCount),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = formatTokens(tree.totalTokens),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                ledgerCostText(tree.providerCostUsd, tree.costMicros)?.let { cost ->
+                    Text(text = cost, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
+            shown.forEach { child ->
+                OrchestrationChildRow(child)
+            }
+
+            if (tree.children.size > ORCHESTRATION_COLLAPSED_ROWS) {
+                val toggle = if (expanded) {
+                    stringResource(R.string.stats_page_orchestration_collapse)
+                } else {
+                    stringResource(R.string.stats_page_orchestration_expand, tree.children.size)
+                }
+                Text(
+                    text = toggle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { expanded = !expanded },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrchestrationChildRow(node: OrchestrationNode) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(
+                    if (node.isRunning) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outline
+                    }
+                ),
+        )
+        Text(
+            text = node.label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = node.status,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = if (node.hasLedgerRows) {
+                stringResource(R.string.stats_page_orchestration_calls, node.callCount)
+            } else {
+                stringResource(R.string.stats_page_orchestration_no_calls)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = formatTokens(node.totalTokens),
+            style = MaterialTheme.typography.labelSmall,
+        )
+        ledgerCostText(node.providerCostUsd, node.costMicros)?.let { cost ->
+            Text(text = cost, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
 
 /**
  * The four rankings of the ledger window. Kept apart from [StatsGrid] on purpose: that grid reads

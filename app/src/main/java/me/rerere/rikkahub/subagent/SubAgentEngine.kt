@@ -17,6 +17,7 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.usage.UsageRunContexts
 import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
@@ -256,6 +257,8 @@ class SubAgentEngine(
             runSubAgentBody(runId, parentAssistantId, parentChatId, request)
         } finally {
             releaseForegroundHold()
+            // P2-12d — the run is over; drop its attribution so no later call inherits it.
+            UsageRunContexts.unmarkRun(runId)
         }
     }
 
@@ -341,6 +344,14 @@ class SubAgentEngine(
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)
         HeadlessConversations.mark(conv.id)
+        // P2-12d — attribute this run's model calls to it, so the ledger can price the
+        // dispatch and the parent→child tree has a run id to hang off. The parent id is the
+        // conversation that dispatched it (the same value written to agent_runs.parent_run_id).
+        UsageRunContexts.mark(
+            conversationId = conv.id.toString(),
+            runId = runId,
+            parentRunId = parentChatId,
+        )
         // T-09 / (8) + P2-04 — freeze this run's tool surface for as long as it lives; ChatService
         // applies the filter at every tool-assembly site. A record is written when EITHER knob is
         // on: the parent assistant's `enableSubAgentToolSurface` (which also narrows the surface to
