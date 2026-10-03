@@ -20,9 +20,11 @@ import kotlinx.serialization.json.put
  * One run, as `subagent_dispatch` / `subagent_get` return it.
  *
  * The token and call counters (P2-13, read back from the ledger when the run ends) are reported
- * here so a parent can see what a dispatch actually cost.
+ * here so a parent can see what a dispatch actually cost, and — when a ceiling is configured —
+ * how much of that ceiling is left (P2-15). `subagent_get` passes no headroom, because the
+ * registry carries none, so that view stays byte-for-byte as it was.
  */
-internal fun encodeRun(run: SubAgentRun): JsonObject = buildJsonObject {
+internal fun encodeRun(run: SubAgentRun, budgetRemaining: Long? = null): JsonObject = buildJsonObject {
     put("id", run.id)
     put("status", run.status.name)
     put("label", run.label)
@@ -43,6 +45,10 @@ internal fun encodeRun(run: SubAgentRun): JsonObject = buildJsonObject {
     // P2-13 — model round trips. Distinct from trip_count, which counts tool-loop trips.
     put("calls", run.usageCalls)
     put("trip_count", run.tripCount)
+    // P2-15 — the orchestration ceiling's headroom, measured by the engine at admission and
+    // reported only when a ceiling exists (§9.2 #7, second half). Absent means "no budget
+    // configured", never "nothing left": a zero headroom is reported as 0.
+    if (budgetRemaining != null) put("budget_remaining", budgetRemaining)
 }
 
 /**

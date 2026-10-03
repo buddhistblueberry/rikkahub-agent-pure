@@ -239,7 +239,7 @@ fun subagentDispatchTool(
                 is SubAgentEngine.DispatchResult.Reject ->
                     return@Tool errEnv(res.error, res.detail)
                 is SubAgentEngine.DispatchResult.Ok ->
-                    listOf(UIMessagePart.Text(encodeRun(res.run).toString()))
+                    listOf(UIMessagePart.Text(encodeRun(res.run, res.budgetRemaining).toString()))
             }
         },
     )
