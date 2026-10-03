@@ -2343,4 +2343,12 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chat_message_usage_purpose_title">标题</string>
   <string name="chat_message_usage_purpose_suggestion">建议</string>
   <string name="chat_message_usage_purpose_unknown">未分类</string>
+  <string name="assistant_page_compact_context">模型自压缩上下文</string>
+  <string name="assistant_page_compact_context_desc">增加一个 compact_context 工具，让模型在判断上下文过长时自行摘要此前的回合。它使用与手动压缩相同的摘要器，缩短后的上下文从下一回合生效。默认关闭。</string>
+  <string name="assistant_page_tool_surface_mode">渐进式 MCP 工具目录</string>
+  <string name="assistant_page_tool_surface_mode_desc">用 tool_search / tool_open 一对工具替换每次请求里的 MCP 工具，因此只发送模型实际打开的那些 schema。可减少首轮工具 token，但工具列表会在回合间变化，可能损失提示缓存命中。本地工具不会被编入目录。默认关闭。</string>
+  <string name="assistant_page_subagent_context_refs">子智能体上下文引用</string>
+  <string name="assistant_page_subagent_context_refs_desc">让 subagent_dispatch 也能把本会话最近 N 个回合原文发给子智能体，因此引用刚讨论内容的任务无需重述。回合以纯文本传递——子智能体仍然无法读取本会话。默认关闭；关闭时工具 schema 与之前完全一致，现有会话发送的请求不变。</string>
+  <string name="assistant_page_subagent_tool_surface">冻结子智能体工具面</string>
+  <string name="assistant_page_subagent_tool_surface_desc">子智能体以无头方式运行，所有工具自动批准、无人可确认提示。开启后，子智能体只会看到本助手工具中无头安全的那部分：subagent_* 句柄、必须每次确认的工具（eval_javascript、mcp_add、技能安装、keystore_*）、以及需要设备 UI 的工具（相机、指纹、NFC、文件夹选择器）都会被移除，subagent_dispatch 的 tools 参数可进一步收窄其余部分。默认关闭；关闭时完全不触碰子智能体工具面。</string>
 </resources>
