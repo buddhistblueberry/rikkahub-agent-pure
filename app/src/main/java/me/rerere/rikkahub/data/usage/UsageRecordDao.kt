@@ -34,6 +34,16 @@ interface UsageRecordDao {
     )
     suspend fun tokensSince(sinceMs: Long): Long
 
+    /**
+     * P2-12b — every row for one conversation, oldest first, for the turn view. Bounded by
+     * [UsageLedgerDefaults.QUERY_LIMIT] so a long conversation cannot load an unbounded list.
+     */
+    @Query(
+        "SELECT * FROM usage_records WHERE conversation_id = :conversationId " +
+            "ORDER BY created_at_ms ASC LIMIT :limit"
+    )
+    suspend fun forConversation(conversationId: String, limit: Int): List<UsageRecordEntity>
+
     /** Retention sweep; returns the number of rows removed. */
     @Query("DELETE FROM usage_records WHERE created_at_ms < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int

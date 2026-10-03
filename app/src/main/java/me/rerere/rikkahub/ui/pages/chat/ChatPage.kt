@@ -280,6 +280,7 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val workspaceRepository: WorkspaceRepository = koinInject()
+    val turnUsages by vm.turnUsages.collectAsStateWithLifecycle()
     var previewMode by rememberSaveable { mutableStateOf(false) }
     val hazeState = rememberHazeState()
     val assistant = setting.getCurrentAssistant()
@@ -447,6 +448,7 @@ private fun ChatPageContent(
             ChatList(
                 innerPadding = innerPadding,
                 conversation = conversation,
+                turnUsages = turnUsages,
                 state = chatListState,
                 loading = loadingJob != null,
                 processingStatus = processingStatus,
