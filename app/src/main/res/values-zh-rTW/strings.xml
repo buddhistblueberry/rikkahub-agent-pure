@@ -1061,6 +1061,7 @@
   <string name="stats_page_orchestration_empty">還沒有子智能體的派發紀錄。</string>
   <string name="stats_page_orchestration_unknown_parent">未知會話</string>
   <string name="stats_page_orchestration_children">%1$d 次執行</string>
+  <string name="stats_page_orchestration_budget">已用 %1$s / %2$s · 剩餘 %3$s</string>
   <string name="stats_page_orchestration_expand">展開全部 %1$d 項</string>
   <string name="stats_page_orchestration_collapse">收合</string>
   <string name="stats_page_orchestration_calls">%1$d 次呼叫</string>

@@ -165,10 +165,24 @@ class StatsVM(
 
             val sinceMs = runs.minOf { it.createdAtMs }
             val rows = usageLedger.recordsSince(sinceMs, UsageLedgerDefaults.STATS_QUERY_LIMIT)
-            _conversationTitles.value = withContext(Dispatchers.IO) {
-                conversationDAO.getAll().first().associate { it.id to it.title }
+            val conversations = withContext(Dispatchers.IO) { conversationDAO.getAll().first() }
+            _conversationTitles.value = conversations.associate { it.id to it.title }
+            // P2-14d — the ceiling lives on the assistant, the tree is keyed by the conversation that
+            // dispatched, so the two are joined here (the same shape as the ledger's
+            // conversation -> assistant fallback above). Null stays null: an assistant with no
+            // configured budget leaves the tree's footer off.
+            val budgetByAssistant = settingsStore.settingsFlow.value.assistants
+                .associate { it.id.toString() to it.orchestrationTokenBudget }
+            val budgetByConversation = conversations.associate {
+                it.id.toString() to budgetByAssistant[it.assistantId.toString()]
             }
-            OrchestrationTreeFactory.build(runs = runs, records = rows)
+            OrchestrationTreeFactory.build(
+                runs = runs,
+                records = rows,
+                budgetOfConversation = { conversationId ->
+                    conversationId?.let { budgetByConversation[it] }
+                },
+            )
         }.onSuccess { _orchestrationTrees.value = it }
     }
 }

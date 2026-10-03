@@ -1174,6 +1174,7 @@
   <string name="stats_page_orchestration_empty">No sub-agent dispatches recorded yet.</string>
   <string name="stats_page_orchestration_unknown_parent">Unknown conversation</string>
   <string name="stats_page_orchestration_children">%1$d runs</string>
+  <string name="stats_page_orchestration_budget">Used %1$s of %2$s · %3$s left</string>
   <string name="stats_page_orchestration_expand">Show all %1$d</string>
   <string name="stats_page_orchestration_collapse">Show less</string>
   <string name="stats_page_orchestration_calls">%1$d calls</string>

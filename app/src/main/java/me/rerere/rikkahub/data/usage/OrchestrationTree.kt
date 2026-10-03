@@ -66,6 +66,13 @@ data class OrchestrationNode(
 data class OrchestrationTree(
     val parentConversationId: String?,
     val children: List<OrchestrationNode>,
+    /**
+     * P2-14d — the ceiling the parent assistant configured for orchestration, or null when none is
+     * set. Read from [me.rerere.rikkahub.data.model.Assistant.orchestrationTokenBudget]; an expert's
+     * own override is not recoverable from a finished ledger window, so the tree reports the
+     * assistant-level ceiling only.
+     */
+    val budget: Long? = null,
 ) {
     val childCount: Int get() = children.size
     val callCount: Int get() = children.sumOf { it.callCount }
@@ -83,6 +90,20 @@ data class OrchestrationTree(
     val latestAtMs: Long get() = children.maxOfOrNull { it.startedAtMs } ?: 0L
 
     val hasRunningChild: Boolean get() = children.any { it.isRunning }
+
+    /** P2-14d — true when a ceiling is configured; the statistics page only then shows a footer. */
+    val hasBudget: Boolean get() = budget != null
+
+    /**
+     * P2-14d — [OrchestrationBudget.remaining] applied to this tree: the ceiling minus the tokens its
+     * children actually billed. Null ("unlimited") stays distinct from 0 ("nothing left"), so a tree
+     * with no configured ceiling renders no footer at all. This is the production caller P2-07's
+     * `remaining()` was written for and never had.
+     */
+    val remaining: Long? get() = OrchestrationBudget.remaining(totalTokens, budget)
+
+    /** P2-14d — true once the children have spent the ceiling, mirroring the P2-13 dispatch gate. */
+    val budgetExceeded: Boolean get() = OrchestrationBudget.exceeded(totalTokens, budget)
 
     private fun sumOrNull(values: List<Double>): Double? = if (values.isEmpty()) null else values.sum()
 
@@ -105,11 +126,15 @@ object OrchestrationTreeFactory {
      * @param records ledger rows covering at least the same window, any order. Rows with a null
      *        `run_id` (interactive turns, auxiliary calls) are ignored — they belong to no run.
      * @param maxTrees how many dispatches to return, newest first.
+     * @param budgetOfConversation P2-14d — the ceiling configured for a dispatch's parent
+     *        conversation, or null for none. Injected rather than read here so this file stays pure
+     *        (the assistant is a settings object, behind Android); the statistics page supplies it.
      */
     fun build(
         runs: List<AgentRun>,
         records: List<UsageRecordEntity>,
         maxTrees: Int = DEFAULT_MAX_TREES,
+        budgetOfConversation: (String?) -> Long? = { null },
     ): List<OrchestrationTree> {
         val children = runs.filter { it.kind == AgentRunKind.SubAgent.wire }
         if (children.isEmpty()) return emptyList()
@@ -127,7 +152,11 @@ object OrchestrationTreeFactory {
             val nodes = parentRuns
                 .sortedBy { it.createdAtMs }
                 .map { run -> toNode(run, usageByRun[run.id]) }
-            OrchestrationTree(parentConversationId = parentId, children = nodes)
+            OrchestrationTree(
+                parentConversationId = parentId,
+                children = nodes,
+                budget = budgetOfConversation(parentId),
+            )
         }
             .sortedByDescending { it.latestAtMs }
             .take(maxTrees)
