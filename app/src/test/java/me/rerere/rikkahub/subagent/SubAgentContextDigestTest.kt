@@ -102,6 +102,61 @@ class SubAgentContextDigestTest {
         assertEquals("q", turns[1].text)
     }
 
+    // ---- mediaPartsFrom (D3) --------------------------------------------------------
+
+    private fun userWithMedia(vararg parts: UIMessagePart) =
+        UIMessage(role = MessageRole.USER, parts = parts.toList())
+
+    @Test
+    fun `media comes from the newest user message only`() {
+        val older = userWithMedia(UIMessagePart.Audio("file:///old.mp3"))
+        val newest = userWithMedia(
+            UIMessagePart.Text("look at this"),
+            UIMessagePart.Video("file:///new.mp4"),
+            UIMessagePart.Audio("file:///new.mp3"),
+        )
+        val media = SubAgentContextDigest.mediaPartsFrom(listOf(older, assistant("ok"), newest))
+        assertEquals(2, media.size)
+        assertEquals(
+            listOf("file:///new.mp4", "file:///new.mp3"),
+            media.map {
+                when (it) {
+                    is UIMessagePart.Video -> it.url
+                    is UIMessagePart.Audio -> it.url
+                    else -> error("unexpected media part: $it")
+                }
+            },
+        )
+    }
+
+    @Test
+    fun `no user message carries no media`() {
+        assertTrue(SubAgentContextDigest.mediaPartsFrom(emptyList()).isEmpty())
+        assertTrue(SubAgentContextDigest.mediaPartsFrom(listOf(assistant("hi"))).isEmpty())
+    }
+
+    @Test
+    fun `a text-only user message carries no media`() {
+        assertTrue(SubAgentContextDigest.mediaPartsFrom(listOf(user("plain text"))).isEmpty())
+    }
+
+    @Test
+    fun `images are still not carried, only audio and video`() {
+        val message = userWithMedia(
+            UIMessagePart.Image("file:///pic.png"),
+            UIMessagePart.Audio("file:///note.mp3"),
+        )
+        val media = SubAgentContextDigest.mediaPartsFrom(listOf(message))
+        assertEquals(1, media.size)
+        assertTrue(media.single() is UIMessagePart.Audio)
+    }
+
+    @Test
+    fun `a request defaults to carrying no parent media`() {
+        assertFalse(SubAgentRequest(task = "t").attachParentMedia)
+        assertTrue(SubAgentRequest(task = "t", attachParentMedia = true).attachParentMedia)
+    }
+
     // ---- render ---------------------------------------------------------------------
 
     @Test

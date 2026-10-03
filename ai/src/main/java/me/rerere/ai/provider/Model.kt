@@ -40,6 +40,12 @@ enum class ModelType {
 enum class Modality {
     TEXT,
     IMAGE,
+
+    /** D3 — the model accepts audio input (recordings it can listen to). */
+    AUDIO,
+
+    /** D3 — the model accepts video input (clips it can watch). */
+    VIDEO,
 }
 
 @Serializable

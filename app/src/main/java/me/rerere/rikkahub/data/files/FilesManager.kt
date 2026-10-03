@@ -501,6 +501,15 @@ class FilesManager(
     fun getFileMimeType(uri: Uri): String? =
         FileUtils.getFileMimeType(context, uri)
 
+    /**
+     * D3 — best-effort byte size of a picked attachment, or null when the provider does not
+     * report one (many content URIs answer -1). Used to keep an oversized audio/video clip
+     * from being copied and base64-inflated before we know it is too big.
+     */
+    fun getFileSize(uri: Uri): Long? = runCatching {
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+    }.getOrNull()?.takeIf { it >= 0 }
+
     private fun guessMimeType(file: File, fileName: String): String =
         FileUtils.guessMimeType(file, fileName)
 }

@@ -70,6 +70,21 @@ object SubAgentContextDigest {
     }
 
     /**
+     * D3 — the audio/video parts of the NEWEST user message, in order.
+     *
+     * A sub-agent starts from an empty conversation, so the only way a recording the user just
+     * made can reach it is by copying the parts into its first message. Images deliberately
+     * stay out: [turnsFrom] drops them "by construction", and D3 only opened the channel for
+     * the two part types the omni models can actually ingest. An empty list (no user message,
+     * or none carrying media) means "behave exactly as before D3".
+     */
+    fun mediaPartsFrom(messages: List<UIMessage>): List<UIMessagePart> =
+        messages.lastOrNull { it.role == MessageRole.USER }
+            ?.parts
+            ?.filter { it is UIMessagePart.Audio || it is UIMessagePart.Video }
+            ?: emptyList()
+
+    /**
      * Render turns into the block that gets prepended to the task, or null when there is
      * nothing worth carrying (empty input, all-blank turns) — callers treat null as
      * "behave exactly as before T-04".

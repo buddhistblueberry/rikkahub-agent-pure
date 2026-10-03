@@ -30,6 +30,14 @@ import org.koin.compose.koinInject
 import java.io.File
 import kotlin.uuid.Uuid
 
+/**
+ * D3 — a pragmatic client-side ceiling on a single clip, chosen so an attachment cannot be
+ * copied into the app's private dir and then base64-inflated (~1.33x) into a request the
+ * provider would reject anyway. NOT a provider-published limit; adjust freely.
+ */
+private const val MAX_VIDEO_ATTACHMENT_BYTES = 100L * 1024 * 1024
+private const val MAX_AUDIO_ATTACHMENT_BYTES = 20L * 1024 * 1024
+
 internal data class ChatAttachmentPickerActions(
     val onTakePicture: () -> Unit,
     val onPickImage: () -> Unit,
@@ -140,16 +148,48 @@ internal fun rememberChatAttachmentPickerActions(
 
     val videoPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
-            if (selectedUris.isNotEmpty()) {
-                inputState.addVideos(filesManager.createChatFilesByContents(selectedUris))
+            val accepted = selectedUris.filterNot { uri ->
+                val size = filesManager.getFileSize(uri)
+                if (size != null && size > MAX_VIDEO_ATTACHMENT_BYTES) {
+                    toaster.show(
+                        resources.getString(
+                            R.string.chat_input_attachment_too_large,
+                            resources.getString(R.string.video),
+                            size / (1024 * 1024),
+                        ),
+                        type = ToastType.Error,
+                    )
+                    true
+                } else {
+                    false
+                }
+            }
+            if (accepted.isNotEmpty()) {
+                inputState.addVideos(filesManager.createChatFilesByContents(accepted))
                 onAttachmentAdded()
             }
         }
 
     val audioPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { selectedUris ->
-            if (selectedUris.isNotEmpty()) {
-                inputState.addAudios(filesManager.createChatFilesByContents(selectedUris))
+            val accepted = selectedUris.filterNot { uri ->
+                val size = filesManager.getFileSize(uri)
+                if (size != null && size > MAX_AUDIO_ATTACHMENT_BYTES) {
+                    toaster.show(
+                        resources.getString(
+                            R.string.chat_input_attachment_too_large,
+                            resources.getString(R.string.audio),
+                            size / (1024 * 1024),
+                        ),
+                        type = ToastType.Error,
+                    )
+                    true
+                } else {
+                    false
+                }
+            }
+            if (accepted.isNotEmpty()) {
+                inputState.addAudios(filesManager.createChatFilesByContents(accepted))
                 onAttachmentAdded()
             }
         }

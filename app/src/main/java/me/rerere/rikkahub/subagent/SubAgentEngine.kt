@@ -495,6 +495,13 @@ class SubAgentEngine(
         // share history. Best-effort by design - a lookup failure degrades to the pre-T-04
         // behaviour (task alone) instead of failing the run.
         val taskWithContext = withParentContext(parentChatId, request, effectiveTask)
+        // D3 — when the caller asked for it, carry the parent's newest user-message audio/video
+        // attachments into the sub-agent's first message. Best-effort like the context refs
+        // above: any lookup failure degrades to "no media" rather than failing the run.
+        val mediaParts = if (request.attachParentMedia) withParentMedia(parentChatId) else emptyList()
+        if (mediaParts.isNotEmpty()) {
+            registry.update(runId) { it.copy(mediaParts = mediaParts.size) }
+        }
         // P2-23 (D7) - file this conversation into the assistant's sub-agent archive folder, if
         // one is configured AND still exists. The list shows only unfiled conversations, so
         // filing is what keeps this out of the main list. A stale setting (folder since deleted)
@@ -562,7 +569,12 @@ class SubAgentEngine(
                 appendLine()
                 append("When you have finished, end with one short paragraph in plain text that summarises what you did and what you found. Do NOT stop on a tool call — finish with assistant text. The dispatcher harvests only your final text reply, so this paragraph is the entire response the parent sees.")
             }
-            chatService.sendMessage(conv.id, listOf(UIMessagePart.Text(taskWithWrapup)))
+            // D3 — media first, then the task text, matching the order DashScope's own
+            // multimodal examples use.
+            chatService.sendMessage(
+                conv.id,
+                mediaParts + listOf(UIMessagePart.Text(taskWithWrapup)),
+            )
             // The naive form `withTimeoutOrNull { …first { it == null } }` followed by a
             // `finished == null` check is BROKEN: `.first { it == null }` returns the matched
             // value — which IS null on successful completion (the Job? went to null when the
@@ -731,6 +743,23 @@ class SubAgentEngine(
             SubAgentContextDigest.render(SubAgentContextDigest.turnsFrom(selected, turns))
         }.getOrNull()
         return if (digest == null) task else digest + "\n\n" + task
+    }
+
+    /**
+     * D3 — the parent conversation's newest user-message audio/video parts, or none.
+     *
+     * Mirrors [withParentContext]'s defensive posture: a missing conversation, an unparsable
+     * id or a read failure all degrade to an empty list, so media never fails a dispatch.
+     */
+    private suspend fun withParentMedia(parentChatId: String?): List<UIMessagePart> {
+        if (parentChatId == null) return emptyList()
+        val parentUuid = runCatching { Uuid.parse(parentChatId) }.getOrNull() ?: return emptyList()
+        return runCatching {
+            val conv = conversationRepo.getConversationById(parentUuid)
+                ?: return@runCatching emptyList<UIMessagePart>()
+            val selected = conv.messageNodes.mapNotNull { node -> node.messages.getOrNull(node.selectIndex) }
+            SubAgentContextDigest.mediaPartsFrom(selected)
+        }.getOrElse { emptyList() }
     }
 
     private suspend fun harvestFinalText(conversationId: Uuid): String {

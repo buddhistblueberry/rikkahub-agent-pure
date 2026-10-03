@@ -858,6 +858,29 @@ class ChatCompletionsAPI(
                                 })
                             }
 
+                            // D3 — audio goes out as DashScope's input_audio block, video as
+                            // video_url; a model that does not declare the modality gets a named
+                            // placeholder instead of a silent drop (see OpenAIMultimodalParts).
+                            is UIMessagePart.Audio -> {
+                                add(
+                                    OpenAIMultimodalParts.audioContentPart(
+                                        supportsAudioInput = Modality.AUDIO in supportInputModalities,
+                                        url = part.url,
+                                        encode = { part.encodeBase64(withPrefix = false).getOrNull() },
+                                    )
+                                )
+                            }
+
+                            is UIMessagePart.Video -> {
+                                add(
+                                    OpenAIMultimodalParts.videoContentPart(
+                                        supportsVideoInput = Modality.VIDEO in supportInputModalities,
+                                        url = part.url,
+                                        encode = { part.encodeBase64(withPrefix = false).getOrNull() },
+                                    )
+                                )
+                            }
+
                             else -> {}
                         }
                     }
@@ -1024,7 +1047,14 @@ class ChatCompletionsAPI(
     }
 
     private fun List<UIMessagePart>.isOnlyTextPart(): Boolean {
-        val gonnaSend = filter { it is UIMessagePart.Text || it is UIMessagePart.Image }.size
+        // D3: a part the model can actually receive must stop the message collapsing to its
+        // bare text. Before this, Audio/Video counted as "not going to be sent", so a message
+        // of [Audio, Text] collapsed to just the text and the attachment vanished.
+        val gonnaSend =
+            filter {
+                it is UIMessagePart.Text || it is UIMessagePart.Image ||
+                    it is UIMessagePart.Audio || it is UIMessagePart.Video
+            }.size
         val texts = filter { it is UIMessagePart.Text }.size
         return gonnaSend == texts && texts == 1
     }

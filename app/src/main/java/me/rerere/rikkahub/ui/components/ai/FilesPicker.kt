@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Deferred
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Voice
@@ -110,7 +111,15 @@ internal fun FilesPicker(
     onStartVoiceMode: (() -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
-    val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
+    val currentModel = settings.getCurrentChatModel()
+    val provider = currentModel?.findProvider(providers = settings.providers)
+    // D3 — the video/audio buttons used to appear only for Google, whose provider hard-codes
+    // those two modalities. Now any model that DECLARES the modality gets them; Google stays
+    // unconditional so an existing Google setup cannot regress.
+    val supportsVideo = provider is ProviderSetting.Google ||
+        Modality.VIDEO in (currentModel?.inputModalities ?: emptyList())
+    val supportsAudio = provider is ProviderSetting.Google ||
+        Modality.AUDIO in (currentModel?.inputModalities ?: emptyList())
     val navController = LocalNavController.current
     val workspaceRepository: WorkspaceRepository = koinInject()
     val workspaces by workspaceRepository.listFlow().collectAsState(initial = emptyList())
@@ -129,9 +138,11 @@ internal fun FilesPicker(
 
             ImagePickButton(onClick = onPickImage)
 
-            if (provider != null && provider is ProviderSetting.Google) {
+            if (supportsVideo) {
                 VideoPickButton(onClick = onPickVideo)
+            }
 
+            if (supportsAudio) {
                 AudioPickButton(onClick = onPickAudio)
             }
 

@@ -230,6 +230,7 @@
   <string name="chain_of_thought_show_more_steps">再显示 %d 步</string>
   <string name="chat_input_placeholder">输入消息与AI聊天</string>
   <string name="chat_input_unsupported_file_type">不支持的文件类型：%s</string>
+  <string name="chat_input_attachment_too_large">%1$s 过大——上限为 %2$d MB</string>
   <string name="chat_input_file_read_failed">文件读取失败：%s</string>
   <string name="chat_message_add_favorite">添加收藏</string>
   <string name="chat_message_remove_favorite">取消收藏</string>
@@ -951,6 +952,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_provider_page_filter_example">例如：GPT-3.5</string>
   <string name="setting_provider_page_filter_placeholder">输入模型名称筛选</string>
   <string name="setting_provider_page_image">图片</string>
+  <string name="setting_provider_page_audio">音频</string>
+  <string name="setting_provider_page_video">视频</string>
   <string name="setting_provider_page_image_model">图像</string>
   <string name="setting_provider_page_image_qr_decode_failed">解析图片中的二维码失败：%s</string>
   <string name="setting_provider_page_import_dialog_message">请选择导入方式：</string>
