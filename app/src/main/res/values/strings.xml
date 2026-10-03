@@ -1158,6 +1158,17 @@
   <string name="stats_page_title">Statistics</string>
   <string name="stats_page_total_conversations">Total Conversations</string>
   <string name="stats_page_total_messages">Total Messages</string>
+  <string name="stats_page_ledger_title">Usage ledger</string>
+  <string name="stats_page_ledger_window">Last 90 days</string>
+  <string name="stats_page_ledger_by_day">By day</string>
+  <string name="stats_page_ledger_by_purpose">By purpose</string>
+  <string name="stats_page_ledger_by_model">By model</string>
+  <string name="stats_page_ledger_by_assistant">By assistant</string>
+  <string name="stats_page_ledger_unknown">Unknown</string>
+  <string name="stats_page_ledger_empty">No ledger rows in the last 90 days.</string>
+  <string name="stats_page_ledger_expand">Show all %1$d</string>
+  <string name="stats_page_ledger_collapse">Show less</string>
+  <string name="stats_page_ledger_calls">%1$d calls</string>
   <string name="stop">Stop</string>
   <string name="tag_input_dialog_create_new">Create New Tag</string>
   <string name="tag_input_dialog_existing_tags">Existing Tags</string>
@@ -2643,5 +2654,7 @@
   <string name="chat_message_usage_purpose_workflow">workflow</string>
   <string name="chat_message_usage_purpose_skill_test">skill test</string>
   <string name="chat_message_usage_purpose_translation">translation</string>
+  <string name="chat_message_usage_purpose_title">title</string>
+  <string name="chat_message_usage_purpose_suggestion">suggestion</string>
   <string name="chat_message_usage_purpose_unknown">other</string>
 </resources>
