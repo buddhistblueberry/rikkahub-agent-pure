@@ -422,7 +422,9 @@ fun mcpAddTool(settingsStore: SettingsStore, manager: McpManager): Tool = Tool(
         }
         val rawName = params["name"]?.jsonPrimitive?.contentOrNull ?: ""
         val rawUrl = params["url"]?.jsonPrimitive?.contentOrNull ?: ""
-        val enabled = params["enabled"]?.jsonPrimitive?.booleanOrNull ?: true
+        // D5 - a server installed by a model lands DISABLED; the user turns it on in
+        // Settings > MCP. An explicit `enabled: true` from the model still wins.
+        val enabled = params["enabled"]?.jsonPrimitive?.booleanOrNull ?: false
         val headers = parseHeaders(params["headers"])
         val timeoutSec = (params["connect_timeout_seconds"]?.jsonPrimitive?.intOrNull ?: DEFAULT_CONNECT_TIMEOUT_SECONDS)
             .coerceIn(1, MAX_CONNECT_TIMEOUT_SECONDS)

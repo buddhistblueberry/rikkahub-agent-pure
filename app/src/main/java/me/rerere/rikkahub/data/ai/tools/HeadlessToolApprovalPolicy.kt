@@ -119,16 +119,34 @@ object HeadlessToolApprovalPolicy {
     )
 
     /**
+     * D5 - the install tools. A sub-agent MAY install, but the installed artifact lands
+     * **disabled** and the user enables it from the UI. Refusing the install outright was
+     * over-defensive: the risk is the artifact being *live*, not the bytes reaching disk.
+     * `mcp_add` writes its server disabled and `skill_install_*` no longer auto-enables, so
+     * nothing this group produces runs until a human turns it on.
+     */
+    val INSTALL_TOOL_NAMES: Set<String> = setOf(
+        "mcp_add",
+        "mcp_update",
+        "skill_install_from_text",
+        "skill_install_from_url",
+    )
+
+    /**
+     * [ToolApprovalDefaults.NO_ALWAYS_ALLOW] minus [INSTALL_TOOL_NAMES]: the per-call
+     * confirmation tools that are still refused headless. Derived, so a tool added upstream is
+     * covered without a second edit — the direction that fails safe.
+     */
+    val PER_CALL_CONFIRM_TOOL_NAMES: Set<String> =
+        ToolApprovalDefaults.NO_ALWAYS_ALLOW - INSTALL_TOOL_NAMES
+
+    /**
      * Every tool this policy refuses in a headless run: the per-call-confirmation set
-     * ([ToolApprovalDefaults.NO_ALWAYS_ALLOW]), [PRIVACY_SENSITIVE_TOOL_NAMES],
+     * ([PER_CALL_CONFIRM_TOOL_NAMES]), [PRIVACY_SENSITIVE_TOOL_NAMES],
      * [PRIVATE_DATA_TOOL_NAMES] and [EXPERT_WRITE_TOOL_NAMES].
-     *
-     * `NO_ALWAYS_ALLOW` is derived rather than hardcoded, so a tool added to it upstream is
-     * covered here without a second edit — the direction that fails safe. The two local sets
-     * are spelled out on purpose: they are policy, not a mirror of an upstream constant.
      */
     val REFUSED_TOOL_NAMES: Set<String> =
-        ToolApprovalDefaults.NO_ALWAYS_ALLOW + PRIVACY_SENSITIVE_TOOL_NAMES +
+        PER_CALL_CONFIRM_TOOL_NAMES + PRIVACY_SENSITIVE_TOOL_NAMES +
             PRIVATE_DATA_TOOL_NAMES + EXPERT_WRITE_TOOL_NAMES
 
     /**
@@ -143,7 +161,9 @@ object HeadlessToolApprovalPolicy {
         val name = toolName.trim()
         return when {
             name.isEmpty() -> null
-            name in ToolApprovalDefaults.NO_ALWAYS_ALLOW ->
+            // D5 - install tools are allowed; what they install lands disabled.
+            name in INSTALL_TOOL_NAMES -> null
+            name in PER_CALL_CONFIRM_TOOL_NAMES ->
                 "$name requires the user to confirm every single call, and this conversation has " +
                     "no approval channel — there is nobody to confirm. It cannot run unattended. " +
                     "If the task really needs it, ask the user to run it themselves, or use a " +

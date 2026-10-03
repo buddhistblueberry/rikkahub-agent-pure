@@ -14,16 +14,16 @@ import org.junit.Test
 class SkillAutoEnableTest {
 
     @Test
-    fun `new skill - auto-enabled and appended to the enabled set`() {
+    fun `new skill - installed but left disabled (D5)`() {
         val outcome = decideAutoEnable(
             enabledSkills = setOf("agent-core"),
             skillName = "zip-and-send",
             existedBefore = false,
         )
 
-        assertTrue(outcome.autoEnabled)
-        assertEquals(setOf("agent-core", "zip-and-send"), outcome.updatedEnabledSkills)
-        assertTrue(outcome.detail.contains("now enabled"))
+        assertFalse(outcome.autoEnabled)
+        assertNull(outcome.updatedEnabledSkills)
+        assertTrue(outcome.detail.contains("disabled"))
     }
 
     @Test
@@ -55,15 +55,15 @@ class SkillAutoEnableTest {
     }
 
     @Test
-    fun `new skill into an empty enabled set`() {
+    fun `new skill into an empty enabled set is also left disabled (D5)`() {
         val outcome = decideAutoEnable(
             enabledSkills = emptySet(),
             skillName = "morning-briefing",
             existedBefore = false,
         )
 
-        assertTrue(outcome.autoEnabled)
-        assertEquals(setOf("morning-briefing"), outcome.updatedEnabledSkills)
+        assertFalse(outcome.autoEnabled)
+        assertNull(outcome.updatedEnabledSkills)
     }
 
     @Test
