@@ -31,12 +31,12 @@ class HeadlessToolApprovalPolicyTest {
     // ---------------------------------------------------------------- refusals
 
     @Test
-    fun `every NO_ALWAYS_ALLOW tool is refused`() {
+    fun `every per-call-confirmation tool is refused`() {
         assertTrue(
             "the upstream set must not be empty, or this test proves nothing",
             ToolApprovalDefaults.NO_ALWAYS_ALLOW.isNotEmpty(),
         )
-        ToolApprovalDefaults.NO_ALWAYS_ALLOW.forEach { name ->
+        HeadlessToolApprovalPolicy.PER_CALL_CONFIRM_TOOL_NAMES.forEach { name ->
             assertEquals(
                 "$name must be refused in a headless run",
                 true,
@@ -46,15 +46,27 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
+    fun `the install tools run headless but land disabled`() {
+        // D5 - a sub-agent may install, but nothing it installs is live until a human
+        // enables it (mcp_add writes disabled; skill install no longer auto-enables).
+        assertTrue(HeadlessToolApprovalPolicy.INSTALL_TOOL_NAMES.isNotEmpty())
+        HeadlessToolApprovalPolicy.INSTALL_TOOL_NAMES.forEach { name ->
+            assertFalse("$name must be allowed headless since D5", HeadlessToolApprovalPolicy.isRefused(name))
+            assertNull(HeadlessToolApprovalPolicy.refusalEnvelope(name))
+        }
+        assertFalse(
+            HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES.containsAll(
+                HeadlessToolApprovalPolicy.INSTALL_TOOL_NAMES,
+            ),
+        )
+    }
+
+    @Test
     fun `the named privilege escalation surfaces are refused`() {
         // The card's examples, spelled out so a reshuffle of NO_ALWAYS_ALLOW cannot quietly
         // drop one without this test going red.
         listOf(
-            "mcp_add",
-            "mcp_update",
             "eval_javascript",
-            "skill_install_from_url",
-            "skill_install_from_text",
             "browser_eval_js",
             "keystore_generate_key",
             "keystore_decrypt",
@@ -99,7 +111,7 @@ class HeadlessToolApprovalPolicyTest {
     @Test
     fun `the refused set is exactly the union of the four groups`() {
         assertEquals(
-            ToolApprovalDefaults.NO_ALWAYS_ALLOW +
+            HeadlessToolApprovalPolicy.PER_CALL_CONFIRM_TOOL_NAMES +
                 HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES +
                 HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES +
                 HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES,
@@ -163,8 +175,8 @@ class HeadlessToolApprovalPolicyTest {
 
     @Test
     fun `the false branch of the flag is what suppresses the envelope`() {
-        assertNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor("mcp_add", false))
-        assertNotNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor("mcp_add", true))
+        assertNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor("eval_javascript", false))
+        assertNotNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor("eval_javascript", true))
     }
 
     // ------------------------------------------------------------------ envelope

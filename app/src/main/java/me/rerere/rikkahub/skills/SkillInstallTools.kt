@@ -39,7 +39,8 @@ data class AutoEnableOutcome(
  * [existedBefore] the install wrote to disk.
  *
  *  - Already enabled → no-op, stays enabled (idempotent re-install).
- *  - New skill (did not exist before) → enable it.
+ *  - New skill (did not exist before) → leave it disabled (D5): installing is allowed,
+ *    turning it on is the user's call in Settings > Assistants > Skills.
  *  - Existed before but not enabled → the user previously disabled it; respect that and
  *    leave it disabled.
  */
@@ -62,9 +63,10 @@ fun decideAutoEnable(
     )
 
     else -> AutoEnableOutcome(
-        autoEnabled = true,
-        detail = "Skill is now enabled for the active assistant and ready to use.",
-        updatedEnabledSkills = enabledSkills + skillName,
+        autoEnabled = false,
+        detail = "Skill installed but left disabled. Enable it in Settings > Assistants > " +
+            "Skills before calling use_skill.",
+        updatedEnabledSkills = null,
     )
 }
 
