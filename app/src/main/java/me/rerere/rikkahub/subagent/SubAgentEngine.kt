@@ -132,8 +132,22 @@ class SubAgentEngine(
      */
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    /**
+     * P2-15 — what the budget gate learned about this dispatch's orchestration, whether or not it
+     * refused. [refusal] is the envelope to raise (null = allowed); [remaining] is how many
+     * orchestration tokens were still unspent when this dispatch was admitted (null = no ceiling,
+     * so nothing to report). Carrying both out of the one read is what lets the accepted envelope
+     * tell a model its headroom BEFORE it spends it, instead of only after it hits the wall.
+     *
+     * The count is the ceiling minus what the orchestration had already spent — the run being
+     * admitted is not in it yet, because nothing can know its cost until it has run. That is the
+     * same pre-flight contract the gate itself is built on (D8), so the number the model reads and
+     * the number the next dispatch is judged against are the same number.
+     */
+    private data class BudgetGate(val refusal: DispatchResult.Reject?, val remaining: Long?)
+
     sealed class DispatchResult {
-        data class Ok(val run: SubAgentRun) : DispatchResult()
+        data class Ok(val run: SubAgentRun, val budgetRemaining: Long? = null) : DispatchResult()
         data class Reject(val error: String, val detail: String) : DispatchResult()
     }
 
@@ -166,7 +180,8 @@ class SubAgentEngine(
 
         // P2-13 — the budget gate. Judged before a concurrency slot is taken, so an
         // over-budget orchestration is refused on policy rather than on capacity.
-        checkOrchestrationBudget(parentAssistantId, parentChatId, cleaned)?.let { refusal ->
+        val gate = checkOrchestrationBudget(parentAssistantId, parentChatId, cleaned)
+        gate.refusal?.let { refusal ->
             return@withContext refusal
         }
 
@@ -264,7 +279,7 @@ class SubAgentEngine(
 
         if (cleaned.runInBackground) {
             // Return immediately; final status delivered via registry observation.
-            DispatchResult.Ok(registry.get(runId) ?: initialRun)
+            DispatchResult.Ok(registry.get(runId) ?: initialRun, gate.remaining)
         } else {
             // Foreground — block until terminal.
             try {
@@ -272,7 +287,7 @@ class SubAgentEngine(
             } catch (t: Throwable) {
                 Log.w(TAG, "foreground sub-agent join failed for $runId", t)
             }
-            DispatchResult.Ok(registry.get(runId) ?: initialRun)
+            DispatchResult.Ok(registry.get(runId) ?: initialRun, gate.remaining)
         }
     }
 
@@ -307,7 +322,7 @@ class SubAgentEngine(
         parentAssistantId: String,
         parentChatId: String?,
         request: SubAgentRequest,
-    ): DispatchResult.Reject? {
+    ): BudgetGate {
         val assistantBudget = runCatching {
             val asstUuid = Uuid.parse(parentAssistantId)
             settingsStore.settingsFlow.first().let { AssistantResolver.byId(it, asstUuid) }
@@ -315,12 +330,13 @@ class SubAgentEngine(
         // Cheap short-circuit: with no assistant ceiling and no named expert there is nothing
         // to resolve, so the default (budget-free) path pays neither the settings nor the
         // expert read.
-        if (assistantBudget == null && request.agentName == null) return null
+        if (assistantBudget == null && request.agentName == null) return BudgetGate(null, null)
         val expertBudget = runCatching {
             (agentDefinitionRepository.resolveByName(request.agentName)
                 as? AgentDefinitionResolver.Result.Resolved)?.definition?.tokenBudget
         }.getOrNull()
-        val budget = OrchestrationBudget.effectiveBudget(assistantBudget, expertBudget) ?: return null
+        val budget = OrchestrationBudget.effectiveBudget(assistantBudget, expertBudget)
+            ?: return BudgetGate(null, null)
         // P2-14c — a ceiling IS configured, but a dispatch with no parent chat id (cron / workflow /
         // external automation constructing a SubAgentRequest directly) has no orchestration root to
         // sum against, so there is nothing to enforce it with. This used to be a silent bypass; log
@@ -333,14 +349,21 @@ class SubAgentEngine(
                 "orchestration budget $budget configured for assistant $parentAssistantId, but the " +
                     "dispatch has no parent chat id — no orchestration root to enforce against; allowing",
             )
-            return null
+            return BudgetGate(null, null)
         }
         val used = runCatching { usageLedger.tokensForOrchestration(parentChatId) }.getOrDefault(0L)
         val decision = OrchestrationGate.decide(used, budget)
-        if (decision !is OrchestrationGate.Decision.Refuse) return null
-        return DispatchResult.Reject(
-            error = OrchestrationGate.ERROR_CODE,
-            detail = OrchestrationGate.refusalDetail(decision),
+        // P2-15 — the same read that judges the dispatch also reports the headroom, so the accepted
+        // path can tell the model what is left before it spends it. The refusal carries it too (it
+        // is 0 there by construction), so both exits describe the orchestration the same way.
+        val remaining = OrchestrationBudget.remaining(used, budget)
+        if (decision !is OrchestrationGate.Decision.Refuse) return BudgetGate(null, remaining)
+        return BudgetGate(
+            DispatchResult.Reject(
+                error = OrchestrationGate.ERROR_CODE,
+                detail = OrchestrationGate.refusalDetail(decision),
+            ),
+            remaining,
         )
     }
 
