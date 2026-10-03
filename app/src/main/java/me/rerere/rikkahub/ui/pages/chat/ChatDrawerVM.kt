@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -27,11 +28,15 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FolderRepository
+import me.rerere.rikkahub.subagent.SubAgentArchiveRules
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.uuid.Uuid
+
+/** P2-23 (D7) — why a folder delete did or did not happen, so the UI can explain itself. */
+enum class FolderDeleteOutcome { Deleted, Generating, Protected }
 
 class ChatDrawerVM(
     private val context: Application,
@@ -148,38 +153,91 @@ class ChatDrawerVM(
         _selectedFolderId.value = folderId
     }
 
-    fun createFolder(name: String) {
+    /**
+     * P2-23 (D7) — create a folder, optionally marking it as this assistant's sub-agent archive.
+     * Marking writes the same single slot the assistant settings screen writes.
+     */
+    fun createFolder(name: String, archive: Boolean = false) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             val assistantId = assistantIdFlow.first()
-            folderRepo.createFolder(assistantId, trimmed)
+            val folder = folderRepo.createFolder(assistantId, trimmed)
+            if (archive) setArchiveFolder(assistantId, folder.id)
         }
     }
 
-    fun renameFolder(folderId: Uuid, name: String) {
+    fun renameFolder(folderId: Uuid, name: String, archive: Boolean = false) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             folderRepo.renameFolder(folderId, trimmed)
+            val assistantId = assistantIdFlow.first()
+            val current = settingsStore.settingsFlow.value.subAgentArchiveFolders[assistantId.toString()]
+            // Only touch the archive slot when this choice concerns it: turning it on sets the
+            // slot; turning it off clears it ONLY if this folder owned it, so toggling an
+            // unrelated folder's switch cannot silently unset the real one.
+            when {
+                archive -> setArchiveFolder(assistantId, folderId)
+                current == folderId.toString() -> setArchiveFolder(assistantId, null)
+            }
         }
     }
 
+    /** Write (or clear, with a null [folderId]) the assistant's archive-folder slot. */
+    private suspend fun setArchiveFolder(assistantId: Uuid, folderId: Uuid?) {
+        settingsStore.update { s ->
+            val key = assistantId.toString()
+            val next = s.subAgentArchiveFolders.toMutableMap()
+            if (folderId == null) next.remove(key) else next[key] = folderId.toString()
+            s.copy(subAgentArchiveFolders = next)
+        }
+    }
+
+    /** The assistant's archive folder, or null. Pre-fills the create/rename dialogs. */
+    val archiveFolderId: StateFlow<Uuid?> =
+        combine(settingsStore.settingsFlow, assistantIdFlow) { s, a ->
+            SubAgentArchiveRules.targetFolderId(s.subAgentArchiveFolders, a.toString())
+                ?.let { Uuid.parse(it) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     /**
-     * 删除文件夹。若文件夹内有正在生成回复的会话，拒绝删除并返回 false（UI 层据此提示用户）。
+     * The archive folder once it holds a conversation — the one folder the UI must not let the
+     * user delete. Null when nothing is marked, or the marked one is empty (an empty mistake is
+     * still removable).
      */
-    fun deleteFolder(folderId: Uuid): Boolean {
+    val protectedFolderId: StateFlow<Uuid?> = archiveFolderId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(null)
+            else conversationRepo.countInFolderFlow(id).map { count -> if (count > 0) id else null }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * 删除文件夹。
+     *
+     * P2-23 (D7)：若该文件夹是当前助手的「子智能体归档」目标**且里面已有对话**，拒绝删除
+     * （[FolderDeleteOutcome.Protected]）——空归档夹不受保护，误建的仍可删。文件夹内有正在生成
+     * 的会话同样拒绝（[FolderDeleteOutcome.Generating]）。两者都返回原因，UI 据此提示。
+     */
+    suspend fun deleteFolder(folderId: Uuid): FolderDeleteOutcome {
         if (chatService.hasGeneratingConversationInFolder(folderId)) {
-            return false
+            return FolderDeleteOutcome.Generating
         }
-        viewModelScope.launch {
-            // 经 ChatService 删除：会同步清空活跃 session 内存态的 folderId，避免整对象保存写回已删文件夹
-            chatService.deleteFolder(folderId)
-            if (_selectedFolderId.value == folderId) {
-                _selectedFolderId.value = null
-            }
+        val assistantId = assistantIdFlow.first()
+        val isTarget =
+            settingsStore.settingsFlow.value.subAgentArchiveFolders[assistantId.toString()] == folderId.toString()
+        if (SubAgentArchiveRules.isProtected(isTarget, folderRepo.countConversations(folderId))) {
+            return FolderDeleteOutcome.Protected
         }
-        return true
+        // 归档目标被删（空夹可删）时顺手清掉设置里的目标，避免下次派发写进悬空 folder_id
+        if (isTarget) setArchiveFolder(assistantId, null)
+        // 经 ChatService 删除：会同步清空活跃 session 内存态的 folderId，避免整对象保存写回已删文件夹
+        chatService.deleteFolder(folderId)
+        if (_selectedFolderId.value == folderId) {
+            _selectedFolderId.value = null
+        }
+        return FolderDeleteOutcome.Deleted
     }
 
     fun moveConversationToFolder(conversationId: Uuid, folderId: Uuid?) {

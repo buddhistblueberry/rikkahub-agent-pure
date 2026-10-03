@@ -26,6 +26,7 @@ import me.rerere.rikkahub.data.usage.UsageRunContexts
 import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.service.ChatService
 import kotlin.uuid.Uuid
 
@@ -103,6 +104,7 @@ class SubAgentEngine(
      * `Settings` because the library is a database, not a preference blob.
      */
     private val agentDefinitionRepository: AgentDefinitionRepository,
+    private val folderRepository: FolderRepository,
     /**
      * P2-13 — the accounting ledger, read here (never written): the budget gate sums what
      * this conversation's sub-agents already cost before another dispatch is allowed, and a
@@ -493,6 +495,14 @@ class SubAgentEngine(
         // share history. Best-effort by design - a lookup failure degrades to the pre-T-04
         // behaviour (task alone) instead of failing the run.
         val taskWithContext = withParentContext(parentChatId, request, effectiveTask)
+        // P2-23 (D7) - file this conversation into the assistant's sub-agent archive folder, if
+        // one is configured AND still exists. The list shows only unfiled conversations, so
+        // filing is what keeps this out of the main list. A stale setting (folder since deleted)
+        // degrades to "unfiled" rather than leaving a dangling folder id on the conversation.
+        val archiveFolder = SubAgentArchiveRules
+            .targetFolderId(settingsStore.settingsFlow.value.subAgentArchiveFolders, parentAsstUuid.toString())
+            ?.let { raw -> runCatching { Uuid.parse(raw) }.getOrNull() }
+            ?.takeIf { id -> runCatching { folderRepository.getFolderById(id) }.getOrNull() != null }
         val conv = Conversation.ofId(
             id = Uuid.random(),
             assistantId = parentAsstUuid,
@@ -500,6 +510,7 @@ class SubAgentEngine(
         ).copy(
             title = "[Sub-agent] ${request.label?.take(40) ?: request.task.take(40)}",
             chatModelId = resolvedChatModelId,
+            folderId = archiveFolder,
         )
         conversationRepo.insertConversation(conv)
         chatService.initializeConversation(conv.id)

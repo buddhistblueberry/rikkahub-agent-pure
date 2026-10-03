@@ -96,6 +96,10 @@ class ConversationRepository(
         }
     }
 
+    /** How many conversations are filed in [folderId] — drives the folder delete guard. */
+    fun countInFolderFlow(folderId: Uuid): Flow<Int> =
+        conversationDAO.countInFolderFlow(folderId.toString())
+
     fun getConversationsOfFolderPaging(folderId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
