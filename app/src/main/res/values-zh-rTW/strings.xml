@@ -2272,6 +2272,8 @@
   <string name="chat_message_usage_purpose_title">標題</string>
   <string name="chat_message_usage_purpose_suggestion">建議</string>
   <string name="chat_message_usage_purpose_unknown">未分類</string>
+  <string name="assistant_page_advanced_section">進階 / 實驗功能</string>
+  <string name="assistant_page_advanced_section_desc">協定級 / 實驗性開關，預設全部關閉。請確認理解其對模型工具面的影響後再開啟。</string>
   <string name="assistant_page_compact_context">模型自壓縮上下文</string>
   <string name="assistant_page_compact_context_desc">新增一個 compact_context 工具，讓模型在判斷上下文過長時自行摘要先前的回合。它使用與手動壓縮相同的摘要器，縮短後的上下文從下一回合生效。預設關閉。</string>
   <string name="assistant_page_tool_surface_mode">漸進式 MCP 工具目錄</string>
