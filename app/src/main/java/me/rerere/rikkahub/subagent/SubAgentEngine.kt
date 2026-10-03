@@ -239,6 +239,37 @@ class SubAgentEngine(
         parentChatId: String?,
         request: SubAgentRequest,
     ) {
+        // P2-08 — hold the chat foreground service for the run's ENTIRE life, not just the model
+        // calls inside it. ChatService already claims the service around each generation, but a
+        // sub-agent lives through gaps where no generation is in flight: tool execution, a
+        // concurrency-slot wait, and the parent-notification wait that can last five minutes after
+        // the run itself produced its result. A background dispatch can outlive the parent turn
+        // that started it, so those gaps used to run with no foreground claim at all — exactly the
+        // window the platform freezes or reclaims.
+        //
+        // Taken here and released in the `finally` below, so the hold can never outlive the run:
+        // with no active run the tracker drops to zero and the service is withdrawn (the P2-08 red
+        // line). The claim is one unit on the SAME tracker the generations use, so an overlapping
+        // generation never has its service torn down by an orchestration ending, and vice versa.
+        val releaseForegroundHold = chatService.retainForegroundForActiveRun()
+        try {
+            runSubAgentBody(runId, parentAssistantId, parentChatId, request)
+        } finally {
+            releaseForegroundHold()
+        }
+    }
+
+    /**
+     * The body of a sub-agent run, split out of [executeRun] so the P2-08 foreground hold wraps
+     * every return path — the run has early returns for a bad parent id, an unresolvable expert,
+     * and an unresolvable model — without touching the run logic itself.
+     */
+    private suspend fun runSubAgentBody(
+        runId: String,
+        parentAssistantId: String,
+        parentChatId: String?,
+        request: SubAgentRequest,
+    ) {
         registry.update(runId) { it.copy(status = SubAgentStatus.RUNNING) }
         ledgerIds[runId]?.let { agentRunRepo.setStatus(it, AgentRunStatus.running) }
 

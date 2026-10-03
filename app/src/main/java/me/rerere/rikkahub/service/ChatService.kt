@@ -565,6 +565,23 @@ class ChatService(
     )
 
     /**
+     * P2-08 — a foreground-service claim for work that is not a chat generation.
+     *
+     * [me.rerere.rikkahub.subagent.SubAgentEngine] holds one claim for the whole life of a
+     * sub-agent run, because a background dispatch can outlive the parent turn and spans gaps —
+     * tool execution, a concurrency-slot wait, the parent-notification wait — where none of our
+     * generations is in flight, so the service would otherwise stop and the process become
+     * reclaimable mid-orchestration.
+     *
+     * The claim lands on the same [foregroundWorkTracker] the generations use, so the service
+     * starts on the first claim and stops on the last: an orchestration ending cannot stop a
+     * service a live generation still needs, and a tracker back at zero cannot leave the service
+     * running with no active run (the P2-08 red line). The returned callback is idempotent; call
+     * it from the `finally` that ends the owning work so a cancelled or failed run releases too.
+     */
+    fun retainForegroundForActiveRun(): () -> Unit = foregroundWorkTracker.acquire()
+
+    /**
      * Per-conversation notification id / PendingIntent request-code allocator.
      *
      * conversationId.hashCode() (the previous scheme) can collide across different
