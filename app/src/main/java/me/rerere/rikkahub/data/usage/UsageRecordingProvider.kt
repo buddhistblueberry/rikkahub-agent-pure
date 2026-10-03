@@ -1,10 +1,13 @@
 package me.rerere.rikkahub.data.usage
 
 import android.util.Log
+import kotlinx.coroutines.flow.Flow
+import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.TextGenerationResult
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
 
 private const val TAG = "UsageLedger"
@@ -33,8 +36,65 @@ internal class UsageRecordingProvider<T : ProviderSetting>(
     ): TextGenerationResult {
         val startedAt = System.currentTimeMillis()
         val result = delegate.generateText(providerSetting, messages, params)
-        // P2-11d - price the call now and freeze the result: editing the price row later must
-        // not rewrite what this call already cost. Unpriced models yield null, never zero.
+        recordCall(
+            usage = result.usage,
+            context = currentUsageCallContext() ?: UsageCallContext(),
+            providerSetting = providerSetting,
+            params = params,
+            startedAt = startedAt,
+            streaming = false,
+        )
+        return result
+    }
+
+    /**
+     * P2-12a - the streaming half of the same accounting.
+     *
+     * Before this override existed, interface delegation forwarded `streamText` verbatim, so a
+     * streamed call - which is the default chat path (`Assistant.streamOutput = true`) - wrote
+     * no ledger row at all. The provider reports usage as a `StreamChunk.Usage` inside the
+     * flow, so the row is produced by wrapping that flow (see `recordUsageOnce`) instead of by
+     * changing the caller's collection.
+     *
+     * The ambient [UsageCallContext] is read **eagerly**, here, and not inside the flow body:
+     * the call site installs it around the `streamText(...)` invocation, while the flow may be
+     * collected later (and re-collected by a retry chain), where that context is gone.
+     */
+    override suspend fun streamText(
+        providerSetting: T,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> {
+        val startedAt = System.currentTimeMillis()
+        val context = currentUsageCallContext() ?: UsageCallContext()
+        return delegate.streamText(providerSetting, messages, params).recordUsageOnce(
+            select = { chunk -> (chunk as? StreamChunk.Usage)?.usage },
+            record = { usage ->
+                recordCall(
+                    usage = usage,
+                    context = context,
+                    providerSetting = providerSetting,
+                    params = params,
+                    startedAt = startedAt,
+                    streaming = true,
+                )
+            },
+        )
+    }
+
+    /**
+     * Prices a finished call and freezes the result into the ledger: editing the price table
+     * later must not rewrite what this call already cost. Unpriced models yield null, never
+     * zero. Shared by the non-stream and stream paths so both keep one set of rules.
+     */
+    private suspend fun recordCall(
+        usage: TokenUsage?,
+        context: UsageCallContext,
+        providerSetting: T,
+        params: TextGenerationParams,
+        startedAt: Long,
+        streaming: Boolean,
+    ) {
         val price = UsagePriceResolver.ratesAt(
             pricing = params.model.pricing,
             atEpochMs = startedAt,
@@ -43,18 +103,18 @@ internal class UsageRecordingProvider<T : ProviderSetting>(
         )
         val outcome = UsageCallRecorder.record(
             ledger = ledger,
-            usage = result.usage,
-            context = currentUsageCallContext() ?: UsageCallContext(),
+            usage = usage,
+            context = context,
             providerName = providerSetting.name,
             modelId = params.model.modelId,
-            costMicros = result.usage?.let { UsagePriceResolver.costMicros(it, price?.rates) },
+            costMicros = usage?.let { UsagePriceResolver.costMicros(it, price?.rates) },
             priceVersionId = UsagePriceResolver.priceVersionId(price),
+            streaming = streaming,
             latencyMs = System.currentTimeMillis() - startedAt,
         )
         if (outcome is UsageCallRecorder.Outcome.Failed) {
             Log.w(TAG, "usage ledger write failed for model ${params.model.modelId}", outcome.error)
         }
-        return result
     }
 }
 

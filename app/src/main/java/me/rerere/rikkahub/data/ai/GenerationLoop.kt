@@ -1375,11 +1375,23 @@ class GenerationLoop(
                 var receivedMeaningfulOutput = false
                 var receivedAnyChunk = false
                 val streamChunkHandler = StreamChunkHandler(model)
-                providerImpl.streamText(
-                    providerSetting = provider,
-                    messages = internalMessages,
-                    params = params
-                ).onCompletion { cause ->
+                // P2-12a - a streamed call is a model round trip exactly like the non-stream
+                // one below, so it carries the same ambient context. It was previously left
+                // unwrapped, which (once the decorator started wrapping `streamText`) would have
+                // filed every streamed call as UNKNOWN with no conversation / assistant.
+                withContext(
+                    UsageCallContext(
+                        purpose = if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
+                        conversationId = conversationId?.toString(),
+                        assistantId = assistant.id.toString(),
+                    )
+                ) {
+                    providerImpl.streamText(
+                        providerSetting = provider,
+                        messages = internalMessages,
+                        params = params
+                    )
+                }.onCompletion { cause ->
                     // Some SSE implementations report an abruptly closed socket through onClosed
                     // without an exception. Treat a clean close with no chunks at all as a transport
                     // failure so the retry policy can recover a background continuation. A clean
