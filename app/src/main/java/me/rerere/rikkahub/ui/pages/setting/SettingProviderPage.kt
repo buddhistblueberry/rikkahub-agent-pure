@@ -100,20 +100,28 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     var searchQuery by remember { mutableStateOf("") }
     val lazyListState = rememberLazyListState()
     var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newProviders = settings.providers.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        vm.updateSettings(settings.copy(providers = newProviders))
-    }
-
+    // D12 - enabled providers first. A stable sort keeps the user's manual order inside each
+    // group, so reordering within "enabled" or within "disabled" still sticks.
     val filteredProviders = remember(settings.providers, searchQuery) {
-        if (searchQuery.isBlank()) {
+        val visible = if (searchQuery.isBlank()) {
             settings.providers
         } else {
             settings.providers.filter { provider ->
                 provider.name.contains(searchQuery, ignoreCase = true)
             }
+        }
+        visible.sortedByDescending { it.enabled }
+    }
+
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // Reorder the list the user actually sees (enabled-first) and persist it, so a drag keeps
+        // its meaning under the sort. Only when no search filter is active: the visible list is
+        // then a subset, and writing its order back would drop the hidden providers.
+        if (searchQuery.isBlank()) {
+            val reordered = filteredProviders.toMutableList().apply {
+                add(to.index, removeAt(from.index))
+            }
+            vm.updateSettings(settings.copy(providers = reordered))
         }
     }
 
