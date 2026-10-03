@@ -2155,6 +2155,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_sub_agents_page_surface_skills">技能</string>
   <string name="setting_sub_agents_page_surface_namespace">命名空间</string>
   <string name="setting_sub_agents_page_surface_inherit">继承父助手</string>
+  <string name="setting_sub_agents_page_surface_inherit_tools">继承父助手的完整工具面（派发时决定）</string>
   <string name="setting_sub_agents_page_surface_own_count">自定义 · 已选 %1$d</string>
   <string name="setting_sub_agents_page_surface_no_tools">没有可列出的工具。</string>
   <string name="setting_sub_agents_page_surface_no_mcp">没有已启用的 MCP 服务器。</string>
