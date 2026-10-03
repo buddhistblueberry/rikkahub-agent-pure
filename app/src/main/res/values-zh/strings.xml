@@ -2348,6 +2348,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chat_message_usage_purpose_title">标题</string>
   <string name="chat_message_usage_purpose_suggestion">建议</string>
   <string name="chat_message_usage_purpose_unknown">未分类</string>
+  <string name="assistant_page_advanced_section">高级 / 实验功能</string>
+  <string name="assistant_page_advanced_section_desc">协议级 / 实验性开关，默认全部关闭。请确认理解其对模型工具面的影响后再开启。</string>
   <string name="assistant_page_compact_context">模型自压缩上下文</string>
   <string name="assistant_page_compact_context_desc">增加一个 compact_context 工具，让模型在判断上下文过长时自行摘要此前的回合。它使用与手动压缩相同的摘要器，缩短后的上下文从下一回合生效。默认关闭。</string>
   <string name="assistant_page_tool_surface_mode">渐进式 MCP 工具目录</string>
