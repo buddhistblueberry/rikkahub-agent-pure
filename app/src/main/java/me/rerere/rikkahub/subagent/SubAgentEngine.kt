@@ -226,6 +226,42 @@ class SubAgentEngine(
         }
         registry.setJob(runId, executionJob)
 
+        // P2-14a — the cancellation safety net. [runSubAgentBody] writes a terminal status only from
+        // inside its own try/catch, but a run can be cancelled at any suspension point BEFORE that
+        // try — the ledger's `running` write, the settings read, the expert and model resolutions —
+        // and a job cancelled before its coroutine ever starts never enters the body at all. With no
+        // `invokeOnCompletion` anywhere on this path (Phase 11 through P2-13), such a run stranded in
+        // PENDING / RUNNING for the life of the process: it held a concurrency slot
+        // (`globalActiveCount` counts both) and `subagent_get` reported it as running forever. This
+        // handler is the one place that sees every exit, including the ones the body never ran.
+        executionJob.invokeOnCompletion { cause ->
+            val current = registry.get(runId)?.status
+            if (current != SubAgentStatus.PENDING && current != SubAgentStatus.RUNNING) {
+                return@invokeOnCompletion
+            }
+            val cancelled = cause == null || cause is kotlinx.coroutines.CancellationException
+            val status = if (cancelled) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
+            val reason = when {
+                cause is kotlinx.coroutines.CancellationException ->
+                    "cancelled before the run reached a terminal status"
+                cause != null -> "${cause::class.simpleName}: ${cause.message.orEmpty()}"
+                else -> "completed without reaching a terminal status"
+            }
+            // Registry first, synchronously, so the foreground dispatch that joined this job (or a
+            // `subagent_get` racing the cancel) observes the terminal state at once. The ledger
+            // write is suspend, so it hops onto the app scope — best effort, like every other
+            // ledger write on this path, and out of [markTerminal] so the registry flip above can
+            // never be delayed by a database call.
+            markTerminalInRegistry(runId, status, reason)
+            ledgerIds.remove(runId)?.let { ledgerId ->
+                appScope.launch(Dispatchers.IO) {
+                    runCatching { agentRunRepo.markTerminal(ledgerId, status.toLedgerStatus(), reason) }
+                }
+            }
+            registry.clearJob(runId)
+        }
+
+
         if (cleaned.runInBackground) {
             // Return immediately; final status delivered via registry observation.
             DispatchResult.Ok(registry.get(runId) ?: initialRun)
@@ -262,7 +298,8 @@ class SubAgentEngine(
      * the ledger is not even read in that case.
      *
      * A conversation-less dispatch (cron / workflow / external automation) has no orchestration
-     * root to sum against, so it is never gated. Every read here is best-effort: a ledger or
+     * root to sum against, so it is never gated — but when a ceiling IS configured it is logged
+     * rather than bypassed in silence (P2-14c). Every read here is best-effort: a ledger or
      * settings hiccup degrades to "allow", because telemetry is not allowed to break a dispatch
      * — the refusal exists to protect a budget, not to add a new failure mode.
      */
@@ -271,7 +308,6 @@ class SubAgentEngine(
         parentChatId: String?,
         request: SubAgentRequest,
     ): DispatchResult.Reject? {
-        if (parentChatId == null) return null
         val assistantBudget = runCatching {
             val asstUuid = Uuid.parse(parentAssistantId)
             settingsStore.settingsFlow.first().let { AssistantResolver.byId(it, asstUuid) }
@@ -285,6 +321,20 @@ class SubAgentEngine(
                 as? AgentDefinitionResolver.Result.Resolved)?.definition?.tokenBudget
         }.getOrNull()
         val budget = OrchestrationBudget.effectiveBudget(assistantBudget, expertBudget) ?: return null
+        // P2-14c — a ceiling IS configured, but a dispatch with no parent chat id (cron / workflow /
+        // external automation constructing a SubAgentRequest directly) has no orchestration root to
+        // sum against, so there is nothing to enforce it with. This used to be a silent bypass; log
+        // it so a future caller that hands the engine a request directly cannot escape its budget
+        // without a trace. The outcome stays "allow" on purpose — refusing would turn a missing
+        // anchor into a brand-new failure mode for a path that never had a budget to begin with.
+        if (parentChatId == null) {
+            Log.w(
+                TAG,
+                "orchestration budget $budget configured for assistant $parentAssistantId, but the " +
+                    "dispatch has no parent chat id — no orchestration root to enforce against; allowing",
+            )
+            return null
+        }
         val used = runCatching { usageLedger.tokensForOrchestration(parentChatId) }.getOrDefault(0L)
         val decision = OrchestrationGate.decide(used, budget)
         if (decision !is OrchestrationGate.Decision.Refuse) return null
@@ -534,6 +584,23 @@ class SubAgentEngine(
     }
 
     private suspend fun markTerminal(runId: String, status: SubAgentStatus, error: String?) {
+        markTerminalInRegistry(runId, status, error)
+        // Phase 24 — mirror the terminal status into the cross-pillar ledger. TIMED_OUT and
+        // FAILED both map to `failed`; CANCELLED maps to `cancelled`. (SUCCEEDED never
+        // routes through here — it transitions the ledger row inline in executeRun.)
+        ledgerIds.remove(runId)?.let { ledgerId ->
+            agentRunRepo.markTerminal(ledgerId, status.toLedgerStatus(), error)
+        }
+    }
+
+    /**
+     * P2-14a — the registry half of [markTerminal], split out because the cancellation safety net
+     * cannot suspend: it runs inside [kotlinx.coroutines.Job.invokeOnCompletion], which forces a
+     * plain `(Throwable?) -> Unit` handler. `SubAgentRegistry.update` is a plain `StateFlow.update`,
+     * so flipping the status needs no suspension and a caller polling `subagent_get` sees the
+     * terminal state immediately.
+     */
+    private fun markTerminalInRegistry(runId: String, status: SubAgentStatus, error: String?) {
         registry.update(runId) {
             it.copy(
                 status = status,
@@ -541,17 +608,13 @@ class SubAgentEngine(
                 finishedAtMs = System.currentTimeMillis(),
             )
         }
-        // Phase 24 — mirror the terminal status into the cross-pillar ledger. TIMED_OUT and
-        // FAILED both map to `failed`; CANCELLED maps to `cancelled`. (SUCCEEDED never
-        // routes through here — it transitions the ledger row inline in executeRun.)
-        ledgerIds.remove(runId)?.let { ledgerId ->
-            val ledgerStatus = when (status) {
-                SubAgentStatus.CANCELLED -> AgentRunStatus.cancelled
-                SubAgentStatus.SUCCEEDED -> AgentRunStatus.succeeded
-                else -> AgentRunStatus.failed
-            }
-            agentRunRepo.markTerminal(ledgerId, ledgerStatus, error)
-        }
+    }
+
+    /** Sub-agent terminal status -> its `agent_runs` mirror: TIMED_OUT / FAILED both map to `failed`. */
+    private fun SubAgentStatus.toLedgerStatus(): AgentRunStatus = when (this) {
+        SubAgentStatus.CANCELLED -> AgentRunStatus.cancelled
+        SubAgentStatus.SUCCEEDED -> AgentRunStatus.succeeded
+        else -> AgentRunStatus.failed
     }
 
     /**

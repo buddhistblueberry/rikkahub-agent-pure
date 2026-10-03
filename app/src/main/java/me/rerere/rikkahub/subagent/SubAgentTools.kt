@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.subagent
 
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -22,29 +21,6 @@ internal fun errEnv(error: String, detail: String): List<UIMessagePart> {
         put("detail", detail)
     }
     return listOf(UIMessagePart.Text(obj.toString()))
-}
-
-internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject = buildJsonObject {
-    put("id", run.id)
-    put("status", run.status.name)
-    put("label", run.label)
-    if (run.modelId != null) put("model_id", run.modelId)
-    put("run_in_background", run.runInBackground)
-    put("timeout_seconds", run.timeoutSeconds)
-    put("max_trips", run.maxTrips)
-    put("started_at_ms", run.startedAtMs)
-    if (run.finishedAtMs != null) put("finished_at_ms", run.finishedAtMs)
-    if (run.result != null && !run.noResult) {
-        put("result", run.result)
-    } else if (run.noResult) {
-        put("result_suppressed", true)
-    }
-    if (run.error != null) put("error", run.error)
-    put("tokens_in", run.tokensIn)
-    put("tokens_out", run.tokensOut)
-    // P2-13 — model round trips. Distinct from trip_count, which counts tool-loop trips.
-    put("calls", run.usageCalls)
-    put("trip_count", run.tripCount)
 }
 
 /**
@@ -341,7 +317,7 @@ fun subagentListTool(
                     "kind must be one of \"$KIND_RUNS\", \"$KIND_EXPERTS\" or \"$KIND_ALL\"; got \"$kind\"",
                 )
             }
-            val runsJson = if (kind != KIND_EXPERTS) encodeRuns(registry, activeOnly) else null
+            val runsJson = if (kind != KIND_EXPERTS) encodeRuns(registry.list(activeOnly)) else null
             val expertsJson = if (kind != KIND_RUNS) encodeDefinitions(definitions) else null
             listOf(UIMessagePart.Text(buildJsonObject {
                 if (runsJson != null) put("runs", runsJson)
@@ -354,19 +330,6 @@ fun subagentListTool(
 private const val KIND_RUNS = "runs"
 private const val KIND_EXPERTS = "experts"
 private const val KIND_ALL = "all"
-
-private fun encodeRuns(registry: SubAgentRegistry, activeOnly: Boolean) = buildJsonArray {
-    registry.list(activeOnly).forEach { run ->
-        addJsonObject {
-            put("id", run.id)
-            put("label", run.label)
-            put("status", run.status.name)
-            if (run.modelId != null) put("model_id", run.modelId)
-            put("started_at_ms", run.startedAtMs)
-            put("trip_count", run.tripCount)
-        }
-    }
-}
 
 private fun encodeDefinitions(definitions: List<AgentDefinition>) = buildJsonArray {
     definitions.forEach { add(encodeDefinition(it)) }

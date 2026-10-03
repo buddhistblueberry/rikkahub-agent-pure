@@ -1117,6 +1117,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="stats_page_orchestration_empty">还没有子智能体的派发记录。</string>
   <string name="stats_page_orchestration_unknown_parent">未知会话</string>
   <string name="stats_page_orchestration_children">%1$d 次运行</string>
+  <string name="stats_page_orchestration_budget">已用 %1$s / %2$s · 剩余 %3$s</string>
   <string name="stats_page_orchestration_expand">展开全部 %1$d 项</string>
   <string name="stats_page_orchestration_collapse">收起</string>
   <string name="stats_page_orchestration_calls">%1$d 次调用</string>

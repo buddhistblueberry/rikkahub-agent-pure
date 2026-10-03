@@ -527,6 +527,26 @@ private fun OrchestrationTreeCard(
                 }
             }
 
+            // P2-14d — the budget footer, shown only when a ceiling is configured. It is the one
+            // place the user can see how close an orchestration is to the P2-13 refusal, which the
+            // model itself never learns until it is turned away.
+            if (tree.hasBudget) {
+                Text(
+                    text = stringResource(
+                        R.string.stats_page_orchestration_budget,
+                        formatTokens(tree.totalTokens),
+                        formatTokens(tree.budget ?: 0L),
+                        formatTokens(tree.remaining ?: 0L),
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (tree.budgetExceeded) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+
             shown.forEach { child ->
                 OrchestrationChildRow(child)
             }
