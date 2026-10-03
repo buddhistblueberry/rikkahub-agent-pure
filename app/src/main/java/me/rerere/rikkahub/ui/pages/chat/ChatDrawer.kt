@@ -28,6 +28,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
@@ -117,6 +118,8 @@ fun ChatDrawerContent(
     val conversations = drawerVm.conversations.collectAsLazyPagingItems()
     val folders by drawerVm.folders.collectAsStateWithLifecycle()
     val selectedFolderId by drawerVm.selectedFolderId.collectAsStateWithLifecycle()
+    val archiveFolderId by drawerVm.archiveFolderId.collectAsStateWithLifecycle()
+    val protectedFolderId by drawerVm.protectedFolderId.collectAsStateWithLifecycle()
     val conversationListState = rememberLazyListState(
         initialFirstVisibleItemIndex = drawerVm.scrollIndex,
         initialFirstVisibleItemScrollOffset = drawerVm.scrollOffset,
@@ -258,6 +261,7 @@ fun ChatDrawerContent(
             DrawerActions(navController = navController)
 
             FolderBar(
+                protectedFolderId = protectedFolderId,
                 folders = folders,
                 selectedFolderId = selectedFolderId,
                 onSelect = { drawerVm.selectFolder(it) },
@@ -536,22 +540,38 @@ fun ChatDrawerContent(
     // 新建文件夹对话框
     if (showCreateFolderDialog) {
         var name by remember { mutableStateOf("") }
+        var archive by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showCreateFolderDialog = false },
             title = { Text(stringResource(R.string.chat_page_create_folder)) },
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text(stringResource(R.string.chat_page_folder_name)) }
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.chat_page_folder_name)) }
+                    )
+                    // P2-23 (D7) - mark this folder as the assistant's sub-agent archive.
+                    // One folder per assistant; an empty one stays deletable.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_page_folder_purpose_sub_agent),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = archive, onCheckedChange = { archive = it })
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        drawerVm.createFolder(name)
+                        drawerVm.createFolder(name, archive)
                         showCreateFolderDialog = false
                     },
                     enabled = name.isNotBlank()
@@ -568,21 +588,35 @@ fun ChatDrawerContent(
     // 重命名文件夹对话框
     folderToRename?.let { folder ->
         var name by remember(folder.id) { mutableStateOf(folder.name) }
+        var archive by remember(folder.id) { mutableStateOf(archiveFolderId == folder.id) }
         AlertDialog(
             onDismissRequest = { folderToRename = null },
             title = { Text(stringResource(R.string.chat_page_rename_folder)) },
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
+                Column {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_page_folder_purpose_sub_agent),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(checked = archive, onCheckedChange = { archive = it })
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        drawerVm.renameFolder(folder.id, name)
+                        drawerVm.renameFolder(folder.id, name, archive)
                         folderToRename = null
                     },
                     enabled = name.isNotBlank()
@@ -647,11 +681,17 @@ fun ChatDrawerContent(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (drawerVm.deleteFolder(folder.id)) {
-                            folderToDelete = null
-                            conversations.refresh()
-                        } else {
-                            toaster.show(context.getString(R.string.chat_page_delete_folder_generating), type = ToastType.Warning)
+                        scope.launch {
+                            when (drawerVm.deleteFolder(folder.id)) {
+                                FolderDeleteOutcome.Deleted -> {
+                                    folderToDelete = null
+                                    conversations.refresh()
+                                }
+                                FolderDeleteOutcome.Generating ->
+                                    toaster.show(context.getString(R.string.chat_page_delete_folder_generating), type = ToastType.Warning)
+                                FolderDeleteOutcome.Protected ->
+                                    toaster.show(context.getString(R.string.chat_page_delete_folder_protected), type = ToastType.Warning)
+                            }
                         }
                     }
                 ) { Text(stringResource(R.string.chat_page_delete)) }
@@ -814,6 +854,7 @@ private fun DrawerAction(
 @Composable
 private fun FolderBar(
     folders: List<Folder>,
+    protectedFolderId: Uuid?,
     selectedFolderId: Uuid?,
     onSelect: (Uuid?) -> Unit,
     onCreate: () -> Unit,
@@ -857,14 +898,18 @@ private fun FolderBar(
                             menuExpanded = false
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.chat_page_delete)) },
-                        leadingIcon = { Icon(HugeIcons.Delete01, null) },
-                        onClick = {
-                            onDelete(folder)
-                            menuExpanded = false
-                        }
-                    )
+                    // P2-23 (D7) - the sub-agent archive folder cannot be deleted while it
+                    // holds conversations; the option is absent rather than failing on tap.
+                    if (folder.id != protectedFolderId) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_page_delete)) },
+                            leadingIcon = { Icon(HugeIcons.Delete01, null) },
+                            onClick = {
+                                onDelete(folder)
+                                menuExpanded = false
+                            }
+                        )
+                    }
                 }
             }
         }

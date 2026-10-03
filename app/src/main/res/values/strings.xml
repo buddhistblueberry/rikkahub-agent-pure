@@ -2669,4 +2669,6 @@
   <string name="chat_message_usage_purpose_title">title</string>
   <string name="chat_message_usage_purpose_suggestion">suggestion</string>
   <string name="chat_message_usage_purpose_unknown">other</string>
+  <string name="chat_page_folder_purpose_sub_agent">Sub-agent archive</string>
+  <string name="chat_page_delete_folder_protected">This is the sub-agent archive folder and it holds conversations, so it cannot be deleted.</string>
 </resources>

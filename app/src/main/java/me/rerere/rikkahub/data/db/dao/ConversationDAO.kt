@@ -94,6 +94,14 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET folder_id = '' WHERE folder_id = :folderId")
     suspend fun clearFolder(folderId: String)
 
+    /** Number of conversations filed in [folderId] — the input to the folder delete guard. */
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE folder_id = :folderId")
+    suspend fun countInFolder(folderId: String): Int
+
+    /** Flow form of [countInFolder], so the guard follows conversations coming and going. */
+    @Query("SELECT COUNT(*) FROM conversationentity WHERE folder_id = :folderId")
+    fun countInFolderFlow(folderId: String): kotlinx.coroutines.flow.Flow<Int>
+
     @Query("SELECT COUNT(*) FROM conversationentity")
     suspend fun countAll(): Int
 

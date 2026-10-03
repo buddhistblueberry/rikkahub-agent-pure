@@ -864,6 +864,12 @@ data class Settings(
     val deletedBuiltInProviderIds: Set<Uuid> = emptySet(),
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
     /**
+     * P2-23 (D7) — assistantId -> the folder its sub-agent conversations are filed into.
+     * Absent means "do not file". Kept in Settings rather than on `FolderEntity` so no
+     * `AppDatabase` identity hash moves (see `ImportedDatabaseReconciler`).
+     */
+    val subAgentArchiveFolders: Map<String, String> = emptyMap(),
+    /**
      * Names of bundled default-on skills (see [DEFAULT_AUTO_ENABLED_SKILLS]) that have already
      * been seeded into the default assistants' enabledSkills exactly once. Mirrors
      * [deletedBuiltInProviderIds]: it lets a newly-shipped skill auto-enable on upgrade while

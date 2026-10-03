@@ -115,6 +115,8 @@ val appModule = module {
             agentRunRepo = get(),
             // P2-06b — the expert library, the source of truth for a dispatch's `agent` name.
             agentDefinitionRepository = get(),
+            // P2-23 — read-only: only asked whether the configured archive folder still exists.
+            folderRepository = get(),
             // P2-13 — read-only: the budget gate and the run usage read-back.
             usageLedger = get(),
         )
