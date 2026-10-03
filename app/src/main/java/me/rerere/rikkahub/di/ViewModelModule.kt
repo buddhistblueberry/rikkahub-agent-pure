@@ -59,6 +59,8 @@ val viewModelModule = module {
             filesManager = get(),
             skillManager = get(),
             workspaceRepository = get(),
+            // P2-24 — read-only: the sub-agent archive folder picker.
+            folderRepository = get(),
         )
     }
     viewModelOf(::TranslatorVM)
