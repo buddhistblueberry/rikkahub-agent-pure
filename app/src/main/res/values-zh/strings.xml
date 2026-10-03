@@ -2370,4 +2370,5 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="stats_page_usage_group_automation">自动化</string>
   <string name="stats_page_usage_group_assistant">助手辅助</string>
   <string name="stats_page_usage_group_other">其他</string>
+  <string name="stats_page_ledger_tok_per_sec">%1$s tok/s</string>
 </resources>

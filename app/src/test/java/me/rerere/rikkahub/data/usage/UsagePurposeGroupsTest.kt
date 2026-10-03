@@ -20,6 +20,8 @@ class UsagePurposeGroupsTest {
         cacheReported: Boolean = false,
         providerCostUsd: Double? = null,
         costMicros: Long? = null,
+        measuredOutputTokens: Long = 0L,
+        generationMs: Long = 0L,
     ) = UsageStatBucket(
         key = key,
         callCount = calls,
@@ -30,6 +32,8 @@ class UsagePurposeGroupsTest {
         cacheReported = cacheReported,
         providerCostUsd = providerCostUsd,
         costMicros = costMicros,
+        measuredOutputTokens = measuredOutputTokens,
+        generationMs = generationMs,
     )
 
     @Test

@@ -2294,4 +2294,5 @@
   <string name="stats_page_usage_group_automation">自動化</string>
   <string name="stats_page_usage_group_assistant">助手輔助</string>
   <string name="stats_page_usage_group_other">其他</string>
+  <string name="stats_page_ledger_tok_per_sec">%1$s tok/s</string>
 </resources>

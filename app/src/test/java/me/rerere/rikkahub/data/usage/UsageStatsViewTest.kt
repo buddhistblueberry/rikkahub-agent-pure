@@ -29,6 +29,7 @@ class UsageStatsViewTest {
         cachedReported: Boolean = false,
         providerCostUsd: Double? = null,
         costMicros: Long? = null,
+        latencyMs: Long? = null,
     ) = UsageRecordEntity(
         id = id,
         createdAtMs = atMs,
@@ -43,6 +44,7 @@ class UsageStatsViewTest {
         cachedTokensReported = cachedReported,
         providerCostUsd = providerCostUsd,
         costMicros = costMicros,
+        latencyMs = latencyMs,
     )
 
     // ---- empty ---------------------------------------------------------------------------
@@ -362,5 +364,69 @@ class UsageStatsViewTest {
         )
         assertEquals(0.25f, split.shareOfTokens(split.byPurpose.first { it.key == "MAIN" }), 1e-6f)
         assertEquals(0.75f, split.shareOfTokens(split.byPurpose.first { it.key == "SUBAGENT" }), 1e-6f)
+    }
+
+    // ---- D6: throughput ---------------------------------------------------------------
+
+    @Test
+    fun `a bucket's rate is measured output over the latencies that were reported`() {
+        val view = UsageStatsFactory.build(
+            listOf(
+                row("a", output = 100, latencyMs = 2_000),
+                row("b", output = 100, latencyMs = 3_000),
+            ),
+            utc,
+        )
+
+        assertEquals(200L, view.total.measuredOutputTokens)
+        assertEquals(5_000L, view.total.generationMs)
+        assertEquals(40.0, view.total.tokensPerSecond!!, 1e-6)
+    }
+
+    @Test
+    fun `an unmeasured call is in neither the numerator nor the denominator`() {
+        val view = UsageStatsFactory.build(
+            listOf(
+                row("measured", output = 50, latencyMs = 1_000),
+                row("unmeasured", output = 9_999, latencyMs = null),
+            ),
+            utc,
+        )
+
+        assertEquals(50L, view.total.measuredOutputTokens)
+        assertEquals(1_000L, view.total.generationMs)
+        assertEquals(50.0, view.total.tokensPerSecond!!, 1e-6)
+    }
+
+    @Test
+    fun `a bucket nobody measured reports no rate instead of zero`() {
+        val view = UsageStatsFactory.build(listOf(row("a", output = 100)), utc)
+
+        assertEquals(0L, view.total.generationMs)
+        assertNull(view.total.tokensPerSecond)
+    }
+
+    @Test
+    fun `a reported zero latency cannot divide`() {
+        val view = UsageStatsFactory.build(listOf(row("a", output = 100, latencyMs = 0)), utc)
+
+        assertEquals(0L, view.total.generationMs)
+        assertEquals(100L, view.total.measuredOutputTokens)
+        assertNull(view.total.tokensPerSecond)
+    }
+
+    @Test
+    fun `the by-model ranking carries the rate too`() {
+        val view = UsageStatsFactory.build(
+            listOf(
+                row("a", modelId = "deepseek-chat", output = 100, latencyMs = 2_000),
+                row("b", modelId = "deepseek-chat", output = 100, latencyMs = 2_000),
+                row("c", modelId = "qwen3.8-omni-flash", output = 30, latencyMs = 1_000),
+            ),
+            utc,
+        )
+
+        val deepseek = view.byModel.first { it.key == "deepseek-chat" }
+        assertEquals(50.0, deepseek.tokensPerSecond!!, 1e-6)
     }
 }

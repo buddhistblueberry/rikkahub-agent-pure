@@ -20,6 +20,9 @@ import java.time.ZoneId
  *    reports null rather than "$0.00";
  *  - cache totals sum only the rows that actually reported cache fields, so a provider that does
  *    not report them cannot drag the hit rate toward zero.
+ *
+ * D6 adds a third: a throughput figure is built only from the rows that reported a latency, in
+ * both the numerator and the denominator — an unmeasured call can neither inflate nor dilute it.
  */
 
 /** One row of a dimension's ranking: the key plus everything summed under it. */
@@ -33,8 +36,24 @@ data class UsageStatBucket(
     val cacheReported: Boolean,
     val providerCostUsd: Double?,
     val costMicros: Long?,
+    /**
+     * D6 — output tokens written by the rows that reported a latency. The rate below is built
+     * from this subset, so a call nobody measured cannot dilute it (P2-19's rule, applied to a
+     * bucket instead of a single turn).
+     */
+    val measuredOutputTokens: Long,
+    /**
+     * D6 — summed `latency_ms` over the rows that reported one. A ledger row is one model round
+     * trip and a tool runs *between* round trips, so this is generation time with tool
+     * execution excluded by construction — the denominator a throughput figure should use.
+     */
+    val generationMs: Long,
 ) {
     val totalTokens: Long get() = inputTokens + outputTokens
+
+    /** D6 — output throughput over [generationMs], or null when nothing reported a latency. */
+    val tokensPerSecond: Double? get() =
+        generationMs.takeIf { it > 0 }?.let { measuredOutputTokens * 1000.0 / it }
 
     /**
      * Cached share of the input, as a whole percent, over the rows that reported cache fields
@@ -81,6 +100,8 @@ data class LedgerStatsView(
                 cacheReported = false,
                 providerCostUsd = null,
                 costMicros = null,
+                measuredOutputTokens = 0L,
+                generationMs = 0L,
             ),
             byDay = emptyList(),
             byPurpose = emptyList(),
@@ -164,6 +185,8 @@ object UsageStatsFactory {
         private var cacheReported = false
         private var providerCost: Double? = null
         private var costMicros: Long? = null
+        private var measuredOutputTokens = 0L
+        private var generationMs = 0L
 
         fun add(row: UsageRecordEntity) {
             calls++
@@ -177,6 +200,12 @@ object UsageStatsFactory {
             // Missing stays missing: a null price is never summed as zero.
             row.providerCostUsd?.let { providerCost = (providerCost ?: 0.0) + it }
             row.costMicros?.let { costMicros = (costMicros ?: 0L) + it }
+            // D6 — only the rows that reported a latency take part in the rate, in both the
+            // numerator and the denominator, so an unmeasured call cannot skew it.
+            row.latencyMs?.let { latency ->
+                generationMs += latency
+                measuredOutputTokens += row.outputTokens
+            }
         }
 
         fun toBucket(key: String): UsageStatBucket = UsageStatBucket(
@@ -189,6 +218,8 @@ object UsageStatsFactory {
             cacheReported = cacheReported,
             providerCostUsd = providerCost,
             costMicros = costMicros,
+            measuredOutputTokens = measuredOutputTokens,
+            generationMs = generationMs,
         )
     }
 }

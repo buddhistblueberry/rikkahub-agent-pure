@@ -465,6 +465,9 @@ private fun formatTokens(count: Long): String = when {
     else -> count.toString()
 }
 
+/** D6 — one decimal is enough to compare rows; the unit lives in the string. */
+private fun formatRate(rate: Double): String = "%.1f".format(rate)
+
 // ---- P2-12c: the usage-ledger section ---------------------------------------------------------
 
 /** Rows shown per dimension before the "show all" toggle appears. */
@@ -827,6 +830,16 @@ private fun LedgerBucketRow(
                 text = formatTokens(bucket.totalTokens),
                 style = MaterialTheme.typography.labelSmall,
             )
+            // D6 — throughput, same rule as the message footer (P2-19): measured output
+            // tokens over the summed per-call latency. Null (nobody reported a latency)
+            // shows nothing rather than a made-up 0.
+            bucket.tokensPerSecond?.let { rate ->
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_tok_per_sec, formatRate(rate)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             ledgerCostText(bucket.providerCostUsd, bucket.costMicros)?.let { cost ->
                 Text(text = cost, style = MaterialTheme.typography.labelSmall)
             }

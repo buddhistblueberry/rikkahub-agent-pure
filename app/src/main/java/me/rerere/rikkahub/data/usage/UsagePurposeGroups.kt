@@ -75,5 +75,9 @@ object UsagePurposeGroups {
         cacheReported = rows.any { it.cacheReported },
         providerCostUsd = rows.mapNotNull { it.providerCostUsd }.takeIf { it.isNotEmpty() }?.sum(),
         costMicros = rows.mapNotNull { it.costMicros }.takeIf { it.isNotEmpty() }?.sum(),
+        // D6 — summing both terms keeps the group's rate the true aggregate (total measured
+        // output over total generation time), not an average of the rows' rates.
+        measuredOutputTokens = rows.sumOf { it.measuredOutputTokens },
+        generationMs = rows.sumOf { it.generationMs },
     )
 }
