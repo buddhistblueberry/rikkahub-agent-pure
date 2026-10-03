@@ -23,6 +23,7 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.CoinsDollar
+import me.rerere.hugeicons.stroke.Cpu
 import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.Upload02
 import me.rerere.rikkahub.R
@@ -30,6 +31,7 @@ import me.rerere.rikkahub.data.usage.TurnUsageView
 import me.rerere.rikkahub.data.usage.UsageCallView
 import me.rerere.rikkahub.data.usage.UsagePurpose
 import me.rerere.rikkahub.utils.formatNumber
+import kotlin.math.roundToInt
 
 /**
  * P2-12b — the turn view, shown in place of the single-call footer when the ledger has rows for
@@ -78,6 +80,18 @@ internal fun TurnUsageLine(
                 },
                 content = { Text(text = "${turnUsage.outputTokens.tokensText()} tokens") },
             )
+            turnUsage.tokensPerSecond?.let { rate ->
+                StatsItem(
+                    icon = {
+                        Icon(
+                            imageVector = HugeIcons.Cpu,
+                            contentDescription = stringResource(R.string.chat_message_turn_speed),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    },
+                    content = { Text(text = "${rate.roundToInt()} tok/s") },
+                )
+            }
             turnCostText(turnUsage.providerCostUsd, turnUsage.costMicros)?.let { cost ->
                 StatsItem(
                     icon = {
@@ -125,7 +139,10 @@ private fun UsageCallRow(call: UsageCallView) {
             Text(text = "(${call.cachedTokens.formatNumber()} hit)")
         }
         turnCostText(call.providerCostUsd, call.costMicros)?.let { Text(text = it) }
-        call.latencyMs?.let { Text(text = "${it}ms") }
+        call.latencyMs?.let { ms ->
+            Text(text = "${ms}ms")
+            if (ms > 0) Text(text = "${(call.outputTokens * 1000.0 / ms).roundToInt()} tok/s")
+        }
     }
 }
 

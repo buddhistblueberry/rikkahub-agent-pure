@@ -2653,6 +2653,7 @@
   <string name="setting_sub_agents_page_token_budget">Orchestration token budget</string>
   <string name="setting_sub_agents_page_token_budget_hint">Ceiling for this expert\'s dispatch tree. Leave empty to inherit the parent assistant\'s budget; unlimited when both are empty.</string>
   <string name="chat_message_turn_calls">%1$d calls</string>
+  <string name="chat_message_turn_speed">Generation speed</string>
   <string name="chat_message_turn_expand">Show per-call usage</string>
   <string name="chat_message_turn_collapse">Hide per-call usage</string>
   <string name="chat_message_usage_purpose_main">main</string>

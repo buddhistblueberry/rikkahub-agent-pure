@@ -71,6 +71,23 @@ data class TurnUsageView(
     val callCount: Int get() = calls.size
 
     /**
+     * D6 - output tokens written by the calls that reported a latency. The rate below is built
+     * from this subset, so a call nobody measured cannot dilute it.
+     */
+    val measuredOutputTokens: Long get() = calls.filter { it.latencyMs != null }.sumOf { it.outputTokens.toLong() }
+
+    /**
+     * D6 - the turn's total **generation** time: the sum of the per-call latencies. A ledger row
+     * is one model round trip and a tool runs *between* round trips, so this excludes tool
+     * execution by construction - exactly the denominator "tok/s" should use.
+     */
+    val generationMs: Long get() = calls.mapNotNull { it.latencyMs }.sum()
+
+    /** D6 - output throughput over [generationMs], or null when no call reported a latency. */
+    val tokensPerSecond: Double? get() =
+        generationMs.takeIf { it > 0 }?.let { measuredOutputTokens * 1000.0 / it }
+
+    /**
      * True when the only price available was recomputed from the price table. The UI marks
      * those with a `~`; a provider-reported cost is shown as-is.
      */
