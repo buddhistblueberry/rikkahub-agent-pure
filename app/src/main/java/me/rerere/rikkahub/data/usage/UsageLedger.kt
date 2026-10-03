@@ -12,6 +12,13 @@ object UsageLedgerDefaults {
 
     /** How often the retention sweep is allowed to run. */
     const val SWEEP_INTERVAL_MS = 24L * 60L * 60L * 1000L
+
+    /**
+     * P2-12c - upper bound for the statistics page's window read. Larger than [QUERY_LIMIT]
+     * because a 90-day window of interactive rows can exceed that, but still finite, so a runaway
+     * ledger can never load unbounded into memory.
+     */
+    const val STATS_QUERY_LIMIT = 20_000
 }
 
 /**
@@ -134,4 +141,14 @@ class UsageLedger(
         conversationId: String,
         limit: Int = UsageLedgerDefaults.QUERY_LIMIT,
     ): List<UsageRecordEntity> = dao.forConversation(conversationId, limit)
+
+    /**
+     * P2-12c - the window the statistics page aggregates: every row since [sinceMs], newest first,
+     * capped at [limit]. It reuses [UsageRecordDao.since] rather than adding a Dao method, so the
+     * ledger's test double (`UsageCallRecorderTest.FakeDao`) needs no change.
+     */
+    suspend fun recordsSince(
+        sinceMs: Long,
+        limit: Int = UsageLedgerDefaults.STATS_QUERY_LIMIT,
+    ): List<UsageRecordEntity> = dao.since(sinceMs, limit)
 }

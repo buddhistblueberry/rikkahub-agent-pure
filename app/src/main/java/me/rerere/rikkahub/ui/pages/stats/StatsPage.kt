@@ -7,6 +7,7 @@ import me.rerere.hugeicons.stroke.Message01
 import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.hugeicons.stroke.Zap
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,15 +34,24 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.usage.LedgerStatsView
+import me.rerere.rikkahub.data.usage.UsagePurpose
+import me.rerere.rikkahub.data.usage.UsageStatBucket
+import me.rerere.rikkahub.data.usage.UsageStatsFactory
+import me.rerere.rikkahub.ui.components.message.formatCost
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
@@ -55,6 +65,8 @@ import java.util.Locale
 @Composable
 fun StatsPage(vm: StatsVM = koinViewModel()) {
     val stats by vm.stats.collectAsStateWithLifecycle()
+    val ledgerStats by vm.ledgerStats.collectAsStateWithLifecycle()
+    val assistantNames by vm.assistantNames.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -96,6 +108,15 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                         stats = stats,
                         modifier = Modifier.padding(horizontal = 8.dp),
                     )
+                }
+                ledgerStats?.let { ledger ->
+                    item {
+                        LedgerStatsSection(
+                            view = ledger,
+                            assistantNames = assistantNames,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
                 }
             }
         }
@@ -384,4 +405,217 @@ private fun formatTokens(count: Long): String = when {
     count >= 1_000_000 -> "%.2fM".format(count / 1_000_000.0)
     count >= 1_000 -> "%.1fK".format(count / 1_000.0)
     else -> count.toString()
+}
+
+// ---- P2-12c: the usage-ledger section ---------------------------------------------------------
+
+/** Rows shown per dimension before the "show all" toggle appears. */
+private const val LEDGER_COLLAPSED_ROWS = 5
+
+/**
+ * The four rankings of the ledger window. Kept apart from [StatsGrid] on purpose: that grid reads
+ * `message.usage` from the message JSON across all history, while everything here reads
+ * `usage_records` and only covers the 90-day retention window, so the two are never summed.
+ */
+@Composable
+private fun LedgerStatsSection(
+    view: LedgerStatsView,
+    assistantNames: Map<String, String>,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.stats_page_ledger_title),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = stringResource(R.string.stats_page_ledger_window),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (view.total.callCount == 0) {
+            Card(colors = CustomColors.cardColorsOnSurfaceContainer) {
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_empty),
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_day),
+                buckets = view.byDay,
+                view = view,
+                labelOf = { it },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_purpose),
+                buckets = view.byPurpose,
+                view = view,
+                labelOf = { key -> stringResource(purposeLabelRes(key)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_model),
+                buckets = view.byModel,
+                view = view,
+                labelOf = { key ->
+                    if (key == UsageStatsFactory.UNKNOWN_KEY) {
+                        stringResource(R.string.stats_page_ledger_unknown)
+                    } else {
+                        key
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_assistant),
+                buckets = view.byAssistant,
+                view = view,
+                labelOf = { key ->
+                    assistantNames[key]
+                        ?: if (key == UsageStatsFactory.UNKNOWN_KEY) {
+                            stringResource(R.string.stats_page_ledger_unknown)
+                        } else {
+                            key.take(8)
+                        }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerBucketCard(
+    title: String,
+    buckets: List<UsageStatBucket>,
+    view: LedgerStatsView,
+    labelOf: @Composable (String) -> String,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shown = if (expanded) buckets else buckets.take(LEDGER_COLLAPSED_ROWS)
+
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+
+            shown.forEach { bucket ->
+                LedgerBucketRow(
+                    bucket = bucket,
+                    share = view.shareOfTokens(bucket),
+                    label = labelOf(bucket.key),
+                )
+            }
+
+            if (buckets.size > LEDGER_COLLAPSED_ROWS) {
+                val toggle = if (expanded) {
+                    stringResource(R.string.stats_page_ledger_collapse)
+                } else {
+                    stringResource(R.string.stats_page_ledger_expand, buckets.size)
+                }
+                Text(
+                    text = toggle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { expanded = !expanded },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LedgerBucketRow(
+    bucket: UsageStatBucket,
+    share: Float,
+    label: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(R.string.stats_page_ledger_calls, bucket.callCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = formatTokens(bucket.totalTokens),
+                style = MaterialTheme.typography.labelSmall,
+            )
+            ledgerCostText(bucket.providerCostUsd, bucket.costMicros)?.let { cost ->
+                Text(text = cost, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(MaterialTheme.shapes.extraSmall)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(share.coerceIn(0f, 1f))
+                    .height(4.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+    }
+}
+
+/**
+ * Same rule as the message footer (P2-12b): a provider-reported cost is shown bare, a cost
+ * recomputed from the local price table gets a `~`, and a call nobody could price shows nothing
+ * rather than "$0" - a missing price is not free.
+ */
+private fun ledgerCostText(providerCostUsd: Double?, costMicros: Long?): String? {
+    if (providerCostUsd != null && providerCostUsd > 0.0) return formatCost(providerCostUsd)
+    if (costMicros != null && costMicros > 0L) return "~" + formatCost(costMicros / 1_000_000.0)
+    return null
+}
+
+private fun purposeLabelRes(purpose: String): Int = when (purpose) {
+    UsagePurpose.MAIN.name -> R.string.chat_message_usage_purpose_main
+    UsagePurpose.TOOL_LOOP.name -> R.string.chat_message_usage_purpose_tool_loop
+    UsagePurpose.COMPACTION.name -> R.string.chat_message_usage_purpose_compaction
+    UsagePurpose.TITLE.name -> R.string.chat_message_usage_purpose_title
+    UsagePurpose.SUGGESTION.name -> R.string.chat_message_usage_purpose_suggestion
+    UsagePurpose.MEMORY_EXTRACT.name -> R.string.chat_message_usage_purpose_memory_extract
+    UsagePurpose.SUBAGENT.name -> R.string.chat_message_usage_purpose_subagent
+    UsagePurpose.CRON.name -> R.string.chat_message_usage_purpose_cron
+    UsagePurpose.WORKFLOW.name -> R.string.chat_message_usage_purpose_workflow
+    UsagePurpose.SKILL_TEST.name -> R.string.chat_message_usage_purpose_skill_test
+    UsagePurpose.TRANSLATION.name -> R.string.chat_message_usage_purpose_translation
+    else -> R.string.chat_message_usage_purpose_unknown
 }
