@@ -18,10 +18,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -31,6 +35,9 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.usage.UsageLedger
+import me.rerere.rikkahub.data.usage.TurnUsageView
+import me.rerere.rikkahub.data.usage.UsageTurnViewFactory
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -59,6 +66,7 @@ class ChatVM(
     val updateChecker: UpdateChecker,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
+    private val usageLedger: UsageLedger,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -76,6 +84,44 @@ class ChatVM(
         chatService
             .getGenerationJobStateFlow(_conversationId)
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /**
+     * P2-12b - ledger rows folded into a per-turn view, keyed by assistant message id.
+     *
+     * Attribution is by time window: a node owns `[its createdAt, the next node's createdAt)`.
+     * The window ends at the next node, not at `message.finishedAt`, because a streamed call
+     * writes its ledger row just after the `Finish` chunk stamped `finishedAt` - a window
+     * closed there would miss the whole default streaming path. Windows are recomputed only
+     * when the node timestamps change, not on every streamed token, and a read failure simply
+     * yields an empty map so the footer falls back to `message.usage`.
+     *
+     * The ledger is also re-read once `conversationJob` goes idle: the row lands after the
+     * message's `finishedAt` was persisted, so keying only on the node list would leave the
+     * just-finished turn stuck on the single-call fallback until the next message arrives.
+     */
+    val turnUsages: StateFlow<Map<String, TurnUsageView>> =
+        combine(
+            conversation.map { conv ->
+                val zone = TimeZone.currentSystemDefault()
+                conv.messageNodes.mapNotNull { node ->
+                    val message = runCatching { node.currentMessage }.getOrNull()
+                        ?: return@mapNotNull null
+                    message.id.toString() to
+                        message.createdAt.toInstant(zone).toEpochMilliseconds()
+                }
+            },
+            conversationJob.map { it != null },
+        ) { nodes, busy -> nodes to busy }
+            .distinctUntilChanged()
+            .flatMapLatest { (nodes, _) ->
+                flow {
+                    val records = runCatching {
+                        usageLedger.recordsForConversation(_conversationId.toString())
+                    }.getOrDefault(emptyList())
+                    emit(UsageTurnViewFactory.map(UsageTurnViewFactory.windowsFor(nodes), records))
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())
 
     val processingStatus: StateFlow<String?> =
         chatService

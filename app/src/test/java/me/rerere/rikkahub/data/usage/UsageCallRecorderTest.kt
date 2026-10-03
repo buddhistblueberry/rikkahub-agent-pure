@@ -20,6 +20,10 @@ class UsageCallRecorderTest {
         override suspend fun latest(limit: Int) = rows.takeLast(limit).reversed()
         override suspend fun since(sinceMs: Long, limit: Int) = rows.filter { it.createdAtMs >= sinceMs }
         override suspend fun count() = rows.size
+        override suspend fun forConversation(conversationId: String, limit: Int) =
+            rows.filter { it.conversationId == conversationId }
+                .sortedBy { it.createdAtMs }
+                .take(limit)
         override suspend fun tokensForParentRun(parentRunId: String) = 0L
         override suspend fun tokensSince(sinceMs: Long) = 0L
         override suspend fun deleteOlderThan(cutoffMs: Long) = 0

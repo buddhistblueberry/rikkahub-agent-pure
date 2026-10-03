@@ -2631,4 +2631,17 @@
   <string name="assistant_page_max_concurrent_subagents_hint">Between %1$d and %2$d.</string>
   <string name="setting_sub_agents_page_token_budget">Orchestration token budget</string>
   <string name="setting_sub_agents_page_token_budget_hint">Ceiling for this expert\'s dispatch tree. Leave empty to inherit the parent assistant\'s budget; unlimited when both are empty.</string>
+  <string name="chat_message_turn_calls">%1$d calls</string>
+  <string name="chat_message_turn_expand">Show per-call usage</string>
+  <string name="chat_message_turn_collapse">Hide per-call usage</string>
+  <string name="chat_message_usage_purpose_main">main</string>
+  <string name="chat_message_usage_purpose_tool_loop">tool loop</string>
+  <string name="chat_message_usage_purpose_compaction">compaction</string>
+  <string name="chat_message_usage_purpose_memory_extract">memory</string>
+  <string name="chat_message_usage_purpose_subagent">sub-agent</string>
+  <string name="chat_message_usage_purpose_cron">scheduled</string>
+  <string name="chat_message_usage_purpose_workflow">workflow</string>
+  <string name="chat_message_usage_purpose_skill_test">skill test</string>
+  <string name="chat_message_usage_purpose_translation">translation</string>
+  <string name="chat_message_usage_purpose_unknown">other</string>
 </resources>

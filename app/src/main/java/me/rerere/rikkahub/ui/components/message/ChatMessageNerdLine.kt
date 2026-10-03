@@ -27,6 +27,7 @@ import me.rerere.hugeicons.stroke.Download04
 import me.rerere.hugeicons.stroke.Upload02
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.usage.TurnUsageView
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.toFixed
@@ -38,6 +39,7 @@ import java.time.Duration
 @Composable
 fun ChatMessageNerdLine(
     message: UIMessage,
+    turnUsage: TurnUsageView? = null,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
 ) {
@@ -45,13 +47,18 @@ fun ChatMessageNerdLine(
 
     ProvideTextStyle(MaterialTheme.typography.labelSmall.copy(color = color)) {
         CompositionLocalProvider(LocalContentColor provides color) {
+            // P2-12b: the ledger-backed turn view replaces the single-call stats when it has
+            // rows; without rows this whole block is skipped and the old footer renders below.
+            if (settings.showTokenUsage && turnUsage != null) {
+                TurnUsageLine(turnUsage = turnUsage, modifier = modifier)
+            }
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 itemVerticalAlignment = Alignment.CenterVertically,
                 modifier = modifier.padding(horizontal = 4.dp),
             ) {
                 val usage = message.usage
-                if (settings.showTokenUsage && usage != null) {
+                if (settings.showTokenUsage && turnUsage == null && usage != null) {
                     // Input tokens
                     StatsItem(
                         icon = {

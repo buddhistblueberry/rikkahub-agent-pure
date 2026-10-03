@@ -125,4 +125,13 @@ class UsageLedger(
 
     suspend fun tokensForOrchestration(parentRunId: String): Long =
         dao.tokensForParentRun(parentRunId)
+
+    /**
+     * P2-12b — the rows a conversation's turn view aggregates. Read-only telemetry, so a
+     * failure here must stay contained at the call site (the VM falls back to `message.usage`).
+     */
+    suspend fun recordsForConversation(
+        conversationId: String,
+        limit: Int = UsageLedgerDefaults.QUERY_LIMIT,
+    ): List<UsageRecordEntity> = dao.forConversation(conversationId, limit)
 }
