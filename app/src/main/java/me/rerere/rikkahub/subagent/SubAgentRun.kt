@@ -35,6 +35,8 @@ data class SubAgentRun(
     val tripCount: Int = 0,
     /** P2-13 — model round trips this run billed, read back from the ledger when it ends. */
     val usageCalls: Int = 0,
+    /** D3 — how many parent audio/video attachments travelled with this dispatch (0 = none). */
+    val mediaParts: Int = 0,
 )
 
 @Serializable
@@ -113,6 +115,14 @@ data class SubAgentRequest(
      * one.
      */
     val contextRefs: SubAgentContextRefs? = null,
+    /**
+     * D3 — when true, the audio/video attachments of the NEWEST user message in the caller's
+     * conversation travel into the sub-agent's first message, so an omni-capable child can
+     * hear/see what the user just sent. Off by default (task text alone, pre-D3 behaviour) and
+     * images are still never carried. Appended last, same rule as [contextRefs]: every existing
+     * caller uses named arguments, so a new tail field cannot re-bind an older positional one.
+     */
+    val attachParentMedia: Boolean = false,
 )
 
 /**

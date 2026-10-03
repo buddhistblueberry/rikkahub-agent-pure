@@ -49,6 +49,9 @@ internal fun encodeRun(run: SubAgentRun, budgetRemaining: Long? = null): JsonObj
     // reported only when a ceiling exists (§9.2 #7, second half). Absent means "no budget
     // configured", never "nothing left": a zero headroom is reported as 0.
     if (budgetRemaining != null) put("budget_remaining", budgetRemaining)
+    // D3 — how many parent audio/video attachments travelled with this dispatch. Absent
+    // means none (the caller did not ask), the same "no value, no key" rule as above.
+    if (run.mediaParts > 0) put("media_parts", run.mediaParts)
 }
 
 /**

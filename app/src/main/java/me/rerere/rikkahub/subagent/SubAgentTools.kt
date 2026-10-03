@@ -63,6 +63,13 @@ fun subagentDispatchTool(
                 Always Allow if the user trusts the assistant to delegate freely.
             """.trimIndent()
         )
+        appendLine()
+        appendLine()
+        append(
+            "To let the sub-agent hear/see what the user just sent, set attach_media=true: the " +
+                "newest user message's audio/video attachments are copied into the sub-agent's " +
+                "first message. Images are never carried."
+        )
         if (enabledDefinitions.isNotEmpty()) {
             appendLine()
             appendLine()
@@ -122,6 +129,19 @@ fun subagentDispatchTool(
                                     "not exist are ignored.",
                             )
                         }
+                    })
+                    // D3 — described unconditionally (the capability is not behind a feature
+                    // flag, unlike T-04's include_recent_turns). Meaningful only for a caller
+                    // that just received an audio/video attachment.
+                    put("attach_media", buildJsonObject {
+                        put("type", "boolean")
+                        put(
+                            "description",
+                            "D3: also send the audio/video attachments of the newest user " +
+                                "message in THIS conversation to the sub-agent, so an omni-capable " +
+                                "sub-agent can hear/see what the user just sent. Images are never " +
+                                "carried. Omit for the default (task text only).",
+                        )
                     })
                     put("run_in_background", buildJsonObject { put("type", "boolean") })
                     put("no_result", buildJsonObject {
@@ -212,6 +232,8 @@ fun subagentDispatchTool(
                 tools = requestedTools,
                 runInBackground = params["run_in_background"]?.jsonPrimitive?.booleanOrNull ?: false,
                 noResult = params["no_result"]?.jsonPrimitive?.booleanOrNull ?: false,
+                // D3 — opt-in, mirroring the schema above; absent means "task text only".
+                attachParentMedia = params["attach_media"]?.jsonPrimitive?.booleanOrNull ?: false,
                 timeoutSeconds = params["timeout_seconds"]?.jsonPrimitive?.intOrNull
                     ?: SubAgentDefaults.DEFAULT_TIMEOUT_SECONDS,
                 maxTrips = params["max_trips"]?.jsonPrimitive?.intOrNull

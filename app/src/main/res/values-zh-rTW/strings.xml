@@ -228,6 +228,7 @@
   <string name="chain_of_thought_show_more_steps">顯示更多 %d 個步驟</string>
   <string name="chat_input_placeholder">輸入訊息與AI聊天</string>
   <string name="chat_input_unsupported_file_type">不支援的檔案類型：%s</string>
+  <string name="chat_input_attachment_too_large">%1$s 過大——上限為 %2$d MB</string>
   <string name="chat_input_file_read_failed">檔案讀取失敗：%s</string>
   <string name="chat_message_add_favorite">加入最愛</string>
   <string name="chat_message_remove_favorite">移除最愛</string>
@@ -898,6 +899,8 @@
   <string name="setting_provider_page_filter_example">例如：GPT-3.5</string>
   <string name="setting_provider_page_filter_placeholder">輸入模型名稱篩選</string>
   <string name="setting_provider_page_image">圖片</string>
+  <string name="setting_provider_page_audio">音訊</string>
+  <string name="setting_provider_page_video">影片</string>
   <string name="setting_provider_page_image_model">圖像</string>
   <string name="setting_provider_page_image_qr_decode_failed">解析圖片中的二維碼失敗：%s</string>
   <string name="setting_provider_page_import_dialog_message">請選擇匯入方式：</string>
