@@ -6,6 +6,7 @@ import me.rerere.hugeicons.stroke.Cpu
 import me.rerere.hugeicons.stroke.Message01
 import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.hugeicons.stroke.Zap
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -40,7 +41,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
@@ -52,6 +58,7 @@ import me.rerere.rikkahub.data.usage.LedgerStatsView
 import me.rerere.rikkahub.data.usage.OrchestrationNode
 import me.rerere.rikkahub.data.usage.OrchestrationTree
 import me.rerere.rikkahub.data.usage.UsagePurpose
+import me.rerere.rikkahub.data.usage.UsagePurposeGroups
 import me.rerere.rikkahub.data.usage.UsageStatBucket
 import me.rerere.rikkahub.data.usage.UsageStatsFactory
 import me.rerere.rikkahub.ui.components.message.formatCost
@@ -102,11 +109,13 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                 contentPadding = padding + PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item {
-                    HeatmapCard(
-                        conversationsPerDay = stats.conversationsPerDay,
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    )
+                ledgerStats?.let { ledger ->
+                    item {
+                        DailyUsageChartCard(
+                            byDay = ledger.byDay,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
                 }
                 item {
                     StatsGrid(
@@ -138,156 +147,163 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
     }
 }
 
+/**
+ * D10 - the ledger window as a chart, in place of the old conversation heatmap.
+ *
+ * One card carries the trend and its summary: four numbers across the top that the bar shape
+ * alone cannot show (window total, daily average, busiest day, calls), a stacked bar per day
+ * with output on top of input so each bar reads as one total, and a line of that day's call
+ * count beneath it on the same x-axis. Bars scale to the busiest day, the line to its own peak,
+ * so neither flattens the other.
+ *
+ * The factory hands [byDay] newest first; the chart reads left to right, so it is reversed.
+ */
 @Composable
-private fun HeatmapCard(conversationsPerDay: Map<LocalDate, Int>, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CustomColors.cardColorsOnSurfaceContainer,
-    ) {
+private fun DailyUsageChartCard(
+    byDay: List<UsageStatBucket>,
+    modifier: Modifier = Modifier,
+) {
+    val days = byDay.take(DAILY_CHART_DAYS).reversed()
+
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(stringResource(R.string.stats_page_heatmap_title), style = MaterialTheme.typography.titleMedium)
-
-            ChatHeatmap(conversationsPerDay = conversationsPerDay)
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = stringResource(R.string.stats_page_heatmap_less),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = stringResource(R.string.stats_page_daily_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(2.dp))
-                listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { alpha ->
-                    HeatmapCell(alpha = alpha, sizeDp = 10)
-                }
-                Spacer(Modifier.width(2.dp))
                 Text(
-                    text = stringResource(R.string.stats_page_heatmap_more),
+                    text = stringResource(R.string.stats_page_daily_window, days.size),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-    }
-}
 
-@Composable
-private fun ChatHeatmap(conversationsPerDay: Map<LocalDate, Int>) {
-    val today = LocalDate.now()
-    val startSunday = today
-        .with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
-        .minusWeeks(52)
+            if (days.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                val totalTokens = days.sumOf { it.totalTokens }
+                val totalCalls = days.sumOf { it.callCount }
+                val busiest = days.maxByOrNull { it.totalTokens }
+                val maxTokens = (busiest?.totalTokens ?: 0L).coerceAtLeast(1L)
+                val peakCalls = days.maxOf { it.callCount }.coerceAtLeast(1)
 
-    val numWeeks = 53
-    val activeCounts = conversationsPerDay.values.filter { it > 0 }.sorted()
-    val q1 = activeCounts.getOrElse((activeCounts.size * 0.25).toInt()) { 1 }
-    val q2 = activeCounts.getOrElse((activeCounts.size * 0.50).toInt()) { 2 }
-    val q3 = activeCounts.getOrElse((activeCounts.size * 0.75).toInt()) { 3 }
-    val cellSize = 11.dp
-    val cellSpacing = 2.dp
-    // Month label row height
-    val monthLabelHeight = 14.dp
-
-    // Day-of-week labels (only Mon/Wed/Fri to save space, Sun=0)
-    val dowLabels = listOf(
-        "",
-        stringResource(R.string.stats_page_dow_mon),
-        "",
-        stringResource(R.string.stats_page_dow_wed),
-        "",
-        stringResource(R.string.stats_page_dow_fri),
-        ""
-    )
-
-    // Shared scroll state so month labels + grid scroll together
-    val scrollState = rememberScrollState(initial = Int.MAX_VALUE)
-
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        // Fixed left column: spacer for month label row + DOW labels
-        Column(
-            modifier = Modifier.width(12.dp),
-            verticalArrangement = Arrangement.spacedBy(cellSpacing),
-        ) {
-            Spacer(Modifier.height(monthLabelHeight + 2.dp))
-            dowLabels.forEach { label ->
-                Box(
-                    modifier = Modifier.size(cellSize),
-                    contentAlignment = Alignment.Center,
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (label.isNotEmpty()) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.7,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_daily_total),
+                        value = formatTokens(totalTokens),
+                    )
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_daily_average),
+                        value = formatTokens(totalTokens / days.size),
+                    )
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_daily_peak),
+                        value = formatTokens(busiest?.totalTokens ?: 0L),
+                    )
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_daily_calls),
+                        value = formatCount(totalCalls.toLong()),
+                    )
                 }
-            }
-        }
 
-        // Scrollable area: month labels + heatmap grid share one scroll state
-        Column(
-            modifier = Modifier.horizontalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            // Month labels row
-            Row(horizontalArrangement = Arrangement.spacedBy(cellSpacing)) {
-                for (weekIdx in 0 until numWeeks) {
-                    val weekStart = startSunday.plusDays((weekIdx * 7).toLong())
-                    val labelDate = (0..6)
-                        .map { weekStart.plusDays(it.toLong()) }
-                        .firstOrNull { it.dayOfMonth == 1 }
-                    Box(
-                        modifier = Modifier
-                            .width(cellSize)
-                            .height(monthLabelHeight),
-                        contentAlignment = Alignment.BottomStart,
-                    ) {
-                        if (labelDate != null) {
-                            Text(
-                                text = if (labelDate.monthValue == 1) {
-                                    labelDate.year.toString()
-                                } else {
-                                    labelDate.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())
-                                },
-                                modifier = Modifier.wrapContentWidth(unbounded = true),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.75,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                softWrap = false,
-                                maxLines = 1,
+                val inputColor = MaterialTheme.colorScheme.primary
+                val outputColor = MaterialTheme.colorScheme.tertiary
+                val lineColor = MaterialTheme.colorScheme.secondary
+
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp),
+                ) {
+                    val slot = size.width / days.size
+                    val barWidth = (slot * 0.62f).coerceAtLeast(1f)
+                    val gap = (slot - barWidth) / 2f
+                    days.forEachIndexed { index, day ->
+                        val x = index * slot + gap
+                        val inputHeight = size.height * (day.inputTokens.toFloat() / maxTokens.toFloat())
+                        val outputHeight = size.height * (day.outputTokens.toFloat() / maxTokens.toFloat())
+                        if (outputHeight > 0f) {
+                            drawRect(
+                                color = outputColor,
+                                topLeft = Offset(x, size.height - outputHeight),
+                                size = Size(barWidth, outputHeight),
+                            )
+                        }
+                        if (inputHeight > 0f) {
+                            drawRect(
+                                color = inputColor,
+                                topLeft = Offset(x, size.height - outputHeight - inputHeight),
+                                size = Size(barWidth, inputHeight),
                             )
                         }
                     }
                 }
-            }
 
-            // Heatmap grid
-            Row(horizontalArrangement = Arrangement.spacedBy(cellSpacing)) {
-                for (weekIdx in 0 until numWeeks) {
-                    Column(verticalArrangement = Arrangement.spacedBy(cellSpacing)) {
-                        for (dow in 0..6) {
-                            val date = startSunday.plusDays((weekIdx * 7 + dow).toLong())
-                            val isFuture = date.isAfter(today)
-                            val count = if (isFuture) 0 else (conversationsPerDay[date] ?: 0)
-                            val alpha = when {
-                                isFuture -> -1f
-                                count == 0 -> 0f
-                                count <= q1 -> 0.25f
-                                count <= q2 -> 0.5f
-                                count <= q3 -> 0.75f
-                                else -> 1f
-                            }
-                            HeatmapCell(alpha = alpha, sizeDp = cellSize.value.toInt())
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp),
+                ) {
+                    if (days.size >= 2) {
+                        val slot = size.width / days.size
+                        val path = Path()
+                        days.forEachIndexed { index, day ->
+                            val x = index * slot + slot / 2f
+                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
+                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                        }
+                        drawPath(path = path, color = lineColor, style = Stroke(width = 2.dp.toPx()))
+                        days.forEachIndexed { index, day ->
+                            val x = index * slot + slot / 2f
+                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
+                            drawCircle(color = lineColor, radius = 2.dp.toPx(), center = Offset(x, y))
                         }
                     }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = days.first().key,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = days.last().key,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    LegendDot(color = inputColor, label = stringResource(R.string.stats_page_input_tokens))
+                    LegendDot(color = outputColor, label = stringResource(R.string.stats_page_output_tokens))
+                    LegendDot(color = lineColor, label = stringResource(R.string.stats_page_daily_calls_legend))
                 }
             }
         }
@@ -295,18 +311,37 @@ private fun ChatHeatmap(conversationsPerDay: Map<LocalDate, Int>) {
 }
 
 @Composable
-private fun HeatmapCell(alpha: Float, sizeDp: Int) {
-    val color = when {
-        alpha < 0f -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f) // future
-        alpha == 0f -> MaterialTheme.colorScheme.surfaceVariant
-        else -> MaterialTheme.colorScheme.primary.copy(alpha = alpha)
+private fun DailyMetric(modifier: Modifier = Modifier, label: String, value: String) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(text = value, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
-    Box(
-        modifier = Modifier
-            .size(sizeDp.dp)
-            .clip(MaterialTheme.shapes.extraSmall)
-            .background(color)
-    )
+}
+
+@Composable
+private fun LegendDot(color: Color, label: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable
@@ -434,6 +469,9 @@ private fun formatTokens(count: Long): String = when {
 
 /** Rows shown per dimension before the "show all" toggle appears. */
 private const val LEDGER_COLLAPSED_ROWS = 5
+
+/** D10 - how many of the newest days the daily chart plots. */
+private const val DAILY_CHART_DAYS = 30
 private const val ORCHESTRATION_COLLAPSED_ROWS = 5
 
 /**
@@ -680,9 +718,11 @@ private fun LedgerStatsSection(
             )
             LedgerBucketCard(
                 title = stringResource(R.string.stats_page_ledger_by_purpose),
-                buckets = view.byPurpose,
+                // D10 - the five coarse groups rather than one row per call site; the factory
+                // still emits the raw purposes, so only this page changes.
+                buckets = UsagePurposeGroups.merge(view.byPurpose),
                 view = view,
-                labelOf = { key -> stringResource(purposeLabelRes(key)) },
+                labelOf = { key -> stringResource(usageGroupLabelRes(key)) },
                 modifier = Modifier.fillMaxWidth(),
             )
             LedgerBucketCard(
@@ -820,17 +860,15 @@ private fun ledgerCostText(providerCostUsd: Double?, costMicros: Long?): String?
     return null
 }
 
-private fun purposeLabelRes(purpose: String): Int = when (purpose) {
-    UsagePurpose.MAIN.name -> R.string.chat_message_usage_purpose_main
-    UsagePurpose.TOOL_LOOP.name -> R.string.chat_message_usage_purpose_tool_loop
-    UsagePurpose.COMPACTION.name -> R.string.chat_message_usage_purpose_compaction
-    UsagePurpose.TITLE.name -> R.string.chat_message_usage_purpose_title
-    UsagePurpose.SUGGESTION.name -> R.string.chat_message_usage_purpose_suggestion
-    UsagePurpose.MEMORY_EXTRACT.name -> R.string.chat_message_usage_purpose_memory_extract
-    UsagePurpose.SUBAGENT.name -> R.string.chat_message_usage_purpose_subagent
-    UsagePurpose.CRON.name -> R.string.chat_message_usage_purpose_cron
-    UsagePurpose.WORKFLOW.name -> R.string.chat_message_usage_purpose_workflow
-    UsagePurpose.SKILL_TEST.name -> R.string.chat_message_usage_purpose_skill_test
-    UsagePurpose.TRANSLATION.name -> R.string.chat_message_usage_purpose_translation
-    else -> R.string.chat_message_usage_purpose_unknown
+/**
+ * D10 - the five coarse groups the by-purpose ranking is shown under. The per-call-site labels
+ * (chat_message_usage_purpose_*) still head each row in the message footer; this page shows
+ * where the spend went, not which call site ran.
+ */
+private fun usageGroupLabelRes(group: String): Int = when (group) {
+    UsagePurposeGroups.CONVERSATION -> R.string.stats_page_usage_group_conversation
+    UsagePurposeGroups.SUBAGENT -> R.string.stats_page_usage_group_subagent
+    UsagePurposeGroups.AUTOMATION -> R.string.stats_page_usage_group_automation
+    UsagePurposeGroups.ASSISTANT -> R.string.stats_page_usage_group_assistant
+    else -> R.string.stats_page_usage_group_other
 }
