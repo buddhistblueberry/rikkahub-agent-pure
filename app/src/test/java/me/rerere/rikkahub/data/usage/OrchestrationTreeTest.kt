@@ -110,12 +110,12 @@ class OrchestrationTreeTest {
     }
 
     @Test
-    fun `usage is summed by run id`() {
+    fun `usage is summed by the run domain id`() {
         val trees = OrchestrationTreeFactory.build(
             runs = listOf(run("a", parent = "p", createdAt = 10L)),
             records = listOf(
-                row("a", input = 100, output = 20),
-                row("a", input = 50, output = 5),
+                row("domain-a", input = 100, output = 20),
+                row("domain-a", input = 50, output = 5),
             ),
         )
 
@@ -124,6 +124,20 @@ class OrchestrationTreeTest {
         assertEquals(150L, node.inputTokens)
         assertEquals(25L, node.outputTokens)
         assertEquals(175L, node.totalTokens)
+    }
+
+    @Test
+    fun `a ledger row keyed by the run id is not attributed`() {
+        val trees = OrchestrationTreeFactory.build(
+            runs = listOf(run("a", parent = "p")),
+            records = listOf(row("a", input = 137, output = 41)),
+        )
+
+        // usage_records.run_id is AgentRun.domainId, so a row keyed by the run's own id
+        // belonged to no run and must not be summed (D11).
+        val node = trees.single().children.single()
+        assertFalse(node.hasLedgerRows)
+        assertEquals(0L, node.totalTokens)
     }
 
     @Test
@@ -197,8 +211,8 @@ class OrchestrationTreeTest {
                 run("b", parent = "p", createdAt = 20L),
             ),
             records = listOf(
-                row("a", providerCost = 0.25),
-                row("b"), // no price at all
+                row("domain-a", providerCost = 0.25),
+                row("domain-b"), // no price at all
             ),
         )
 
@@ -209,7 +223,7 @@ class OrchestrationTreeTest {
     fun `a tree with no priced child reports a null cost rather than zero`() {
         val trees = OrchestrationTreeFactory.build(
             runs = listOf(run("a", parent = "p")),
-            records = listOf(row("a", input = 10)),
+            records = listOf(row("domain-a", input = 10)),
         )
 
         assertNull(trees.single().providerCostUsd)
@@ -220,7 +234,7 @@ class OrchestrationTreeTest {
     fun `estimatedCostOnly is true when only the table price is known`() {
         val trees = OrchestrationTreeFactory.build(
             runs = listOf(run("a", parent = "p")),
-            records = listOf(row("a", tableCostMicros = 1_500_000L)),
+            records = listOf(row("domain-a", tableCostMicros = 1_500_000L)),
         )
 
         val node = trees.single().children.single()
@@ -257,8 +271,8 @@ class OrchestrationTreeTest {
                 run("b", parent = "p", createdAt = 20L),
             ),
             records = listOf(
-                row("a", input = 100, output = 10, providerCost = 0.10),
-                row("b", input = 200, output = 20, providerCost = 0.20),
+                row("domain-a", input = 100, output = 10, providerCost = 0.10),
+                row("domain-b", input = 200, output = 20, providerCost = 0.20),
             ),
         )
 

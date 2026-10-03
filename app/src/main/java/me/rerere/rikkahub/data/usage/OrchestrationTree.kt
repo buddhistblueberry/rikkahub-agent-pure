@@ -12,7 +12,8 @@ import me.rerere.rikkahub.data.agentrun.AgentRunKind
  *
  * The row of a sub-agent run lives in `agent_runs` (kind `subagent`) and carries a `parent_run_id`
  * pointing at the conversation that dispatched it; the tokens it cost live in `usage_records`,
- * keyed by `run_id`. Neither table alone answers "what did this dispatch cost", so this file joins
+ * keyed by `run_id` — the run's `domainId`, the same value `agent_runs.domain_id` holds, never
+ * `agent_runs.id`. Neither table alone answers "what did this dispatch cost", so this file joins
  * them in Kotlin: `agent_runs` supplies the tree's shape and every node's lifecycle, the ledger
  * supplies its numbers.
  *
@@ -151,7 +152,7 @@ object OrchestrationTreeFactory {
         return grouped.map { (parentId, parentRuns) ->
             val nodes = parentRuns
                 .sortedBy { it.createdAtMs }
-                .map { run -> toNode(run, usageByRun[run.id]) }
+                .map { run -> toNode(run, usageByRun[run.domainId]) }
             OrchestrationTree(
                 parentConversationId = parentId,
                 children = nodes,

@@ -47,7 +47,7 @@ class OrchestrationTreeBudgetTest {
     fun `no ceiling configured reports a null remaining, distinct from zero`() {
         val tree = OrchestrationTreeFactory.build(
             runs = listOf(run("a")),
-            records = listOf(row("a", input = 10)),
+            records = listOf(row("domain-a", input = 10)),
         ).single()
 
         assertFalse(tree.hasBudget)
@@ -59,7 +59,7 @@ class OrchestrationTreeBudgetTest {
     fun `remaining is the ceiling minus the tree total`() {
         val tree = OrchestrationTreeFactory.build(
             runs = listOf(run("a")),
-            records = listOf(row("a", input = 300, output = 200)),
+            records = listOf(row("domain-a", input = 300, output = 200)),
             budgetOfConversation = { 10_000L },
         ).single()
 
@@ -73,7 +73,7 @@ class OrchestrationTreeBudgetTest {
     fun `spending exactly the ceiling leaves zero remaining and counts as over`() {
         val tree = OrchestrationTreeFactory.build(
             runs = listOf(run("a")),
-            records = listOf(row("a", input = 1_000)),
+            records = listOf(row("domain-a", input = 1_000)),
             budgetOfConversation = { 1_000L },
         ).single()
 
@@ -85,7 +85,7 @@ class OrchestrationTreeBudgetTest {
     fun `remaining is clamped at zero once the ceiling is blown`() {
         val tree = OrchestrationTreeFactory.build(
             runs = listOf(run("a")),
-            records = listOf(row("a", input = 1_500)),
+            records = listOf(row("domain-a", input = 1_500)),
             budgetOfConversation = { 1_000L },
         ).single()
 
@@ -100,7 +100,7 @@ class OrchestrationTreeBudgetTest {
                 run("a", parent = "conv-1", createdAt = 10L),
                 run("b", parent = "conv-2", createdAt = 20L),
             ),
-            records = listOf(row("a", input = 100), row("b", input = 100)),
+            records = listOf(row("domain-a", input = 100), row("domain-b", input = 100)),
             budgetOfConversation = { id -> if (id == "conv-1") 1_000L else null },
         ).associateBy { it.parentConversationId }
 
@@ -112,7 +112,7 @@ class OrchestrationTreeBudgetTest {
     fun `a parentless tree is looked up by the null key`() {
         val tree = OrchestrationTreeFactory.build(
             runs = listOf(run("orphan", parent = null)),
-            records = listOf(row("orphan", input = 40)),
+            records = listOf(row("domain-orphan", input = 40)),
             budgetOfConversation = { id -> if (id == null) 100L else null },
         ).single()
 
