@@ -17,6 +17,11 @@ import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
 import me.rerere.rikkahub.data.ai.tools.HeadlessConversations
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.usage.OrchestrationBudget
+import me.rerere.rikkahub.data.usage.OrchestrationGate
+import me.rerere.rikkahub.data.usage.RunUsageSummary
+import me.rerere.rikkahub.data.usage.RunUsageSummaryFactory
+import me.rerere.rikkahub.data.usage.UsageLedger
 import me.rerere.rikkahub.data.usage.UsageRunContexts
 import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.model.Conversation
@@ -98,6 +103,12 @@ class SubAgentEngine(
      * `Settings` because the library is a database, not a preference blob.
      */
     private val agentDefinitionRepository: AgentDefinitionRepository,
+    /**
+     * P2-13 — the accounting ledger, read here (never written): the budget gate sums what
+     * this conversation's sub-agents already cost before another dispatch is allowed, and a
+     * finished run reads its own rows back so the parent gets real numbers, not zeroes.
+     */
+    private val usageLedger: UsageLedger,
 ) {
 
     /**
@@ -152,6 +163,12 @@ class SubAgentEngine(
             return@withContext DispatchResult.Reject(validation.error, validation.detail)
         }
         val cleaned = (validation as SubAgentRequestValidator.Result.Ok).request
+
+        // P2-13 — the budget gate. Judged before a concurrency slot is taken, so an
+        // over-budget orchestration is refused on policy rather than on capacity.
+        checkOrchestrationBudget(parentAssistantId, parentChatId, cleaned)?.let { refusal ->
+            return@withContext refusal
+        }
 
         // Concurrency cap. Global first (cheaper), then per-assistant.
         if (registry.globalActiveCount() >= SubAgentDefaults.GLOBAL_CONCURRENCY_CAP) {
@@ -232,6 +249,76 @@ class SubAgentEngine(
             SubAgentDefaults.MIN_PER_ASSISTANT_CAP,
             SubAgentDefaults.MAX_PER_ASSISTANT_CAP,
         )
+    }
+
+    /**
+     * P2-13 — refuse the dispatch when this conversation has already spent its orchestration
+     * budget. Returns null to allow.
+     *
+     * The ceiling is the expert's own `tokenBudget` when the dispatch names one, otherwise the
+     * parent assistant's `orchestrationTokenBudget` (D8) — [OrchestrationBudget.effectiveBudget]
+     * is the single place that precedence lives. Nothing is enforced when no ceiling is
+     * configured anywhere, which is what keeps an untouched install byte-for-byte as it was;
+     * the ledger is not even read in that case.
+     *
+     * A conversation-less dispatch (cron / workflow / external automation) has no orchestration
+     * root to sum against, so it is never gated. Every read here is best-effort: a ledger or
+     * settings hiccup degrades to "allow", because telemetry is not allowed to break a dispatch
+     * — the refusal exists to protect a budget, not to add a new failure mode.
+     */
+    private suspend fun checkOrchestrationBudget(
+        parentAssistantId: String,
+        parentChatId: String?,
+        request: SubAgentRequest,
+    ): DispatchResult.Reject? {
+        if (parentChatId == null) return null
+        val assistantBudget = runCatching {
+            val asstUuid = Uuid.parse(parentAssistantId)
+            settingsStore.settingsFlow.first().let { AssistantResolver.byId(it, asstUuid) }
+        }.getOrNull()?.orchestrationTokenBudget
+        // Cheap short-circuit: with no assistant ceiling and no named expert there is nothing
+        // to resolve, so the default (budget-free) path pays neither the settings nor the
+        // expert read.
+        if (assistantBudget == null && request.agentName == null) return null
+        val expertBudget = runCatching {
+            (agentDefinitionRepository.resolveByName(request.agentName)
+                as? AgentDefinitionResolver.Result.Resolved)?.definition?.tokenBudget
+        }.getOrNull()
+        val budget = OrchestrationBudget.effectiveBudget(assistantBudget, expertBudget) ?: return null
+        val used = runCatching { usageLedger.tokensForOrchestration(parentChatId) }.getOrDefault(0L)
+        val decision = OrchestrationGate.decide(used, budget)
+        if (decision !is OrchestrationGate.Decision.Refuse) return null
+        return DispatchResult.Reject(
+            error = OrchestrationGate.ERROR_CODE,
+            detail = OrchestrationGate.refusalDetail(decision),
+        )
+    }
+
+    /**
+     * P2-13 — freeze what this run cost onto its registry entry, so the dispatcher's tool result
+     * (foreground) and `subagent_get` (either) carry real numbers instead of the zeroes Phase 11
+     * declared and nobody ever filled.
+     *
+     * Must run BEFORE the terminal status is written: a run is frozen once it is terminal, and
+     * the wake-up message reads the same entry to tell the parent what the dispatch cost. Sums
+     * by conversation and filters on the run id, so the auxiliary rows the run did not pay for
+     * (title generation carries no run id) stay out. Best-effort: a read failure leaves the
+     * zeroes and never fails the run.
+     */
+    private suspend fun attachRunUsage(runId: String, conversationId: String) {
+        val summary = runCatching {
+            RunUsageSummaryFactory.from(
+                records = usageLedger.recordsForConversation(conversationId),
+                runId = runId,
+            )
+        }.getOrNull() ?: return
+        registry.update(runId) {
+            it.copy(
+                tokensIn = summary.inputTokens,
+                tokensOut = summary.outputTokens,
+                usageCalls = summary.calls,
+            )
+        }
     }
 
     private suspend fun executeRun(
@@ -407,6 +494,7 @@ class SubAgentEngine(
                     .onFailure { Log.w(TAG, "sub-agent timeout: stopGeneration failed for $runId", it) }
             }
             if (timedOut) {
+                attachRunUsage(runId, conv.id.toString())
                 markTerminal(runId, SubAgentStatus.TIMED_OUT, "exceeded ${request.timeoutSeconds}-second cap")
                 notifyParentIfBackground(parentChatId, registry.get(runId))
                 return
@@ -416,6 +504,7 @@ class SubAgentEngine(
             // text parts from the last assistant message. This mirrors how the
             // CronJobWorker treats LLM-mode jobs.
             val finalText = harvestFinalText(conv.id)
+            attachRunUsage(runId, conv.id.toString())
             registry.update(runId) {
                 it.copy(
                     status = SubAgentStatus.SUCCEEDED,
@@ -429,6 +518,7 @@ class SubAgentEngine(
             notifyParentIfBackground(parentChatId, registry.get(runId))
         } catch (t: Throwable) {
             Log.w(TAG, "sub-agent run failed", t)
+            attachRunUsage(runId, conv.id.toString())
             // CancellationException → CANCELLED, anything else → FAILED.
             val terminal = if (t is kotlinx.coroutines.CancellationException) SubAgentStatus.CANCELLED else SubAgentStatus.FAILED
             markTerminal(runId, terminal, "${t::class.simpleName}: ${t.message.orEmpty()}")
@@ -492,6 +582,13 @@ class SubAgentEngine(
             run.error?.takeIf { it.isNotBlank() }?.let {
                 appendLine("Error: $it")
             }
+            RunUsageSummaryFactory.line(
+                RunUsageSummary(
+                    calls = run.usageCalls,
+                    inputTokens = run.tokensIn,
+                    outputTokens = run.tokensOut,
+                )
+            )?.let { appendLine(it) }
             if (!run.noResult) {
                 run.result?.takeIf { it.isNotBlank() }?.let {
                     appendLine()

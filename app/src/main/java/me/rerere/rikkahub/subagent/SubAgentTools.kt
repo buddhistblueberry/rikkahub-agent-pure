@@ -42,6 +42,8 @@ internal fun encodeRun(run: SubAgentRun): kotlinx.serialization.json.JsonObject 
     if (run.error != null) put("error", run.error)
     put("tokens_in", run.tokensIn)
     put("tokens_out", run.tokensOut)
+    // P2-13 — model round trips. Distinct from trip_count, which counts tool-loop trips.
+    put("calls", run.usageCalls)
     put("trip_count", run.tripCount)
 }
 

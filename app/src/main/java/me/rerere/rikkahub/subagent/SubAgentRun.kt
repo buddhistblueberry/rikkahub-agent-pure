@@ -33,6 +33,8 @@ data class SubAgentRun(
     val tokensIn: Long = 0,
     val tokensOut: Long = 0,
     val tripCount: Int = 0,
+    /** P2-13 — model round trips this run billed, read back from the ledger when it ends. */
+    val usageCalls: Int = 0,
 )
 
 @Serializable
