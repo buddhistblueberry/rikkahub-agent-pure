@@ -259,9 +259,13 @@ private fun AgentDefinitionCard(
     // `listOfNotNull` (not `buildList`) so every `stringResource` is evaluated in the composable
     // scope at this call site rather than inside a builder lambda.
     val surfaceLine = listOfNotNull(
+        // D8 - always say what the tool surface is: the owned count, or an explicit
+        // "inherits the parent" badge, so an inheriting expert is never left blank.
         if (summary.ownLocalTools) {
             stringResource(R.string.setting_sub_agents_page_badge_tools, summary.localToolCount)
-        } else null,
+        } else {
+            stringResource(R.string.setting_sub_agents_page_surface_inherit)
+        },
         if (summary.ownsMcpServers) {
             stringResource(R.string.setting_sub_agents_page_badge_mcp, summary.mcpServerCount)
         } else null,
@@ -821,7 +825,9 @@ private fun AgentDefinitionEditSheet(
                 // ---- local tool groups ----------------------------------------------------
                 SurfaceGroup(
                     title = stringResource(R.string.setting_sub_agents_page_surface_tools),
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                    // D9 - in inherit mode this is the parent's WHOLE surface, decided at
+                    // dispatch time, not "no tools".
+                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit_tools),
                     own = draft.ownsLocalTools,
                     ownSummary = stringResource(
                         R.string.setting_sub_agents_page_surface_own_count,

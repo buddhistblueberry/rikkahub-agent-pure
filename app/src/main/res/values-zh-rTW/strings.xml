@@ -2136,6 +2136,7 @@
   <string name="setting_sub_agents_page_surface_skills">技能</string>
   <string name="setting_sub_agents_page_surface_namespace">命名空間</string>
   <string name="setting_sub_agents_page_surface_inherit">繼承父助手</string>
+  <string name="setting_sub_agents_page_surface_inherit_tools">繼承父助手的完整工具面（派發時決定）</string>
   <string name="setting_sub_agents_page_surface_own_count">自訂 · 已選 %1$d</string>
   <string name="setting_sub_agents_page_surface_no_tools">沒有可列出的工具。</string>
   <string name="setting_sub_agents_page_surface_no_mcp">沒有已啟用的 MCP 伺服器。</string>

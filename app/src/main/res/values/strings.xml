@@ -2186,6 +2186,7 @@
   <string name="setting_sub_agents_page_surface_skills">Skills</string>
   <string name="setting_sub_agents_page_surface_namespace">Namespace</string>
   <string name="setting_sub_agents_page_surface_inherit">Inherits the parent assistant</string>
+  <string name="setting_sub_agents_page_surface_inherit_tools">Inherits the parent assistant\'s whole tool surface</string>
   <string name="setting_sub_agents_page_surface_own_count">Custom · %1$d selected</string>
   <string name="setting_sub_agents_page_surface_no_tools">No tools to list.</string>
   <string name="setting_sub_agents_page_surface_no_mcp">No MCP server is enabled.</string>
