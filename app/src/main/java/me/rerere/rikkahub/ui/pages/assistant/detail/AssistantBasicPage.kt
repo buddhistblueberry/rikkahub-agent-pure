@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +15,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -672,6 +676,57 @@ internal fun AssistantBasicContent(
                             )
                         }
                     )
+                }
+            )
+            HorizontalDivider()
+            // P2-24 (D7) - new sub-agent conversations are filed into this folder, which keeps
+            // them out of the main chat list. The folder is created in the chat drawer (its
+            // dialog carries the matching "sub-agent archive" switch); this is the second
+            // entry point to the same single, per-assistant slot.
+            FormItem(
+                modifier = Modifier.padding(8.dp),
+                label = {
+                    Text(stringResource(R.string.assistant_page_sub_agent_archive))
+                },
+                description = {
+                    Text(stringResource(R.string.assistant_page_sub_agent_archive_desc))
+                },
+                tail = {
+                    val folders by vm.folders.collectAsStateWithLifecycle()
+                    val archiveFolderId by vm.subAgentArchiveFolderId.collectAsStateWithLifecycle()
+                    var folderMenuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(
+                            onClick = { folderMenuExpanded = true },
+                            enabled = folders.isNotEmpty(),
+                        ) {
+                            Text(
+                                folders.firstOrNull { it.id == archiveFolderId }?.name
+                                    ?: stringResource(R.string.assistant_page_sub_agent_archive_none)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = folderMenuExpanded,
+                            onDismissRequest = { folderMenuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.assistant_page_sub_agent_archive_none)) },
+                                onClick = {
+                                    vm.setSubAgentArchiveFolder(null)
+                                    folderMenuExpanded = false
+                                },
+                            )
+                            folders.forEach { folder ->
+                                DropdownMenuItem(
+                                    text = { Text(folder.name) },
+                                    onClick = {
+                                        vm.setSubAgentArchiveFolder(folder.id)
+                                        folderMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             )
             HorizontalDivider()

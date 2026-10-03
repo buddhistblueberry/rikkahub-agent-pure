@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.AssistantResolver
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.model.Folder
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
@@ -24,8 +25,10 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.data.repository.FolderRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.subagent.SubAgentArchiveRules
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -37,6 +40,7 @@ class AssistantDetailVM(
     private val filesManager: FilesManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
+    private val folderRepository: FolderRepository,
 ) : ViewModel() {
     private val assistantId = Uuid.parse(id)
 
@@ -102,6 +106,35 @@ class AssistantDetailVM(
             started = SharingStarted.Eagerly,
             initialValue = emptyList(),
         )
+
+    /** P2-24 (D7) — this assistant's conversation folders, for the archive picker. */
+    val folders: StateFlow<List<Folder>> = folderRepository
+        .getFoldersOfAssistant(assistantId)
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = emptyList())
+
+    /**
+     * P2-24 (D7) — the folder this assistant's sub-agent conversations are filed into, if any.
+     * The same single slot the chat drawer's folder dialogs write.
+     */
+    val subAgentArchiveFolderId: StateFlow<Uuid?> = settingsStore
+        .settingsFlow
+        .map { settings ->
+            SubAgentArchiveRules.targetFolderId(settings.subAgentArchiveFolders, assistantId.toString())
+                ?.let { Uuid.parse(it) }
+        }
+        .stateIn(scope = viewModelScope, started = SharingStarted.Eagerly, initialValue = null)
+
+    /** P2-24 (D7) — set (or clear, with a null [folderId]) this assistant's archive folder. */
+    fun setSubAgentArchiveFolder(folderId: Uuid?) {
+        viewModelScope.launch {
+            settingsStore.update { settings ->
+                val key = assistantId.toString()
+                val next = settings.subAgentArchiveFolders.toMutableMap()
+                if (folderId == null) next.remove(key) else next[key] = folderId.toString()
+                settings.copy(subAgentArchiveFolders = next)
+            }
+        }
+    }
 
     fun updateTags(tagIds: List<Uuid>, tags: List<Tag>) {
         viewModelScope.launch {
