@@ -49,7 +49,7 @@ class ProotShellRunner(
     }
 
     override fun start(context: WorkspaceShellContext): Process {
-        if (!context.linuxDir.hasUsableRootfs()) {
+        if (!WorkspaceManager.isUsableRootfs(context.linuxDir)) {
             throw IllegalStateException("Rootfs is not installed")
         }
 
