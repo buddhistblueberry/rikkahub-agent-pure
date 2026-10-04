@@ -81,6 +81,12 @@ fun settingsSearchIndex(developerMode: Boolean): List<SettingsSearchEntry> {
             route = Screen.SettingSubAgents,
         ),
         SettingsSearchEntry(
+            titleRes = R.string.setting_page_ssh,
+            descriptionRes = R.string.setting_page_ssh_desc,
+            groupRes = R.string.setting_page_model_and_services,
+            route = Screen.SettingSsh,
+        ),
+        SettingsSearchEntry(
             titleRes = R.string.setting_page_web_server,
             descriptionRes = R.string.setting_page_web_server_desc,
             groupRes = R.string.setting_page_model_and_services,

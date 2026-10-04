@@ -19,6 +19,8 @@ import me.rerere.rikkahub.ui.pages.extensions.skills.SkillsVM
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
+// P2-32 ssh hosts page
+import me.rerere.rikkahub.ui.pages.setting.SettingSshViewModel
 import me.rerere.rikkahub.ui.pages.setting.browser.SettingBrowserViewModel
 import me.rerere.rikkahub.ui.pages.setting.termux.SettingTermuxViewModel
 import me.rerere.rikkahub.ui.pages.setting.locallm.SettingLocalLlmViewModel
@@ -98,6 +100,8 @@ val viewModelModule = module {
     viewModelOf(::DoctorViewModel)
     viewModelOf(::SettingBrowserViewModel)
     viewModelOf(::SettingTermuxViewModel)
+    // P2-32 ssh hosts page
+    viewModelOf(::SettingSshViewModel)
 
     // Phase 22A: parameterised by LocalRuntime — one VM instance per provider tile.
     viewModel<SettingLocalLlmViewModel> { params ->

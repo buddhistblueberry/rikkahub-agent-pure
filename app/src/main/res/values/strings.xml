@@ -2692,4 +2692,47 @@
   <string name="stats_page_usage_group_assistant">Assistant tasks</string>
   <string name="stats_page_usage_group_other">Other</string>
   <string name="stats_page_ledger_tok_per_sec">%1$s tok/s</string>
+
+  <!-- P2-32 ssh hosts page -->
+  <string name="setting_page_ssh">SSH hosts</string>
+  <string name="setting_page_ssh_desc">Manage the saved hosts used by ssh_exec_saved, ssh_upload and ssh_download.</string>
+  <string name="setting_ssh_page_title">SSH hosts</string>
+  <string name="setting_ssh_page_hosts">Saved hosts</string>
+  <string name="setting_ssh_page_empty">No saved hosts yet</string>
+  <string name="setting_ssh_page_empty_hint">Add a host so the assistant can run commands on it by name.</string>
+  <string name="setting_ssh_page_add">Add host</string>
+  <string name="setting_ssh_page_edit">Edit host</string>
+  <string name="setting_ssh_page_name">Name</string>
+  <string name="setting_ssh_page_host">Host</string>
+  <string name="setting_ssh_page_port">Port</string>
+  <string name="setting_ssh_page_user">User</string>
+  <string name="setting_ssh_page_auth_password">Password</string>
+  <string name="setting_ssh_page_auth_key">Private key</string>
+  <string name="setting_ssh_page_password">Password</string>
+  <string name="setting_ssh_page_private_key">Private key (PEM)</string>
+  <string name="setting_ssh_page_passphrase">Key passphrase (optional)</string>
+  <string name="setting_ssh_page_save">Save</string>
+  <string name="setting_ssh_page_cancel">Cancel</string>
+  <string name="setting_ssh_page_delete">Delete</string>
+  <string name="setting_ssh_page_delete_confirm_title">Delete host?</string>
+  <string name="setting_ssh_page_delete_confirm_message">\"%1$s\" will be removed and the assistant can no longer use it.</string>
+  <string name="setting_ssh_page_saved">Host saved</string>
+  <string name="setting_ssh_page_deleted">Host deleted</string>
+  <string name="setting_ssh_page_test">Test connection</string>
+  <string name="setting_ssh_page_test_ok">Connection OK</string>
+  <string name="setting_ssh_page_test_failed">Failed: %1$s</string>
+  <string name="setting_ssh_page_known_hosts">Known host keys</string>
+  <string name="setting_ssh_page_known_hosts_empty">No trusted host keys yet</string>
+  <string name="setting_ssh_page_known_hosts_empty_hint">A key is recorded the first time a host is reached.</string>
+  <string name="setting_ssh_page_forget_key">Forget key</string>
+  <string name="setting_ssh_page_key_forgotten">Host key forgotten</string>
+  <string name="setting_ssh_page_forget_key_confirm_title">Forget host key?</string>
+  <string name="setting_ssh_page_forget_key_confirm_message">The stored key for %1$s will be removed. The next connection will trust whatever the server presents, so only do this if the server was reinstalled.</string>
+  <string name="setting_ssh_page_secrets_note">Passwords and private keys are stored unencrypted in the local database.</string>
+  <string name="setting_ssh_page_error_name_blank">Enter a name</string>
+  <string name="setting_ssh_page_error_name_taken">A host with this name already exists</string>
+  <string name="setting_ssh_page_error_host_blank">Enter a host</string>
+  <string name="setting_ssh_page_error_port_invalid">Port must be 1-65535</string>
+  <string name="setting_ssh_page_error_user_blank">Enter a user</string>
+  <string name="setting_ssh_page_error_credential_missing">Provide a password or a private key</string>
 </resources>
