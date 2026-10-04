@@ -3001,7 +3001,7 @@ class ChatService(
                 withContext(UsageCallContext(purpose = UsagePurpose.COMPACTION, conversationId = conversation.id.toString())) { providerHandler.generateText(
                     providerSetting = provider,
                     messages = listOf(UIMessage.user(prompt)),
-                    params = backgroundTextGenerationParams(model, conversation.id.toString()).copy(
+                    params = backgroundTextGenerationParams(model, conversation.id).copy(
                         maxTokens = requestedTargetTokens,
                     ),
                 ) }
