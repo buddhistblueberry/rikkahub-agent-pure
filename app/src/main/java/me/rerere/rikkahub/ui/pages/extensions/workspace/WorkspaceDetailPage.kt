@@ -886,6 +886,7 @@ private fun WorkspaceFileCard(
         ) {
             if (selecting && !entry.isDirectory) {
                 Checkbox(checked = selected, onCheckedChange = { onToggleSelection() })
+            }
             if (entry.isDirectory) {
                 IconButton(
                     onClick = onToggleExpand,
