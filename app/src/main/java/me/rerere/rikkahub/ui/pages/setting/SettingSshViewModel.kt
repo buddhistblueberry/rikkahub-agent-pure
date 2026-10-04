@@ -39,9 +39,9 @@ data class SshTestResult(
  * tools (`save_ssh_host` / `delete_ssh_host` / `list_ssh_hosts`). This is the first
  * human-facing surface for that data.
  *
- * The connection test intentionally calls [openSshSession] + `Session.connect` directly rather
- * than [me.rerere.rikkahub.data.ai.tools.local.execOneShot]: that path runs `probeReachability`,
- * whose bare TCP probes get counted as failed logins by a remote fail2ban (see M05 T-01).
+ * The connection test calls [openSshSession] + `Session.connect` directly rather than
+ * [me.rerere.rikkahub.data.ai.tools.local.execOneShot]: a test is one explicit attempt against
+ * one host, so it has no reason to walk every candidate transport the way the exec path does.
  */
 class SettingSshViewModel(
     private val context: Context,

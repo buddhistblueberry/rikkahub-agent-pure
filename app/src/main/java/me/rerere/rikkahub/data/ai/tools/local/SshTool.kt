@@ -9,11 +9,7 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -35,9 +31,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val TAG_SSH = "SshTool"
 
-/** Per-network probe timeout. Tight because we now race networks in parallel. */
-private const val PROBE_PER_NETWORK_TIMEOUT_MS = 2_500
-/** Default per-network connect timeout used when JSch creates its own socket. */
+/**
+ * Per-candidate TCP connect timeout for [NetworkRaceSocketFactory]. Candidates are tried in
+ * order and the first successful socket is handed straight to JSch, so a device with ~3
+ * transports spends at most ~3x this before giving up, on a par with the old design's worst
+ * case (a 2.5s parallel probe plus a 10s JSch socket).
+ */
+private const val CANDIDATE_CONNECT_TIMEOUT_MS = 4_000
+/** Connect timeout for the single-transport (default-route) factory. */
 private const val SOCKET_CONNECT_TIMEOUT_MS = 10_000
 
 /**
@@ -170,7 +171,7 @@ internal fun wrapDetachedCommand(command: String): String =
  * input bypasses the cache entirely — it's not a name, there's nothing to resolve or stale.
  * Failures are never cached, so a transient DNS hiccup can't poison the next 60s of connects.
  */
-private fun resolveToIPv4(host: String): String? {
+internal fun resolveToIPv4(host: String): String? {
     sshDnsCache.get(host)?.let { cached ->
         Log.i(TAG_SSH, "resolveToIPv4: $host -> $cached (dns cache hit)")
         return cached
@@ -192,20 +193,24 @@ private fun resolveToIPv4(host: String): String? {
 }
 
 /**
- * Returns every Network the device has, ordered for the SSH probe. Each entry is a
- * (label, network-or-null) pair. The null entry means "do not bind — let Android pick the
- * default route." All WiFi networks the device exposes are included individually (a phone
- * may have a saved-but-inactive hotspot AND the active WiFi visible at the same time;
- * filtering down to one would skip the working network on adaptive-routing devices).
+ * Returns every Network the device has, ordered for [NetworkRaceSocketFactory]. Each entry is
+ * a (label, network-or-null) pair; the null entry means "do not bind, let Android pick the
+ * default route" and is placed first.
  *
- * WiFi networks are sorted with VALIDATED-INTERNET ones first so the probe doesn't waste
- * its first slot on a captive-portal WiFi when a real one is available. With the parallel
- * probe in [probeReachability], having more candidates costs no extra latency anyway.
+ * All WiFi networks the device exposes are included individually (a phone may have a
+ * saved-but-inactive hotspot AND the active WiFi visible at the same time; filtering down to
+ * one would skip the working network on adaptive-routing devices), VALIDATED-INTERNET first.
+ *
+ * The order matters now: the factory walks this list instead of racing it in parallel, so
+ * keeping the default route first keeps the common case down to a single socket.
  */
 private fun enumerateCandidateNetworks(ctx: Context): List<Pair<String, Network?>> {
     val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         ?: return listOf("default" to null)
     val out = mutableListOf<Pair<String, Network?>>()
+    // The default route goes first: it is the one Android itself would pick (so it honours an
+    // active VPN) and it wins in the common case.
+    out += "default" to null
     // allNetworks deprecated at API 31; the recommended NetworkCallback path is async and
     // doesn't fit our synchronous enumeration here. Behaviour-equivalent and still functional.
     @Suppress("DEPRECATION")
@@ -226,7 +231,6 @@ private fun enumerateCandidateNetworks(ctx: Context): List<Pair<String, Network?
         ?.let { out += "ethernet" to it }
     all.firstOrNull { caps(it)?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true }
         ?.let { out += "cellular" to it }
-    out += "default" to null
     return out
 }
 
@@ -269,7 +273,7 @@ internal fun openSshSession(
     user: String,
     auth: SshAuth,
     timeoutMs: Int,
-    network: Network? = null,
+    socketFactory: com.jcraft.jsch.SocketFactory? = null,
 ): Session {
     if (!auth.privateKey.isNullOrBlank()) {
         val keyBytes = auth.privateKey.toByteArray(Charsets.UTF_8)
@@ -293,11 +297,17 @@ internal fun openSshSession(
         setProperty("StrictHostKeyChecking", "accept-new")
         setProperty("PreferredAuthentications", "publickey,keyboard-interactive,password")
     })
-    // Always install our custom socket factory so JSch's internal sockets get a bounded
-    // connect timeout. When [network] is non-null we ALSO bind sockets to that specific
-    // Network so SSH traffic stays on the chosen transport, bypassing Android's adaptive
-    // routing that would otherwise re-route app traffic away from the chosen WiFi LAN.
-    session.setSocketFactory(NetworkBoundSocketFactory(network, SOCKET_CONNECT_TIMEOUT_MS))
+    // Install a socket factory so JSch's internal sockets get a bounded connect timeout and,
+    // when the caller passes a [NetworkRaceSocketFactory], so the SSH connection is placed on
+    // the first transport that can actually reach the host (bypassing Android's adaptive
+    // routing, which would otherwise re-route app traffic away from the chosen WiFi LAN). The
+    // default is a single-candidate factory that leaves routing to Android.
+    session.setSocketFactory(
+        socketFactory ?: NetworkRaceSocketFactory(
+            listOf("default" to null),
+            SOCKET_CONNECT_TIMEOUT_MS,
+        )
+    )
     // Keep-alive: send a server-alive probe every 30s of channel idle, give up after 3
     // unanswered. Without this an intermediate NAT/firewall silently drops the connection's
     // state entry during a long-running command and the session black-holes. This is the
@@ -310,25 +320,56 @@ internal fun openSshSession(
 }
 
 /**
- * JSch SocketFactory with two responsibilities:
- *  1. Optionally bind every newly-created socket to a specific Android [Network], to keep
- *     SSH traffic on a chosen transport when the OS's default-network selection would
- *     route it elsewhere.
- *  2. Always pass an explicit connect timeout to Socket.connect() so a stalled SYN can't
- *     hang for the kernel default (~75s) — JSch's session.connect(timeout) controls only
- *     the handshake reads, NOT this socket's TCP connect.
+ * JSch [SocketFactory] that picks the transport for the SSH connection itself.
+ *
+ * The previous design raced a *bare TCP* probe across every candidate transport before JSch
+ * opened its own socket. Each probe was a connect-then-immediately-close, which sshd logs as
+ * `Connection closed by ... [preauth]`. Those log lines are the structural source of the
+ * fail2ban bans that took the VPS ssh channel down (see M05 T-01), and the winning probe
+ * socket was thrown away regardless so JSch could open a *second*, real socket on that same
+ * network.
+ *
+ * Here the search and the connection are the same act: [createSocket] walks [candidates] in
+ * order and returns the first socket whose TCP connect succeeds, and JSch performs the SSH
+ * handshake on *that* socket. A candidate whose connect fails never completes a TCP handshake,
+ * so the far end never logs anything for it. Zero throwaway connections, no probe phase.
+ *
+ * Failure details for every candidate are retained in [failures] so the caller can still emit
+ * the per-transport `tcp_unreachable` envelope.
  */
-private class NetworkBoundSocketFactory(
-    private val network: Network?,
+internal class NetworkRaceSocketFactory(
+    private val candidates: List<Pair<String, Network?>>,
     private val connectTimeoutMs: Int,
 ) : com.jcraft.jsch.SocketFactory {
+    private val _failures = mutableListOf<Pair<String, String>>()
+
+    /** Label of the transport whose socket was handed to JSch, or null if none succeeded. */
+    @Volatile
+    var winningLabel: String? = null
+        private set
+
+    /** (label, reason) for every candidate whose TCP connect did not succeed. */
+    val failures: List<Pair<String, String>> get() = _failures.toList()
+
     override fun createSocket(host: String, port: Int): java.net.Socket {
-        val s = java.net.Socket()
-        if (network != null) {
-            try { network.bindSocket(s) } catch (_: Throwable) { /* best-effort */ }
+        for ((label, network) in candidates) {
+            val s = java.net.Socket()
+            try {
+                if (network != null) {
+                    try { network.bindSocket(s) } catch (t: Throwable) {
+                        Log.w(TAG_SSH, "bindSocket to $label failed", t)
+                    }
+                }
+                s.connect(java.net.InetSocketAddress(host, port), connectTimeoutMs)
+                winningLabel = label
+                Log.i(TAG_SSH, "ssh socket up via $label")
+                return s
+            } catch (e: Throwable) {
+                _failures += label to "${e::class.java.simpleName}: ${e.message ?: "unknown"}"
+                try { s.close() } catch (_: Throwable) {}
+            }
         }
-        s.connect(java.net.InetSocketAddress(host, port), connectTimeoutMs)
-        return s
+        throw java.net.SocketException("no transport could reach $host:$port")
     }
 
     override fun getInputStream(socket: java.net.Socket): java.io.InputStream =
@@ -339,78 +380,34 @@ private class NetworkBoundSocketFactory(
 }
 
 /**
- * Outcome of a reachability probe. [winningNetwork] is the Network that successfully
- * completed the TCP handshake (null if the unbound default-route attempt was the winner);
- * pass it to [openSshSession] so JSch's handshake follows the same route. [failures] lists
- * the per-network failure reasons when no probe succeeded.
+ * Build the transport-racing socket factory for [context]'s current networks. Shared by the
+ * exec and SFTP paths so both pick a transport the same way.
  */
-internal data class ProbeOutcome(
-    val winningNetwork: Network?,
-    val winningLabel: String?,
-    val failures: List<Pair<String, String>>,
-    val resolvedIp: String,
-    val totalMs: Long,
-)
-
-/**
- * Race a TCP handshake to (host, port) across every available transport in parallel. The
- * sequential predecessor (5s timeout × 4 networks = up to 20s) ate most of the user's
- * 30s budget on misconfigured devices; the parallel version takes ~2.5s in the worst case
- * and immediately surfaces the right network for the JSch handshake to follow.
- */
-internal suspend fun probeReachability(context: Context, host: String, port: Int): ProbeOutcome {
-    val probeStart = System.currentTimeMillis()
-    val resolvedIp = resolveToIPv4(host) ?: host
-    val attempts = enumerateCandidateNetworks(context)
-    // Race all candidates in parallel; awaitAll caps total time at one probe-timeout.
-    val results = withContext(Dispatchers.IO) {
-        coroutineScope {
-            attempts.map { (label, candidate) ->
-                async {
-                    val s = java.net.Socket()
-                    try {
-                        if (candidate != null) {
-                            try { candidate.bindSocket(s) } catch (t: Throwable) {
-                                Log.w(TAG_SSH, "bindSocket to $label failed", t)
-                            }
-                        }
-                        s.connect(java.net.InetSocketAddress(resolvedIp, port), PROBE_PER_NETWORK_TIMEOUT_MS)
-                        Triple(label, candidate, null as String?)
-                    } catch (e: Throwable) {
-                        Triple(label, candidate, "${e::class.java.simpleName}: ${e.message ?: "unknown"}")
-                    } finally {
-                        try { s.close() } catch (_: Throwable) {}
-                    }
-                }
-            }.awaitAll()
-        }
-    }
-    val winner = results.firstOrNull { it.third == null }
-    val failures = results.filter { it.third != null }.map { it.first to (it.third ?: "unknown") }
-    val totalMs = System.currentTimeMillis() - probeStart
-    if (winner != null) {
-        Log.i(TAG_SSH, "tcp probe ok via ${winner.first} in ${totalMs}ms")
-        return ProbeOutcome(winner.second, winner.first, failures, resolvedIp, totalMs)
-    }
-    return ProbeOutcome(null, null, failures, resolvedIp, totalMs)
-}
+internal fun networkRaceSocketFactory(context: Context): NetworkRaceSocketFactory =
+    NetworkRaceSocketFactory(enumerateCandidateNetworks(context), CANDIDATE_CONNECT_TIMEOUT_MS)
 
 /**
  * Standard envelope for "we couldn't reach the host on any transport". Surfaces the per-
- * network failure reasons so the LLM can quote them back to the user when explaining what
+ * transport failure reasons so the LLM can quote them back to the user when explaining what
  * went wrong, plus the recovery hint for the most common Android routing pitfalls.
  */
-internal fun unreachableEnvelope(host: String, port: Int, outcome: ProbeOutcome): JsonObject =
+internal fun unreachableEnvelope(
+    host: String,
+    port: Int,
+    resolvedIp: String,
+    failures: List<Pair<String, String>>,
+    totalMs: Long,
+): JsonObject =
     buildJsonObject {
         put("error", "tcp_unreachable")
         put("host", host)
-        put("ip", outcome.resolvedIp)
+        put("ip", resolvedIp)
         put("port", port)
         put("attempts", buildJsonObject {
-            outcome.failures.forEach { (label, reason) -> put(label, reason) }
+            failures.forEach { (label, reason) -> put(label, reason) }
         })
-        put("recovery", "Direct TCP to ${outcome.resolvedIp}:$port failed across every available " +
-            "network (${outcome.totalMs}ms total). If Termux ssh from the same device reaches " +
+        put("recovery", "Direct TCP to $resolvedIp:$port failed across every available " +
+            "network (${totalMs}ms total). If Termux ssh from the same device reaches " +
             "this host, RikkaHub's process is being filtered. Check Settings → Network → " +
             "Private DNS (try Off), any active VPN's per-app routing, and Settings → Apps → " +
             "RikkaHub → Mobile data & Wi-Fi (enable Background data and Unrestricted data usage).")
@@ -565,11 +562,13 @@ internal suspend fun runCancellableSshOp(
 }
 
 /**
- * Probe → connect → run → disconnect. The probe is suspend (parallel async); the JSch
- * handshake + exec are blocking, so we hand them off to runInterruptible(IO) which gives
- * us best-effort thread interrupt on coroutine cancellation. The Session is stashed in
- * [sessionRef] so the outer [runCancellableSshOp] can also forcibly disconnect from
- * outside if interrupt isn't honoured by JNI.
+ * Connect → run → disconnect. The transport search is fused into the JSch socket factory
+ * ([NetworkRaceSocketFactory]), so there is no separate probe phase: JSch performs the SSH
+ * handshake on the first socket whose TCP connect succeeds. The handshake + exec are blocking,
+ * so we hand them off to runInterruptible(IO) which gives us best-effort thread interrupt on
+ * coroutine cancellation. The Session is stashed in [sessionRef] so the outer
+ * [runCancellableSshOp] can also forcibly disconnect from outside if interrupt isn't honoured
+ * by JNI.
  */
 internal suspend fun execOneShot(
     context: Context,
@@ -582,28 +581,24 @@ internal suspend fun execOneShot(
     sessionRef: AtomicReference<Session?>,
     stdin: String? = null,
 ): JsonObject {
-    // Stage 1 (suspend): low-level reachability probe in parallel across every transport.
-    // JSch's connect timeout fires at the END of the SSH handshake, so when the network is
-    // silently broken the LLM sees a 30s "timeout" with no clue why. Probing with a raw
-    // java.net.Socket first lets us tell the model exactly which layer is failing, AND
-    // pick the working network for JSch to bind to.
-    val outcome = probeReachability(context, host, port)
-    if (outcome.winningNetwork == null && outcome.failures.isNotEmpty()) {
-        return unreachableEnvelope(host, port, outcome)
-    }
-
-    // Stage 2 (blocking IO, interruptible): JSch handshake + exec.
+    val factory = networkRaceSocketFactory(context)
     return runInterruptible(Dispatchers.IO) {
         val jsch = newJSch(context)
         val handshakeStart = System.currentTimeMillis()
         val session = try {
-            openSshSession(jsch, host, port, user, auth, timeoutMs, network = outcome.winningNetwork)
+            openSshSession(jsch, host, port, user, auth, timeoutMs, factory)
         } catch (e: Throwable) {
             Log.w(TAG_SSH, "ssh handshake failed in ${System.currentTimeMillis() - handshakeStart}ms", e)
+            if (factory.winningLabel == null && factory.failures.isNotEmpty()) {
+                return@runInterruptible unreachableEnvelope(
+                    host, port, resolveToIPv4(host) ?: host, factory.failures,
+                    System.currentTimeMillis() - handshakeStart,
+                )
+            }
             return@runInterruptible wrapConnectError(host, e)
         }
         sessionRef.set(session)
-        Log.i(TAG_SSH, "ssh session up via ${outcome.winningLabel ?: "default"} in ${System.currentTimeMillis() - handshakeStart}ms")
+        Log.i(TAG_SSH, "ssh session up via ${factory.winningLabel ?: "default"} in ${System.currentTimeMillis() - handshakeStart}ms")
         try {
             runOnSession(session, command, timeoutMs, stdin)
         } catch (e: Throwable) {
