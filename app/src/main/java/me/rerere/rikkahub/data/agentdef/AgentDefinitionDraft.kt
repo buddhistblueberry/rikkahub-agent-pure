@@ -303,6 +303,8 @@ object LocalToolGroups {
         LocalToolOption.CallLog,
         LocalToolOption.SmsInbox,
         LocalToolOption.CameraPhoto,
+        // P2-33 image generation tools
+        LocalToolOption.ImageGeneration,
         LocalToolOption.MicRecorder,
         LocalToolOption.SpeechToText,
         LocalToolOption.Fingerprint,

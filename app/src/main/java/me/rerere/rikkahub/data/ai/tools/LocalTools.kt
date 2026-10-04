@@ -35,6 +35,9 @@ import me.rerere.rikkahub.data.ai.tools.local.audioInfoTool
 import me.rerere.rikkahub.data.ai.tools.local.batteryTool
 import me.rerere.rikkahub.data.ai.tools.local.callLogTool
 import me.rerere.rikkahub.data.ai.tools.local.cameraPhotoTool
+// P2-33 image generation tools
+import me.rerere.rikkahub.data.ai.tools.local.editImageTool
+import me.rerere.rikkahub.data.ai.tools.local.generateImageTool
 import me.rerere.rikkahub.data.ai.tools.local.clickNodeTool
 import me.rerere.rikkahub.data.ai.tools.local.downloadTool
 import me.rerere.rikkahub.data.ai.tools.local.fingerprintTool
@@ -206,6 +209,9 @@ sealed class LocalToolOption {
     @Serializable @SerialName("external_storage")     data object ExternalStorage     : LocalToolOption()
     @Serializable @SerialName("archive")              data object Archive             : LocalToolOption()
     @Serializable @SerialName("keyboard_control")     data object KeyboardControl     : LocalToolOption()
+
+    // P2-33 image generation tools
+    @Serializable @SerialName("image_generation")     data object ImageGeneration     : LocalToolOption()
 }
 
 /**
@@ -246,6 +252,8 @@ object LenientLocalToolListSerializer : KSerializer<List<LocalToolOption>> {
 }
 
 private val TOP_TOOL_EXAMPLES: Map<String, String> = mapOf(
+    // P2-33 image generation tools
+    "generate_image" to "generate_image(prompt=\"a red panda on a bamboo branch, watercolor\")",
     "get_battery_status" to "get_battery_status()",
     "get_audio_info" to "get_audio_info()",
     "get_telephony_info" to "get_telephony_info()",
@@ -383,6 +391,11 @@ class LocalTools(
     private val okHttpClient: okhttp3.OkHttpClient,
     // agent-keyboard IPC client — backs the keyboard_* tools (drives the active text field).
     private val keyboardApiClient: me.rerere.rikkahub.data.keyboard.KeyboardApiClient,
+    // P2-33 image generation tools — the same provider + gallery stack ImgGenVM uses;
+    // these two tools are just a second caller of it.
+    private val providerManager: me.rerere.ai.provider.ProviderManager,
+    private val filesManager: me.rerere.rikkahub.data.files.FilesManager,
+    private val genMediaRepository: me.rerere.rikkahub.data.repository.GenMediaRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -1110,6 +1123,27 @@ class LocalTools(
             tools.add(keyboardEditorInfoTool(keyboardApiClient))
             tools.add(keyboardSetCursorTool(keyboardApiClient))
             tools.add(keyboardSelectRangeTool(keyboardApiClient))
+        }
+        if (options.contains(LocalToolOption.ImageGeneration)) {
+            // P2-33 image generation tools
+            tools.add(
+                generateImageTool(
+                    settingsStore = settingsStore,
+                    providerManager = providerManager,
+                    filesManager = filesManager,
+                    genMediaRepository = genMediaRepository,
+                    modelCanSeeImages = invocationContext.modelCanSeeImages,
+                )
+            )
+            tools.add(
+                editImageTool(
+                    settingsStore = settingsStore,
+                    providerManager = providerManager,
+                    filesManager = filesManager,
+                    genMediaRepository = genMediaRepository,
+                    modelCanSeeImages = invocationContext.modelCanSeeImages,
+                )
+            )
         }
         // Centralised opt-in to needsApproval. Tool factories themselves don't have to know
         // whether their op is destructive — ToolApprovalDefaults is the single source of

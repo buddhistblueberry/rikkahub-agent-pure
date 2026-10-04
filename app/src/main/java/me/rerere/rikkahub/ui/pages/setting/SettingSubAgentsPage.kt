@@ -544,6 +544,8 @@ private fun localToolTitle(option: LocalToolOption): String = stringResource(
         LocalToolOption.CallLog -> R.string.assistant_page_local_tools_call_log_title
         LocalToolOption.SmsInbox -> R.string.assistant_page_local_tools_sms_inbox_title
         LocalToolOption.CameraPhoto -> R.string.assistant_page_local_tools_camera_photo_title
+        // P2-33 image generation tools
+        LocalToolOption.ImageGeneration -> R.string.assistant_page_local_tools_image_generation_title
         LocalToolOption.MicRecorder -> R.string.assistant_page_local_tools_mic_recorder_title
         LocalToolOption.SpeechToText -> R.string.assistant_page_local_tools_speech_to_text_title
         LocalToolOption.Fingerprint -> R.string.assistant_page_local_tools_fingerprint_title

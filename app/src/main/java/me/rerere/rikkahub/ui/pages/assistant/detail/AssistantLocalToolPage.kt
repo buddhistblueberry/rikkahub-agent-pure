@@ -648,6 +648,21 @@ private fun AssistantLocalToolContent(
             )
             item(
                 headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_image_generation_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_image_generation_desc))
+                },
+                trailingContent = {
+                    // P2-33 image generation tools
+                    PermissionedSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.ImageGeneration),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.ImageGeneration, it) },
+                    )
+                }
+            )
+            item(
+                headlineContent = {
                     Text(stringResource(R.string.assistant_page_local_tools_mic_recorder_title))
                 },
                 supportingContent = {

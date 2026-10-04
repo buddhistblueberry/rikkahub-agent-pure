@@ -1170,6 +1170,9 @@
   <string name="assistant_page_local_tools_call_log_title">通話記錄</string>
   <string name="assistant_page_local_tools_camera_photo_desc">開啟系統相機，讓使用者拍照並返回其檔案路徑。</string>
   <string name="assistant_page_local_tools_camera_photo_title">相機（拍照）</string>
+  <!-- P2-33 image generation tools -->
+  <string name="assistant_page_local_tools_image_generation_title">圖片生成</string>
+  <string name="assistant_page_local_tools_image_generation_desc">讓助手依提示詞生成或編輯圖片，結果會顯示在聊天中並存入圖片庫。</string>
   <string name="assistant_page_local_tools_contacts_desc">搜尋或列出裝置聯絡人（姓名、電話號碼、電子郵件）。</string>
   <string name="assistant_page_local_tools_contacts_title">聯絡人</string>
   <string name="assistant_page_local_tools_cost_guards_desc">讓助理對照每個助理的軟/硬上限檢查其累計 token 用量並自我限流。唯讀 — 與串流管道的自動停止整合將在後續版本中提供。</string>
