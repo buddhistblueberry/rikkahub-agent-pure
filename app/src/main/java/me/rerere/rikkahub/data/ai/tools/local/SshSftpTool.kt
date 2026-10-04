@@ -48,20 +48,24 @@ private suspend fun withSavedHostSession(
     if (!auth.isUsable()) {
         return buildJsonObject { put("error", "saved host has no usable credentials") }
     }
-    // Same probe-then-bind path the exec tool uses. Without this, SFTP traffic is left to
-    // Android's default-network selection, which on adaptive-routing devices routes the
-    // app's outgoing connections away from WiFi LAN even though WiFi is up — meaning every
-    // recent fix that gave SSH exec the WiFi-binding behaviour was bypassed for SFTP.
-    val outcome = probeReachability(context, h.host, h.port)
-    if (outcome.winningNetwork == null && outcome.failures.isNotEmpty()) {
-        return unreachableEnvelope(h.host, h.port, outcome)
-    }
+    // Same connect path the exec tool uses: the transport search lives inside the JSch socket
+    // factory, so SFTP traffic lands on the first transport that can reach the host. Without
+    // this, SFTP is left to Android's default-network selection, which on adaptive-routing
+    // devices routes the app's outgoing connections away from WiFi LAN even though WiFi is up.
+    val factory = networkRaceSocketFactory(context)
+    val startedAt = System.currentTimeMillis()
     return runInterruptible(Dispatchers.IO) {
         val jsch = newJSch(context)
         val session = try {
-            openSshSession(jsch, h.host, h.port, h.user, auth, timeoutMs, network = outcome.winningNetwork)
+            openSshSession(jsch, h.host, h.port, h.user, auth, timeoutMs, factory)
         } catch (e: Throwable) {
             Log.w(TAG_SFTP, "ssh handshake failed", e)
+            if (factory.winningLabel == null && factory.failures.isNotEmpty()) {
+                return@runInterruptible unreachableEnvelope(
+                    h.host, h.port, resolveToIPv4(h.host) ?: h.host, factory.failures,
+                    System.currentTimeMillis() - startedAt,
+                )
+            }
             return@runInterruptible wrapConnectError(h.host, e)
         }
         sessionRef.set(session)
