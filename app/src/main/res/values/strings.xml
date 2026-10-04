@@ -1161,6 +1161,7 @@
   <string name="stats_page_launch_count">App Launch Count</string>
   <string name="stats_page_output_tokens">Output Tokens</string>
   <string name="stats_page_title">Statistics</string>
+  <string name="stats_page_overview_title">Overview</string>
   <string name="stats_page_total_conversations">Total Conversations</string>
   <string name="stats_page_total_messages">Total Messages</string>
   <string name="stats_page_ledger_title">Usage ledger</string>
@@ -2187,6 +2188,8 @@
   <string name="setting_sub_agents_page_cancel">Cancel</string>
   <string name="setting_sub_agents_page_confirm">Save</string>
   <string name="setting_sub_agents_page_surface_title">Surface</string>
+  <string name="setting_sub_agents_page_section_identity">Identity</string>
+  <string name="setting_sub_agents_page_section_model">Model &amp; limits</string>
   <string name="setting_sub_agents_page_surface_desc">What this expert may use. A group left on inherit keeps whatever the assistant that dispatches it has; turn it on to give the expert its own.</string>
   <string name="setting_sub_agents_page_surface_tools">Local tools</string>
   <string name="setting_sub_agents_page_surface_disabled_tools">Disabled tools</string>
@@ -2196,6 +2199,11 @@
   <string name="setting_sub_agents_page_surface_inherit">Inherits the parent assistant</string>
   <string name="setting_sub_agents_page_surface_inherit_tools">Inherits the parent assistant\'s whole tool surface</string>
   <string name="setting_sub_agents_page_surface_own_count">Custom · %1$d selected</string>
+  <string name="setting_sub_agents_page_surface_disabled_count">%1$d excluded</string>
+  <string name="setting_sub_agents_page_surface_no_disabled">Nothing is excluded. Switch a tool off in the palette above to add one here.</string>
+  <string name="setting_sub_agents_page_surface_restore">Restore</string>
+  <string name="setting_sub_agents_page_surface_mode_inherit">Inherit</string>
+  <string name="setting_sub_agents_page_surface_mode_own">Custom</string>
   <string name="setting_sub_agents_page_surface_no_tools">No tools to list.</string>
   <string name="setting_sub_agents_page_surface_no_mcp">No MCP server is enabled.</string>
   <string name="setting_sub_agents_page_surface_no_skills">No skill is installed.</string>
