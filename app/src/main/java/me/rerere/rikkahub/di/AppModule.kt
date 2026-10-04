@@ -217,6 +217,10 @@ val appModule = module {
             storageVolumeGrantStore = get(),
             okHttpClient = get(),
             keyboardApiClient = get(),
+            // P2-33 image generation tools
+            providerManager = get(),
+            filesManager = get(),
+            genMediaRepository = get(),
         )
     }
 

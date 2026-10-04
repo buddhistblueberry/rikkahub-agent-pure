@@ -1221,6 +1221,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_call_log_title">通话记录</string>
   <string name="assistant_page_local_tools_camera_photo_desc">打开系统相机，让用户拍照并返回其文件路径。</string>
   <string name="assistant_page_local_tools_camera_photo_title">相机（拍照）</string>
+  <!-- P2-33 image generation tools -->
+  <string name="assistant_page_local_tools_image_generation_title">图片生成</string>
+  <string name="assistant_page_local_tools_image_generation_desc">让助手按提示词生成或编辑图片，结果会显示在聊天中并存入图片库。</string>
   <string name="assistant_page_local_tools_contacts_desc">搜索或列出设备联系人（姓名、电话号码、邮箱）。</string>
   <string name="assistant_page_local_tools_contacts_title">联系人</string>
   <string name="assistant_page_local_tools_cost_guards_desc">让助手对照每个助手的软/硬上限检查其累计 token 用量并自我限流。只读 — 与流式管道的自动停止集成将在后续版本中提供。</string>

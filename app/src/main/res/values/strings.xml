@@ -1381,6 +1381,9 @@
   <string name="assistant_page_local_tools_sms_inbox_title">SMS inbox</string>
   <string name="assistant_page_local_tools_sms_inbox_desc">Read or search SMS inbox messages.</string>
   <string name="assistant_page_local_tools_camera_photo_title">Camera (photo)</string>
+  <!-- P2-33 image generation tools -->
+  <string name="assistant_page_local_tools_image_generation_title">Image generation</string>
+  <string name="assistant_page_local_tools_image_generation_desc">Let the assistant generate or edit images from a prompt; results appear in the chat and in the gallery.</string>
   <string name="assistant_page_local_tools_camera_photo_desc">Open the system camera so the user can take a photo and return its file path.</string>
   <string name="assistant_page_local_tools_mic_recorder_title">Mic recorder</string>
   <string name="assistant_page_local_tools_mic_recorder_desc">Record audio from the microphone for a bounded duration to a local file.</string>
