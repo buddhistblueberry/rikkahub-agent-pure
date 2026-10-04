@@ -2376,4 +2376,47 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="stats_page_usage_group_assistant">助手辅助</string>
   <string name="stats_page_usage_group_other">其他</string>
   <string name="stats_page_ledger_tok_per_sec">%1$s tok/s</string>
+
+  <!-- P2-32 ssh hosts page -->
+  <string name="setting_page_ssh">SSH 主机</string>
+  <string name="setting_page_ssh_desc">管理已保存的主机，供 ssh_exec_saved、ssh_upload、ssh_download 按名称使用。</string>
+  <string name="setting_ssh_page_title">SSH 主机</string>
+  <string name="setting_ssh_page_hosts">已保存主机</string>
+  <string name="setting_ssh_page_empty">还没有保存的主机</string>
+  <string name="setting_ssh_page_empty_hint">添加一个主机，助手就能按名称在其上执行命令。</string>
+  <string name="setting_ssh_page_add">添加主机</string>
+  <string name="setting_ssh_page_edit">编辑主机</string>
+  <string name="setting_ssh_page_name">名称</string>
+  <string name="setting_ssh_page_host">主机地址</string>
+  <string name="setting_ssh_page_port">端口</string>
+  <string name="setting_ssh_page_user">用户名</string>
+  <string name="setting_ssh_page_auth_password">密码</string>
+  <string name="setting_ssh_page_auth_key">私钥</string>
+  <string name="setting_ssh_page_password">密码</string>
+  <string name="setting_ssh_page_private_key">私钥（PEM）</string>
+  <string name="setting_ssh_page_passphrase">私钥口令（可选）</string>
+  <string name="setting_ssh_page_save">保存</string>
+  <string name="setting_ssh_page_cancel">取消</string>
+  <string name="setting_ssh_page_delete">删除</string>
+  <string name="setting_ssh_page_delete_confirm_title">删除主机？</string>
+  <string name="setting_ssh_page_delete_confirm_message">将删除“%1$s”，助手将无法再使用它。</string>
+  <string name="setting_ssh_page_saved">主机已保存</string>
+  <string name="setting_ssh_page_deleted">主机已删除</string>
+  <string name="setting_ssh_page_test">测试连接</string>
+  <string name="setting_ssh_page_test_ok">连接正常</string>
+  <string name="setting_ssh_page_test_failed">失败：%1$s</string>
+  <string name="setting_ssh_page_known_hosts">已知主机密钥</string>
+  <string name="setting_ssh_page_known_hosts_empty">暂无已信任的主机密钥</string>
+  <string name="setting_ssh_page_known_hosts_empty_hint">首次连接某主机时会自动记录其密钥。</string>
+  <string name="setting_ssh_page_forget_key">忘记密钥</string>
+  <string name="setting_ssh_page_key_forgotten">已忘记主机密钥</string>
+  <string name="setting_ssh_page_forget_key_confirm_title">忘记主机密钥？</string>
+  <string name="setting_ssh_page_forget_key_confirm_message">将删除 %1$s 的已存密钥，下次连接会信任服务器出示的任何密钥。仅在你重装过该服务器时才这样做。</string>
+  <string name="setting_ssh_page_secrets_note">密码与私钥以明文存储在应用本地数据库中。</string>
+  <string name="setting_ssh_page_error_name_blank">请输入名称</string>
+  <string name="setting_ssh_page_error_name_taken">已存在同名主机</string>
+  <string name="setting_ssh_page_error_host_blank">请输入主机地址</string>
+  <string name="setting_ssh_page_error_port_invalid">端口需在 1-65535 之间</string>
+  <string name="setting_ssh_page_error_user_blank">请输入用户名</string>
+  <string name="setting_ssh_page_error_credential_missing">请填写密码或私钥</string>
 </resources>
