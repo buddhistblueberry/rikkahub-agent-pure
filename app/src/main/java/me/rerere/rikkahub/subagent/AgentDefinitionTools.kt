@@ -1,7 +1,9 @@
 package me.rerere.rikkahub.subagent
 
 import java.util.UUID
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -19,11 +21,14 @@ import me.rerere.rikkahub.data.agentdef.AgentDefinition
 import me.rerere.rikkahub.data.agentdef.AgentDefinitionDefaults
 import me.rerere.rikkahub.data.agentdef.AgentDefinitionRepository
 import me.rerere.rikkahub.data.agentdef.AgentNamespace
+import me.rerere.rikkahub.data.agentdef.LocalToolGroups
 import me.rerere.rikkahub.data.agentrun.AgentRunKind
 import me.rerere.rikkahub.data.agentrun.AgentRunRepository
 import me.rerere.rikkahub.data.agentrun.AgentRunStatus
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.tools.HeadlessToolApprovalPolicy
 import me.rerere.rikkahub.data.ai.tools.LenientLocalToolListSerializer
+import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.utils.JsonInstant
@@ -130,6 +135,10 @@ fun subagentCreateTool(
                     put("description", "Optional namespace slug (lowercase letters, digits, single dashes) giving this expert a private agents/<slug>/ directory in the workspace. Omit for none.")
                 })
                 put("token_budget", buildJsonObject { put("type", "integer") })
+                put("local_tools", surfaceArraySchema(LOCAL_TOOLS_DESCRIPTION))
+                put("disabled_local_tools", surfaceArraySchema(DISABLED_LOCAL_TOOLS_DESCRIPTION))
+                put("mcp_servers", surfaceArraySchema(MCP_SERVERS_DESCRIPTION))
+                put("skills", surfaceArraySchema(SKILLS_DESCRIPTION))
             },
             required = listOf("name"),
         )
@@ -181,6 +190,31 @@ fun subagentCreateTool(
             is ModelField.Invalid -> return@Tool errEnv("unknown_model", resolved.message)
         }
 
+        val localTools = when (val update = params.fieldUpdate("local_tools")) {
+            is FieldUpdate.Unchanged, is FieldUpdate.Inherit -> null
+            is FieldUpdate.Own -> parseLocalTools(update.value).getOrElse {
+                return@Tool errEnv("invalid_local_tools", it.message ?: "invalid local_tools")
+            }
+        }
+        val disabledLocalTools = when (val update = params.fieldUpdate("disabled_local_tools")) {
+            is FieldUpdate.Unchanged, is FieldUpdate.Inherit -> null
+            is FieldUpdate.Own -> parseStringSet(update.value, "disabled_local_tools").getOrElse {
+                return@Tool errEnv("invalid_disabled_local_tools", it.message ?: "invalid disabled_local_tools")
+            }
+        }
+        val mcpServers = when (val update = params.fieldUpdate("mcp_servers")) {
+            is FieldUpdate.Unchanged, is FieldUpdate.Inherit -> null
+            is FieldUpdate.Own -> parseMcpServers(update.value, settingsStore.settingsFlow.value.mcpServers).getOrElse {
+                return@Tool errEnv("invalid_mcp_servers", it.message ?: "invalid mcp_servers")
+            }
+        }
+        val skills = when (val update = params.fieldUpdate("skills")) {
+            is FieldUpdate.Unchanged, is FieldUpdate.Inherit -> null
+            is FieldUpdate.Own -> parseStringSet(update.value, "skills").getOrElse {
+                return@Tool errEnv("invalid_skills", it.message ?: "invalid skills")
+            }
+        }
+
         val existing = repository.refresh()
         findNameClash(existing, name, exceptId = null)?.let { clash ->
             return@Tool errEnv(
@@ -210,6 +244,10 @@ fun subagentCreateTool(
                 enabled = params.bool("enabled") ?: true,
                 slug = slug,
                 tokenBudget = tokenBudget,
+                localTools = localTools,
+                disabledLocalTools = disabledLocalTools,
+                mcpServers = mcpServers,
+                skills = skills,
                 id = id,
             )
         }.getOrElse { error ->
@@ -261,6 +299,10 @@ fun subagentUpdateTool(
                     put("type", "integer")
                     put("description", "New token budget; pass 0 to clear it (unlimited).")
                 })
+                put("local_tools", surfaceArraySchema(LOCAL_TOOLS_UPDATE_DESCRIPTION))
+                put("disabled_local_tools", surfaceArraySchema(DISABLED_LOCAL_TOOLS_UPDATE_DESCRIPTION))
+                put("mcp_servers", surfaceArraySchema(MCP_SERVERS_UPDATE_DESCRIPTION))
+                put("skills", surfaceArraySchema(SKILLS_UPDATE_DESCRIPTION))
             },
             required = listOf("id"),
         )
@@ -367,11 +409,77 @@ fun subagentUpdateTool(
             }
         }
 
+        when (val update = params.fieldUpdate("local_tools")) {
+            is FieldUpdate.Unchanged -> {}
+            is FieldUpdate.Inherit -> if (existing.localTools != null) {
+                row = row.copy(localTools = null)
+                changed += "local_tools"
+            }
+            is FieldUpdate.Own -> {
+                val parsed = parseLocalTools(update.value).getOrElse {
+                    return@Tool errEnv("invalid_local_tools", it.message ?: "invalid local_tools")
+                }
+                if (parsed != existing.localTools) {
+                    row = row.copy(localTools = parsed)
+                    changed += "local_tools"
+                }
+            }
+        }
+        when (val update = params.fieldUpdate("disabled_local_tools")) {
+            is FieldUpdate.Unchanged -> {}
+            is FieldUpdate.Inherit -> if (existing.disabledLocalTools != null) {
+                row = row.copy(disabledLocalTools = null)
+                changed += "disabled_local_tools"
+            }
+            is FieldUpdate.Own -> {
+                val parsed = parseStringSet(update.value, "disabled_local_tools").getOrElse {
+                    return@Tool errEnv("invalid_disabled_local_tools", it.message ?: "invalid disabled_local_tools")
+                }
+                if (parsed != existing.disabledLocalTools) {
+                    row = row.copy(disabledLocalTools = parsed)
+                    changed += "disabled_local_tools"
+                }
+            }
+        }
+        when (val update = params.fieldUpdate("mcp_servers")) {
+            is FieldUpdate.Unchanged -> {}
+            is FieldUpdate.Inherit -> if (existing.mcpServers != null) {
+                row = row.copy(mcpServers = null)
+                changed += "mcp_servers"
+            }
+            is FieldUpdate.Own -> {
+                val parsed = parseMcpServers(update.value, settingsStore.settingsFlow.value.mcpServers).getOrElse {
+                    return@Tool errEnv("invalid_mcp_servers", it.message ?: "invalid mcp_servers")
+                }
+                if (parsed != existing.mcpServers) {
+                    row = row.copy(mcpServers = parsed)
+                    changed += "mcp_servers"
+                }
+            }
+        }
+        when (val update = params.fieldUpdate("skills")) {
+            is FieldUpdate.Unchanged -> {}
+            is FieldUpdate.Inherit -> if (existing.skills != null) {
+                row = row.copy(skills = null)
+                changed += "skills"
+            }
+            is FieldUpdate.Own -> {
+                val parsed = parseStringSet(update.value, "skills").getOrElse {
+                    return@Tool errEnv("invalid_skills", it.message ?: "invalid skills")
+                }
+                if (parsed != existing.skills) {
+                    row = row.copy(skills = parsed)
+                    changed += "skills"
+                }
+            }
+        }
+
         if (changed.isEmpty()) {
             return@Tool errEnv(
                 "no_change",
                 "no field would change; pass at least one of name / description / system_prompt / " +
-                    "model_id / enabled / slug / token_budget",
+                    "model_id / enabled / slug / token_budget / local_tools / disabled_local_tools / " +
+                    "mcp_servers / skills",
             )
         }
 
@@ -549,6 +657,136 @@ private suspend fun openWriteAudit(
         extra.forEach { (key, value) -> put(key, value) }
     },
 )
+
+// ---- expert tool-surface fields (P2-36) ------------------------------------------------
+//
+// subagent_create / subagent_update now accept the four surface fields the store has always
+// carried — AgentDefinition.localTools / disabledLocalTools / mcpServers / skills — which the
+// parent-facing schema used to omit. Without them the parent could not configure a child's tool
+// surface or MCP servers at all: every expert silently inherited the parent's, which is exactly
+// the gap the expert library promised to close.
+//
+// All four share one tri-state convention, matching AgentDefinition's "null = inherit":
+//   - key absent       -> leave the field alone (update) / inherit the parent (create),
+//   - key is JSON null -> inherit the parent (the only way back from an owned-empty surface),
+//   - key is an array  -> the expert's OWN collection ([] = own-empty, and null != []).
+
+private const val LOCAL_TOOLS_DESCRIPTION =
+    "The expert's OWN local-tool list, as option ids such as \"time_info\", \"screen_automation\" " +
+        "or \"browser\" (the ids subagent_list kind=\"experts\" emits). Omit or pass null to " +
+        "inherit the parent assistant's list; an empty array gives the expert no local tools. " +
+        "The [{\"type\":\"...\"}] object form is also accepted."
+
+private const val DISABLED_LOCAL_TOOLS_DESCRIPTION =
+    "Tool names to disable for this expert (per-tool opt-out). Omit or pass null to inherit the " +
+        "parent's; an empty array owns an empty set."
+
+private const val MCP_SERVERS_DESCRIPTION =
+    "MCP servers for this expert, each a server id (Uuid) or a server name. Omit or pass null to " +
+        "inherit the parent's; an empty array owns an empty set."
+
+private const val SKILLS_DESCRIPTION =
+    "Enabled skill names for this expert. Omit or pass null to inherit the parent's; an empty " +
+        "array owns an empty set."
+
+private const val LOCAL_TOOLS_UPDATE_DESCRIPTION =
+    LOCAL_TOOLS_DESCRIPTION + " Pass null to go back to inheriting the parent's list."
+
+private const val DISABLED_LOCAL_TOOLS_UPDATE_DESCRIPTION =
+    DISABLED_LOCAL_TOOLS_DESCRIPTION + " Pass null to inherit the parent's."
+
+private const val MCP_SERVERS_UPDATE_DESCRIPTION =
+    MCP_SERVERS_DESCRIPTION + " Pass null to inherit the parent's."
+
+private const val SKILLS_UPDATE_DESCRIPTION =
+    SKILLS_DESCRIPTION + " Pass null to inherit the parent's."
+
+/** The schema every surface field shares: an array of strings, plus its description. */
+private fun surfaceArraySchema(description: String): kotlinx.serialization.json.JsonObject = buildJsonObject {
+    put("type", "array")
+    put("items", buildJsonObject { put("type", "string") })
+    put("description", description)
+}
+
+/** See the section comment: absent / null / array are three different intents. */
+internal sealed interface FieldUpdate<out T> {
+    data object Unchanged : FieldUpdate<Nothing>
+    data object Inherit : FieldUpdate<Nothing>
+    data class Own<T>(val value: T) : FieldUpdate<T>
+}
+
+internal fun JsonObject.fieldUpdate(key: String): FieldUpdate<JsonElement> {
+    if (!containsKey(key)) return FieldUpdate.Unchanged
+    val element = this[key]
+    return if (element == null || element is JsonNull) FieldUpdate.Inherit else FieldUpdate.Own(element)
+}
+
+/** Every local-tool id this build understands, sorted, for error messages. */
+internal val VALID_LOCAL_TOOL_IDS: List<String> by lazy {
+    LocalToolGroups.all.mapNotNull { option ->
+        (JsonInstant.encodeToJsonElement(LocalToolOption.serializer(), option) as? JsonObject)
+            ?.get("type")
+            ?.let { (it as? JsonPrimitive)?.contentOrNull }
+    }.distinct().sorted()
+}
+
+/** A string id ("time_info") or a {"type":"time_info"} object, canonicalised through LocalToolGroups.order. */
+internal fun parseLocalTools(element: JsonElement): Result<List<LocalToolOption>> = runCatching {
+    val array = element as? JsonArray
+        ?: throw IllegalArgumentException("local_tools must be an array of tool ids")
+    val resolved = array.map { item ->
+        val obj = when (item) {
+            is JsonPrimitive -> buildJsonObject { put("type", item.contentOrNull ?: "") }
+            is JsonObject -> item
+            else -> throw IllegalArgumentException(
+                "each local_tools entry must be a string id (e.g. \"time_info\") or a {\"type\":...} object"
+            )
+        }
+        runCatching { JsonInstant.decodeFromJsonElement(LocalToolOption.serializer(), obj) }
+            .getOrElse {
+                val id = (obj["type"] as? JsonPrimitive)?.contentOrNull ?: item.toString()
+                throw IllegalArgumentException(
+                    "unknown local tool \"$id\"; valid ids: ${VALID_LOCAL_TOOL_IDS.joinToString(", ")}"
+                )
+            }
+    }
+    LocalToolGroups.order(resolved.distinct())
+}
+
+/** An array of strings, sorted; anything else fails. */
+internal fun parseStringSet(element: JsonElement, field: String): Result<Set<String>> = runCatching {
+    val array = element as? JsonArray ?: throw IllegalArgumentException("$field must be an array of strings")
+    array.map { item ->
+        val primitive = item as? JsonPrimitive
+        if (primitive == null || !primitive.isString) {
+            throw IllegalArgumentException("every $field entry must be a string")
+        }
+        primitive.content
+    }.toSortedSet()
+}
+
+/** MCP servers named by Uuid or by (case-insensitive) server name; anything unresolved fails. */
+internal fun parseMcpServers(
+    element: JsonElement,
+    servers: List<McpServerConfig>,
+): Result<Set<String>> = runCatching {
+    val array = element as? JsonArray ?: throw IllegalArgumentException("mcp_servers must be an array")
+    array.map { item ->
+        val primitive = item as? JsonPrimitive
+        if (primitive == null || !primitive.isString) {
+            throw IllegalArgumentException("every mcp_servers entry must be a string (a server id or name)")
+        }
+        val raw = primitive.content
+        val match = servers.firstOrNull { it.id.toString() == raw }
+            ?: servers.firstOrNull { it.commonOptions.name.equals(raw, ignoreCase = true) }
+            ?: throw IllegalArgumentException(
+                "no MCP server matches \"$raw\"; known servers: " +
+                    servers.joinToString(", ") { "${it.commonOptions.name} (${it.id})" }
+                        .ifEmpty { "(none configured)" }
+            )
+        match.id.toString()
+    }.toSortedSet()
+}
 
 // ---- tiny JSON argument readers --------------------------------------------------------
 //
