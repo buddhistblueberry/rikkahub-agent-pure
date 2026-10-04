@@ -4,9 +4,11 @@
 
 # RikkaHub Agent · Pure
 
-**An Android LLM client turned into a long-running on-device agent — one that can account for what it spends.**
+**Your phone, automated — and on a leash.**
 
-A fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) (itself a fork of [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)), hardened for autonomous, multi-hour tasks: on-demand tool exposure, model-initiated compaction, a metered token & cost ledger, reusable experts, and deep sub-agent orchestration. **Every addition is opt-in and off by default.**
+A fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) (itself a fork of [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)), hardened for long, unattended agent runs. It keeps the entire upstream feature set and adds one layer that answers a single question:
+
+> *Can this run for hours without blowing up the context — or the bill?*
 
 <p>
   <a href="https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml"><img src="https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml/badge.svg" alt="Build" /></a>
@@ -15,111 +17,118 @@ A fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) (itself 
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
 </p>
 
-<a href="#what-is-this">English</a> · <a href="#中文说明">简体中文</a> · <a href="#what-the-pure-fork-adds">What's added</a> · <a href="#building">Build</a>
+<a href="#what-the-pure-fork-adds">What's added</a> · <a href="#what-you-can-do-with-it">What it can do</a> · <a href="#getting-started">Get started</a> · <a href="#documentation">Docs</a> · <a href="#中文说明">简体中文</a>
 
 </div>
 
 ---
 
-## What is this?
-
-Three forks, one lineage:
-
-```
-rikkahub/rikkahub                    the original native Android LLM chat client
-   └─ ExTV/rikkahub-agent            adds the agent layer: device tools, workflows,
-        │                            Shizuku/Termux shells, sub-agents, Telegram bot…
-        └─ wuyhong715/rikkahub-agent-pure   ★ this repo — the "Pure" hardening pass
-```
-
-**Pure does not remove features.** It keeps the entire upstream surface and adds one layer on top, aimed at a single question:
-
-> Can this thing run unattended for a long time without either blowing up the context or blowing up the bill?
-
-So the work concentrates on four things: **cost you can see**, **context you control**, **runs that survive**, and **teams of agents that behave**.
-
-## Why another fork
-
-Upstream's agent layer was built feature-first. Six things got in the way of long autonomous runs:
-
-| Symptom | In upstream |
-|---|---|
-| Every enabled tool's schema is injected every turn | no on-demand tool loading |
-| Compaction only fires on a token threshold | the model can't compress on its own |
-| One `logcat` dump can flood the context | tool results were unbounded |
-| Sub-agents receive only a bare `task` string | no context hand-off |
-| Tokens were counted, but never attributed | no per-purpose / per-model ledger, no cost |
-| Headless paths (cron, workflows) auto-approved everything | the approval floor could be bypassed |
-
 ## What the Pure fork adds
 
-### 1. A usage ledger that actually balances
+Upstream is already a capable on-device agent. Pure keeps **all of it** and adds seven things — every one **off by default**, and with the switch off the default path is unchanged.
 
-- **Independent `usage_ledger.db`** — a Room database kept out of the chat DB. Stores **metadata only** (tokens, cost, ids); never message content.
-- **Per-call attribution by purpose** — 12 buckets (main, tool loop, compaction, memory, sub-agent, scheduled, workflow, skill test, translation, …), so you can see *where* the tokens went.
-- **Honest accounting** — a field the provider did not report stays `null`; it is never counted as `0`.
-- **Frozen cost** — each row records the price version it was priced with (`priceVersionId`) plus the computed `costMicro`, with a "recalculate at current prices" action. Prices come from a per-model table that understands peak / off-peak windows.
-- **Export & control tools** — `usage_export` writes per-call CSV/JSON into `/workspace/exports/` (delta-capable via `since`); `usage_get_prices` / `usage_set_prices` let the agent read or replace the price table (approval-gated and audited).
-- **Statistics page** — the ledger grouped by day / purpose / model / assistant over the last 90 days, with **tok/s** per bucket, plus an **orchestration tree** showing parent → child sub-agent runs.
-- **Budgets that are enforced** — a per-orchestration token ceiling (the parent turn *and* every descendant it fans out), checked **before** dispatch. Exceeding it returns a structured, model-readable envelope instead of failing silently. An expert can override the ceiling, and concurrency is capped.
+| | Addition | What it gives you |
+|---|---|---|
+| 💰 | **Usage ledger & budgets** | Every model call metered by purpose and cost; an orchestration can be capped. |
+| 🧰 | **On-demand tools** | Search a tool directory; load only the schemas the model actually opens. |
+| 🛡 | **Long-run survival** | Tool-result budgets, model-initiated compaction, execution retry, keep-alive. |
+| 👥 | **Expert library** | Reusable sub-agents, each with its own model, tools, namespace and memory. |
+| 📚 | **Cold memory** | A Markdown knowledge base read on demand, instead of pinned in context. |
+| 🔗 | **Workflows that chain** | Data flow between actions, plus an encrypted secret store. |
+| 🔒 | **Headless safety fixes** | Closed the paths where background runs auto-approved everything. |
 
-### 2. Tools loaded on demand, not all at once
+Full detail — what each one does, the exact tool names, and where every switch lives — is in **[docs/PURE-FEATURES.md](docs/PURE-FEATURES.md)**.
 
-- **Tool palette** — search the local tool directory from Settings and see which group a tool belongs to before enabling it. **56 tool groups, 80+ individual tools.**
-- **Per-tool switches** — tool control used to be per *group*; the fork adds `disabledLocalTools`, so you can switch off individual tools inside an enabled group.
-- **Progressive exposure** — an opt-in tool-surface mode swaps the MCP tools in each request for a `tool_search` / `tool_open` pair, so only the schemas the model actually opens are sent. (Cuts first-turn tool tokens; the disclosed trade-off is that a changing tool list can cost prompt-cache hits.)
-- **One assembly point** — the six scattered places that used to assemble the tool surface were collapsed into one, so every knob composes predictably.
+## What you can do with it
 
-### 3. Long runs that don't fall over
+**See where the money goes.** *"How much did sub-agents cost me this week?"* — the Statistics page groups the ledger by day / purpose / model / assistant and shows tok/s, and the orchestration tree lays out every parent → child dispatch. Cost is frozen at write time, so history does not shift when a provider changes its rates.
 
-- **Tool-result budget** — cap how much context one tool result may occupy; longer results keep their head and tail and spill the full text to `/tool_outputs/` for the model to read back on demand. (Default: 32 KB spill gate.)
-- **Model-initiated compaction** — an opt-in `compact_context` tool lets the model summarise earlier turns by itself, reusing the same summariser as the manual compress action.
-- **Tool-execution retry** — retries at the *execution* layer (not just the stream layer), behind an idempotency whitelist.
-- **Orchestration keep-alive** — a sub-agent run holds a foreground service for its whole lifetime, so a long fan-out isn't killed when the app is backgrounded.
-- **Headless safety floor** — closed the paths where cron / workflows (headless) auto-approved everything, ignoring the never-auto-allow floor and the privacy / on-behalf tools. Fixed a retry bug that treated `web_` **write** requests (POST / PUT / PATCH / DELETE) as idempotent GETs.
+**Cap a run.** Set an orchestration token budget on an assistant — it covers the parent turn *and* everything it fans out. A dispatch that would exceed it is refused **before** it starts, with a readable reason the model can act on. Each expert can carry its own ceiling.
 
-### 4. Sub-agents and a reusable expert library
+**Run a long job unattended.** *"Refactor this module, run the tests, and keep going until they pass."* A tool result that would flood the context is capped and spilled to disk with head + tail kept; the model can compress the conversation on its own; and the run holds a foreground service so switching apps doesn't kill it.
 
-- **Context hand-off** — `subagent_dispatch` can pass recent turns, or selected media, to a child, so a task that refers to what you were just discussing doesn't have to be retyped. The hand-off travels as plain text; the child still cannot read the parent conversation.
-- **Expert library** — persistent, reusable sub-agent definitions (`AgentDefinition`, Room-backed, managed by `subagent_create` / `subagent_update` / `subagent_delete`). Each expert carries its own system prompt, model, tool surface, MCP servers, skills, and **its own namespace** under `agents/<namespace>/` in the workspace — including a private cold-memory folder. A group left on *inherit* simply uses whatever the dispatching assistant has.
-- **Tool-surface freezing** — a sub-agent only ever sees the headless-safe part of the assistant's tools (device-UI tools and must-confirm tools are removed), and the dispatch call can narrow it further.
-- **Three execution strengths** — all-in-one, hybrid, and one-parent-many-children — built from orthogonal knobs rather than a mutually-exclusive mode enum.
-- **Audio / video input** — audio and video parts travel through the attachment picker, the Chat Completions transport, and into sub-agents (`attach_media`).
+**Build a team.** *"Create an expert called `researcher` that only uses web tools on the cheap model, and a `coder` that can edit files."* Then: *"dispatch the researcher to find X and the coder to implement Y, in parallel."* Experts persist with their own namespace and memory, so you name them instead of re-describing them each time.
 
-### 5. Cold memory (a Markdown knowledge base)
+**Keep a library.** Point cold memory at a folder of Markdown; the agent indexes it and reads only what it needs. A large knowledge base costs nothing until it's actually read.
 
-- `memory_index` / `memory_read` / `memory_write` operate on a folder of Markdown inside the bound workspace. Documents stay on disk and are pulled in on demand, so a large knowledge base costs nothing until it is read. Off by default.
+**Wire up the boring stuff.** *"When I connect to the office WiFi, POST my status to this API."* Workflow actions can pass data to each other and pull credentials from an encrypted store, so tokens never sit in the workflow definition.
 
-### 6. Workflows that can chain and hold secrets
+**Travel light.** Turn on the tool palette and the agent *searches* for the tool it needs, instead of carrying every schema on every turn.
 
-- **Action data-flow** — an action can reference an earlier one: `{{actions[0].text}}`, `{{actions[0].json.a.b[2].c}}`.
-- **Secrets store** — AES/GCM + Android Keystore backed, referenced as `{{secret:NAME}}`, allowed only in `web_fetch` headers, and never readable by the model.
-- **More verbs** — `web_fetch` grew from GET/POST to GET/POST/PUT/PATCH/DELETE/HEAD, with the correct body rules.
-- All of it sits behind a **per-workflow** `useActionTemplates` flag that defaults to off; with the flag off, no argument is even scanned.
+## Getting started
 
-## The default contract
+### 0 · Install
 
-This fork has one rule it never breaks:
+There is **no published release** yet. Either build from source (below) or grab the `apk-debug` artifact from the latest [Actions run](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml).
 
-> **Every switch it adds is off by default, and with the switch off the default path is unchanged.** Several paths are literally byte-for-byte identical when disabled.
+The debug build installs as `excp.rikkahub.debug`, so it sits **side by side** with a release build of the upstream app — handy for comparing.
 
-Alongside that:
+### 1 · Add a model provider
 
-- Changes prefer **new files** over edits to the hot paths (`ChatService.kt`, `GenerationLoop.kt`), so the fork stays mergeable against upstream.
-- Every change ships as **one branch / one PR**, gated by CI — `assembleDebug` + `testDebugUnitTest`, currently **2,260+ unit tests, 0 failures**.
-- AGPL-3.0 throughout.
+**Settings → Providers → pick one → paste your API key.**
 
-## What's inherited from upstream
+- **OpenRouter** — first-class support (auto-detected capabilities, pricing, routing, fallback models)
+- **Codex / Grok** — sign in with your OpenAI / xAI account (OAuth, no key)
+- **Local · LiteRT** — download a model (Gemma, Qwen) and run it on-device, no network
+- **AICore** — Gemini Nano on Pixel 8/9/10 (AICore Beta)
+- …or any OpenAI-compatible endpoint
 
-Everything ExTV's agent layer does still works, unchanged: 80+ device tools, Shizuku and Termux shells, AI-authored workflows and schedules, an in-app browser the AI drives, keyless web search and fetch, the Linux workspace with background tasks, SSH, media playback, skills, the Telegram bot, MCP servers, the Doctor health check, on-device LiteRT models, and the full provider set (OpenAI, Google, Anthropic, OpenRouter, Codex, Grok, Ollama, or any OpenAI-compatible endpoint).
+### 2 · Turn on the tools you want
 
-For the complete feature tour, see the **[upstream README](https://github.com/ExTV/rikkahub-agent#features)**.
+**Settings → Assistant → tap your assistant → Local Tools** — flip the groups you want. If you turn nothing on, the app behaves exactly like vanilla RikkaHub.
 
-## Building
+Inside an enabled group you can now switch **individual tools** off, not just the whole group. And **Settings → Sub-agent profiles → Tool palette** lets you search the whole tool directory (56 groups, ~180 tools) to find where a tool lives before enabling it.
 
-There are **no published releases** for this fork yet — builds come from source or from CI artifacts.
+### 3 · Your first conversation
 
-Requirements: JDK 17, the Android SDK (`platform-tools`), and [bun](https://bun.sh) + [pnpm](https://pnpm.io) on your `PATH` (bun installs the web-ui dependencies, pnpm builds the bundle).
+1. Leave Settings and open a **new chat**.
+2. Ask something that uses a tool: *"What's my battery level?"* — approve the tool call when it asks.
+3. Tap the tool call in the reply to inspect the result and re-run it with the same arguments, without spending a new turn.
+4. Try a multi-step one: *"Find the PDFs on my phone and summarise the one about invoices."*
+5. Open the chat **drawer → Statistics** to watch the tokens land in the ledger.
+
+That's the upstream experience. Everything below is the Pure layer — all optional.
+
+### 4 · Turn on the Pure features
+
+**A. Budgets and the ledger** — Assistant → **Basic Settings**: *Tool result budget*, *Orchestration token budget*, *Concurrent sub-agents*. Then: chat drawer → **Statistics** for the ledger and orchestration tree. Price table: Settings → **Providers** → *model* → **Price** tab.
+
+**B. The advanced switches** — Assistant → **Basic Settings** → **Advanced / experimental** card (off by default, read the risk note):
+- *Model-initiated context compaction* (`compact_context`)
+- *Tool surface mode* (`tool_search` / `tool_open`)
+- *Sub-agent context references*
+- *Freeze sub-agent tool surface*
+
+**C. Experts** — Settings → **Sub-agent profiles**: create an expert with its own prompt, model, tool surface, MCP servers, skills and namespace. Then just dispatch to it by name.
+
+**D. Cold memory** — bind a workspace (Assistant → Basic Settings), then Assistant → **Memory** → *Cold memory (Markdown)* and pick a folder.
+
+**E. Workflow secrets** — Settings → **Workflows** → open one → **API secrets**; reference them from a `web_fetch` header as `{{secret:NAME}}`.
+
+### Cheat sheet · where things live
+
+| I want to… | Go to |
+|---|---|
+| Enable/disable tools (per group or per tool) | Settings → Assistant → *assistant* → **Local Tools** |
+| Search the tool directory | Settings → **Sub-agent profiles** → **Tool palette** |
+| Set budgets / tool-result cap | Settings → Assistant → *assistant* → **Basic Settings** |
+| Experimental switches | Assistant → **Basic Settings** → **Advanced / experimental** |
+| Manage reusable experts | Settings → **Sub-agent profiles** |
+| Cold memory folder | Assistant → **Memory** → **Cold memory (Markdown)** |
+| See spend, tok/s, orchestration tree | Chat drawer → **Statistics** |
+| Edit model prices | Settings → **Providers** → *model* → **Price** |
+| Workflow API secrets | Settings → **Workflows** → *workflow* → **API secrets** |
+
+## Requirements
+
+| | |
+|---|---|
+| **Device** | Android 8.0+ (API 26), arm64 or x86_64, ~80 MB |
+| **Provider** | OpenAI, Google, Anthropic, OpenRouter, Codex, Grok, Ollama, any OpenAI-compatible endpoint — or an on-device LiteRT / AICore model |
+
+## Build from source
+
+Requires **JDK 17**, the Android SDK (`platform-tools`), and **[bun](https://bun.sh)** + **[pnpm](https://pnpm.io)** on your `PATH` (bun installs the web-ui dependencies, pnpm builds the bundle).
 
 ```bash
 git clone --recursive https://github.com/wuyhong715/rikkahub-agent-pure.git
@@ -129,18 +138,25 @@ cd rikkahub-agent-pure
 ./gradlew :app:testDebugUnitTest  # unit tests
 ```
 
-Or grab the `apk-debug` artifact from the latest [Actions run](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml). The debug variant carries the `.debug` application-id suffix (`excp.rikkahub.debug`), so it installs **side by side** with a release build of the upstream app.
-
 | | |
 |---|---|
-| **Package** | `excp.rikkahub` |
-| **Android** | 8.0+ (API 26), targets API 37 |
+| **Package** | `excp.rikkahub` (debug: `excp.rikkahub.debug`) |
 | **Version** | 2.5.1 (versionCode 187) |
-| **Language** | Kotlin · Jetpack Compose · Room |
+| **Stack** | Kotlin · Jetpack Compose · Room |
+| **Tests** | 2,260+ unit tests, green in CI |
+
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [docs/PURE-FEATURES.md](docs/PURE-FEATURES.md) | **What the fork adds** — every addition, its tools and switches, and where to find them. 中文对照在文末 |
+| [docs/PURE-DESIGN.md](docs/PURE-DESIGN.md) | **Design notes** — why another fork, the rules it holds to, the three execution strengths, non-goals |
+| [docs/engineering/PHASE2.md](docs/engineering/PHASE2.md) | Engineering log, per change (中文) |
+| [docs/engineering/ACCEPT-FIX.md](docs/engineering/ACCEPT-FIX.md) | Acceptance-fix batch record (中文) |
+| [docs/engineering/QA-PHASE2.md](docs/engineering/QA-PHASE2.md) | On-device QA findings (中文) |
+| [upstream README](https://github.com/ExTV/rikkahub-agent#features) | The full upstream feature tour this fork builds on |
 
 ## Credits
-
-Stands on the shoulders of giants:
 
 | Project | Role |
 |---|---|
@@ -152,7 +168,7 @@ Stands on the shoulders of giants:
 | [JSch (mwiede fork)](https://github.com/mwiede/jsch) | Native SSH client |
 | [FlorisBoard](https://github.com/florisboard/florisboard) | Base for the companion [agent-keyboard](https://github.com/ExTV/agent-keyboard) |
 
-This fork is unaffiliated with the upstream RikkaHub or ExTV maintainers. All credit for the underlying chat client, provider abstraction, and UI design goes to them.
+This fork is unaffiliated with the upstream RikkaHub or ExTV maintainers. All credit for the underlying chat client, provider abstraction and UI design goes to them.
 
 ## License
 
@@ -162,75 +178,64 @@ GNU AGPL-3.0, inherited from upstream. See [LICENSE](LICENSE).
 
 ## 中文说明
 
-### 这是什么
+**RikkaHub Agent · Pure** —— 基于 [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent)（其上游为 [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)）的强化 fork，**面向长时间无人值守的 agent 运行**。它完整保留上游功能，只加一层，回答一个问题：*能不能跑几个小时，而不炸上下文、不炸钱包？*
 
-血统是一条线，不是三个项目：
+### 多了什么（全部默认关）
 
-```
-rikkahub/rikkahub                    原始安卓 LLM 聊天客户端
-   └─ ExTV/rikkahub-agent            加上 agent 层：设备工具、工作流、
-        │                            Shizuku/Termux、子 agent、Telegram 机器人…
-        └─ wuyhong715/rikkahub-agent-pure   ★ 本仓库 —— "纯化" 强化版
-```
+| | 新增 | 一句话 |
+|---|---|---|
+| 💰 | **用量账本与预算** | 每次调用按用途与成本记账；编排可设上限 |
+| 🧰 | **按需工具** | 可搜索工具目录；只注入模型真正打开的 schema |
+| 🛡 | **长任务存活** | 工具结果预算、模型主动压缩、执行级重试、保活 |
+| 👥 | **专家库** | 可复用子 agent，各有模型/工具/命名空间/记忆 |
+| 📚 | **冷记忆** | Markdown 知识库，按需读取而非常驻 |
+| 🔗 | **可串接的工作流** | 动作间传值 + 加密密钥库 |
+| 🔒 | **无头安全修复** | 堵住后台运行"全自动批准"的路径 |
 
-**「纯化」不删功能。** 它完整保留上游能力，只在其上加一层，只为一件事：
+逐项细节、**确切的工具名与开关名**、以及它们各自在哪个菜单：见 **[docs/PURE-FEATURES.md](docs/PURE-FEATURES.md)**（文末有中文对照）。
 
-> 让 agent 能长时间无人值守地跑，而又不炸上下文、不炸钱包。
+### 能做到什么
 
-### 为什么要再 fork 一个
+- **看清钱花在哪**：Statistics 页按 日/用途/模型/助手 分组，带 tok/s，编排树列出每次父→子派发；成本在写入时冻结，价目变动不改写历史。
+- **给一次运行封顶**：助手级编排 token 上限，**派发前**检查，超限直接拒派并回可读原因。
+- **长任务托管**：*"重构这个模块、跑测试、跑到全绿为止"* —— 工具结果超长就留头尾、全文落盘；模型可自行压缩；后台不被杀。
+- **组建团队**：*"建一个 `researcher`（只用网页工具、跑便宜模型）和一个 `coder`（能改文件）"*，之后按名字派发、并行跑。
+- **养一个知识库**：冷记忆指向一个 Markdown 目录，按需索引与阅读，库再大也不占常驻上下文。
+- **把杂事自动化**：*"连上公司 WiFi 就往这个 API POST 状态"* —— 动作间可传值，密钥存加密库。
+- **轻装出行**：打开工具调色板，让 agent 去"搜"它需要的工具，而不是每轮背着所有 schema。
 
-上游 agent 层是"功能优先"建的，有六件事挡着长任务：
+### 开始用（第一次对话）
 
-| 症状 | 上游现状 |
-|---|---|
-| 每个启用的工具 schema 每轮全量注入 | 无按需加载 |
-| 压缩只由 token 阈值触发 | 模型不能主动压 |
-| 一条 `logcat` 就能灌满上下文 | 工具结果无上限 |
-| 子 agent 只收到一个 `task` 字符串 | 无上下文交接 |
-| token 有计数、无归属 | 无分用途/分模型账本，无成本 |
-| 无头路径（cron、工作流）全自动批准 | 审批底线可被绕过 |
-
-### 相对上游加了什么
-
-**① 一本算得平的用量账本**
-独立 `usage_ledger.db`（Room，独立库；只存元数据，绝不存消息内容）· 12 类用途归因 · **未报告字段记 `null` 而非 0** · 写入时冻结成本（`priceVersionId` + `costMicro`，可"按当前价重算"）· 按模型价目表（含峰谷）· `usage_export` 导出 CSV/JSON 到 `/workspace/exports/` · 统计页按 日/用途/模型/助手 分组 + **tok/s** · **编排树页**（父→子）· 编排 token 预算**派发前**检查、超限回结构化信封（给模型看，不静默失败）。
-
-**② 工具按需加载**
-**工具调色板**（可搜索本地工具目录，56 组 / 80+ 工具，能看到某工具属于哪组）· **逐工具开关**（`disabledLocalTools`，粒度从"组"细到"单个工具"）· 渐进暴露（`tool_search` / `tool_open` 换掉每轮的 MCP 全量 schema，默认关）· 工具面装配 **6 → 1 个单点**。
-
-**③ 长任务不崩**
-工具结果 token 预算（超长结果留头+尾，全文落 `/tool_outputs/` 按需回读）· **模型主动压缩**（`compact_context`）· 工具**执行级**重试（幂等白名单）· 编排期 FGS 保活 · 无头路径安全底线收口（并修掉了把 `web_` 写请求当幂等 GET 重试的 bug）。
-
-**④ 子 agent 与可复用专家库**
-上下文交接（可带最近若干轮或音视频，纯文本，子 agent 仍读不到父会话）· **专家库**（`AgentDefinition`，Room 持久化，`subagent_create/update/delete` 管理；每位专家有自己的 system prompt、模型、工具面、MCP、skills，以及**独立命名空间** `agents/<namespace>/`——含私有冷记忆目录；组设"继承"则沿用父助手）· 子 agent 工具面冻结（只见无头安全子集）· 三种执行强度（全能 / 混合 / 一父多子，正交旋钮而非互斥模式）· 音视频输入（`attach_media`）。
-
-**⑤ 冷记忆**：`memory_index` / `memory_read` / `memory_write` 操作工作区里的 Markdown 目录，文档留在磁盘、按需拉取，知识库再大也不占常驻上下文。默认关。
-
-**⑥ 工作流能串起来、能持密钥**：动作间数据流 `{{actions[0].text}}` 与 `{{actions[0].json.a.b[2].c}}` · 密钥库（AES/GCM + Keystore，`{{secret:NAME}}`，仅允许出现在 `web_fetch` 的 header，模型永远读不到值）· `web_fetch` 动词扩到 6 个 · 全部藏在**每工作流**的 `useActionTemplates` 开关后，默认关；关闭时连参数都不扫。
-
-### 默认契约
-
-> **新增的每个开关默认关，关闭时默认路径行为不变。** 有若干路径在关闭时逐字节相同。
-
-配套：改动优先**新增文件**、少动主生成链（`ChatService.kt` / `GenerationLoop.kt`）以保证可持续合并 · 一分支一 PR，CI = `assembleDebug` + `testDebugUnitTest`（**2260+ 单测全绿**）· AGPL-3.0。
+0. **安装**：暂无发布版，从源码构建，或取最新 [Actions](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml) 的 `apk-debug` 产物。debug 包名 `excp.rikkahub.debug`，可与上游 release **并存**。
+1. **接模型**：设置 → 模型提供商 → 选一个 → 填 API key（或 Codex/Grok OAuth、本地 LiteRT、Pixel 的 AICore）。
+2. **开工具**：设置 → 助理 → 点你的助手 → **本地工具** → 打开你要的组（组内还能**逐工具**关闭）。什么都不开＝原版 RikkaHub。
+3. **第一次对话**：回到聊天，新建会话 → 问一句要用工具的，如 *"我的电量多少？"* → 弹审批就允许 → 点回复里的工具调用可查看结果、用同参数重跑。再试 *"找出手机里的 PDF，把关于发票的那份总结一下"*。
+4. **打开 Pure 功能**（都可选）：
+   - 预算/结果上限：助理 → **基本设置**（工具结果预算 / 编排 token 预算 / 并发子 agent）
+   - 实验开关：助理 → **基本设置** → **高级 / 实验功能**（模型主动压缩、工具面模式、子 agent 上下文引用、工具面冻结）
+   - 专家库 + 工具调色板：设置 → **子 agent 配置**
+   - 冷记忆：助理 → **记忆** → 冷记忆（Markdown）——先在基本设置里绑一个工作区
+   - 工作流密钥：设置 → 工作流 → 打开一个 → **API secrets**
+   - 看账单：聊天抽屉 → **统计**
 
 ### 构建
 
-本 fork **尚无发布版**，从源码或 CI 产物构建。需要 JDK 17、Android SDK（`platform-tools`）、以及 `PATH` 上的 [bun](https://bun.sh) 与 [pnpm](https://pnpm.io)。
+需要 **JDK 17**、Android SDK（`platform-tools`）、`PATH` 上的 **bun** 与 **pnpm**。
 
 ```bash
 git clone --recursive https://github.com/wuyhong715/rikkahub-agent-pure.git
 cd rikkahub-agent-pure
-
 ./gradlew :app:assembleDebug      # 产物：app/build/outputs/apk/debug/*.apk
 ./gradlew :app:testDebugUnitTest  # 单元测试
 ```
 
-或从最新 [Actions 运行](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml) 下载 `apk-debug` 产物。debug 变体带 `.debug` 后缀（`excp.rikkahub.debug`），可与上游 release 版**并存**安装。
-
 ### 上游功能
 
-上游 ExTV 的全部能力原样保留（80+ 设备工具、Shizuku/Termux、工作流与定时、内置浏览器、免密钥网页搜索、Linux 工作区、SSH、音乐、skills、Telegram 机器人、MCP、Doctor 体检、本地 LiteRT 模型、全套 provider）。完整清单见 **[上游 README](https://github.com/ExTV/rikkahub-agent#features)**。
+上游 ExTV 的全部能力原样保留（80+ 设备工具、Shizuku/Termux、工作流与定时、内置浏览器、免密钥网页搜索、Linux 工作区、SSH、音乐、skills、Telegram 机器人、MCP、Doctor 体检、本地模型、全套 provider）。完整清单见 **[上游 README](https://github.com/ExTV/rikkahub-agent#features)**。
+
+### 设计思路
+
+为什么要再 fork、七条自我约束、三种执行强度、以及刻意不做的事：见 **[docs/PURE-DESIGN.md](docs/PURE-DESIGN.md)**。
 
 ### 许可
 
