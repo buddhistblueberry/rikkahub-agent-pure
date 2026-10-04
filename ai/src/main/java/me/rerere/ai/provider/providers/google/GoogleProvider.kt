@@ -68,7 +68,6 @@ import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.ai.util.redactSecrets
-import me.rerere.ai.util.removeElements
 import me.rerere.ai.util.sanitizeForGeminiSchema
 import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
