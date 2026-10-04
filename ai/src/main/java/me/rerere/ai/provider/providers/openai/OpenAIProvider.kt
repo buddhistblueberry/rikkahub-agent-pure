@@ -3,6 +3,7 @@ package me.rerere.ai.provider.providers.openai
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
@@ -291,6 +292,19 @@ class OpenAIProvider(
             return@flow
         }
 
+        // DashScope's OpenAI-compatible base URL has no /images/generations - it answers 404
+        // while /chat/completions on the same host answers 401 - so Qwen-Image / Wanx go through
+        // the provider's native async task API instead. See DashScopeImageRequest for the shapes.
+        // Other providers never enter this branch, so their path is unchanged. One task already
+        // returns `n` images, so this is a single call, not collectSequentialImages.
+        if (isDashScopeBaseUrl(providerSetting.baseUrl)) {
+            val items = withContext(Dispatchers.IO) {
+                generateImageViaDashScope(providerSetting, params, key)
+            }
+            items.forEach { emit(it) }
+            return@flow
+        }
+
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", params.model.modelId)
@@ -333,6 +347,79 @@ class OpenAIProvider(
         }
 
         items.forEach { emit(it) }
+    }
+
+    /**
+     * DashScope (Aliyun Bailian) text-to-image via the native async task API:
+     * submit `text2image/image-synthesis` -> poll `GET /api/v1/tasks/{id}` -> download the
+     * result URLs. The OpenAI-compatible base URL this provider normally uses has no
+     * `/images/generations`, so the generic path 404s there (see [DashScopeImageRequest]).
+     *
+     * `n` is sent on the submit (DashScope accepts it), so one task returns several URLs at once
+     * - unlike the OpenRouter path, this is not N sequential single-image calls.
+     */
+    private suspend fun generateImageViaDashScope(
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageGenerationParams,
+        key: String,
+    ): List<ImageGenerationItem> {
+        val root = dashScopeNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
+
+        val submitBody = buildDashScopeImageRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            numOfImages = params.numOfImages,
+        ).mergeCustomBody(params.customBody)
+
+        val submitRequest = Request.Builder()
+            .url("$root$DASHSCOPE_IMAGE_SYNTHESIS_PATH")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("X-DashScope-Async", "enable")
+            .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val submitResponse = client.newCall(submitRequest).await()
+        val submitText = submitResponse.body?.string().orEmpty()
+        if (!submitResponse.isSuccessful) {
+            error("Failed to submit image task: ${submitResponse.code} $submitText")
+        }
+
+        val taskId = parseDashScopeTaskId(submitText)
+            ?: error("No task_id in DashScope response: $submitText")
+
+        val taskRequest = Request.Builder()
+            .url("$root${dashScopeTaskPath(taskId)}")
+            .addHeader("Authorization", "Bearer $key")
+            .build()
+
+        repeat(DASHSCOPE_POLL_ATTEMPTS) {
+            delay(DASHSCOPE_POLL_INTERVAL_MS)
+            val pollResponse = client.newCall(taskRequest).await()
+            val pollText = pollResponse.body?.string().orEmpty()
+            if (!pollResponse.isSuccessful) {
+                error("Failed to poll image task $taskId: ${pollResponse.code} $pollText")
+            }
+            when (parseDashScopeTaskStatus(pollText)) {
+                "SUCCEEDED" -> {
+                    val urls = parseDashScopeImageUrls(pollText)
+                    if (urls.isEmpty()) error("DashScope task $taskId succeeded with no images: $pollText")
+                    return urls.map { downloadImageAsBase64(it) }
+                }
+
+                "FAILED", "CANCELED", "UNKNOWN" -> error(
+                    "DashScope image task $taskId did not succeed: " +
+                        (parseDashScopeTaskMessage(pollText) ?: pollText),
+                )
+
+                // PENDING / RUNNING - keep polling.
+                else -> Unit
+            }
+        }
+        error("DashScope image task $taskId timed out after $DASHSCOPE_POLL_ATTEMPTS polls")
     }
 
     /**
