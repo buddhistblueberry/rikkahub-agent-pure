@@ -56,7 +56,7 @@ class GenerationHandlerTurnBudgetTest {
     fun turnBudget_clampedValueFitsInHolder() {
         // Verify that a clamped value from TermuxDefaults survives a round-trip through
         // the holder without loss (no cast / truncation hazard).
-        val clamped = TermuxDefaults.clampTurnBudgetMs(3_700_000L) // over max → should snap
+        val clamped = TermuxDefaults.clampTurnBudgetMs(TermuxDefaults.MAX_TURN_BUDGET_MS + 1L) // over max → should snap
         ToolRuntimeLimits.turnBudgetMs = clamped
         assertEquals(clamped, ToolRuntimeLimits.turnBudgetMs)
         assertEquals(TermuxDefaults.MAX_TURN_BUDGET_MS, ToolRuntimeLimits.turnBudgetMs)
