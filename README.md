@@ -1,31 +1,43 @@
 <div align="center">
 
-<img src="docs/icon.png" width="96" height="96" alt="RikkaHub Agent" style="border-radius: 24px" />
+<img src="docs/img/hero.png" width="100%" alt="RikkaHub Agent · Pure — your phone, automated and on a leash" />
 
-# RikkaHub Agent · Pure
-
-**Your phone, automated — and on a leash.**
-
-A fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) (itself a fork of [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)), hardened for long, unattended agent runs. It keeps the entire upstream feature set and adds one layer that answers a single question:
-
-> *Can this run for hours without blowing up the context — or the bill?*
+<br/>
 
 <p>
   <a href="https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml"><img src="https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml/badge.svg" alt="Build" /></a>
   <img src="https://img.shields.io/badge/platform-Android%208%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8+" />
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square" alt="AGPL-3.0" />
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
+  <img src="https://img.shields.io/badge/tests-2290%2B%20green-brightgreen?style=flat-square" alt="2,290+ tests" />
 </p>
 
-<a href="#what-the-pure-fork-adds">What's added</a> · <a href="#what-you-can-do-with-it">What it can do</a> · <a href="#getting-started">Get started</a> · <a href="#documentation">Docs</a> · <a href="#中文说明">简体中文</a>
+**RikkaHub Agent · Pure** is a hardening fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) — the on-device Android agent built on [RikkaHub](https://github.com/rikkahub/rikkahub). It keeps the *entire* upstream surface and adds one layer that answers a single question:
+
+> **Can this run for hours without blowing up the context — or the bill?**
+
+<a href="#why-another-fork">Why this fork</a> · <a href="#the-seven-additions">What's added</a> · <a href="#what-you-can-do-with-it">What it can do</a> · <a href="#screens">Screens</a> · <a href="#getting-started">Get started</a> · <a href="#documentation">Docs</a> · <a href="#中文说明">简体中文</a>
 
 </div>
 
 ---
 
-## What the Pure fork adds
+## Why another fork
 
-Upstream is already a capable on-device agent. Pure keeps **all of it** and adds seven things — every one **off by default**, and with the switch off the default path is unchanged.
+```
+rikkahub/rikkahub                     the original native Android LLM chat client
+   └─ ExTV/rikkahub-agent             adds the agent layer: device tools, workflows,
+        │                             shells (Shizuku/Termux), sub-agents, Telegram bot…
+        └─ wuyhong715/rikkahub-agent-pure    ★ this repo — the "Pure" hardening pass
+```
+
+Upstream's agent layer was built feature-first: the goal was to *add capabilities*, not to make a long unattended run survive its own output. Six things got in the way — every tool schema injected every turn; compaction that only fires on a token threshold; one `logcat` dump able to flood the context; sub-agents receiving only a bare `task` string; tokens counted but never attributed; and headless paths (cron, workflows) that auto-approved everything.
+
+Pure removes nothing. It keeps the whole upstream surface and makes a long run **survivable, observable and capped**.
+
+## The seven additions
+
+Every one of these is **off by default** — with the switch off, the default path is unchanged (several are byte-for-byte identical to upstream).
 
 | | Addition | What it gives you |
 |---|---|---|
@@ -41,7 +53,7 @@ Full detail — what each one does, the exact tool names, and where every switch
 
 ## What you can do with it
 
-**See where the money goes.** *"How much did sub-agents cost me this week?"* — the Statistics page groups the ledger by day / purpose / model / assistant and shows tok/s, and the orchestration tree lays out every parent → child dispatch. Cost is frozen at write time, so history does not shift when a provider changes its rates.
+**See where the money goes.** *"How much did sub-agents cost me this week?"* — the Statistics page groups the ledger by day / purpose / model / assistant and shows tok/s, and the orchestration tree lays out every parent → child dispatch. Cost is frozen at write time, so history doesn't shift when a provider changes its rates.
 
 **Cap a run.** Set an orchestration token budget on an assistant — it covers the parent turn *and* everything it fans out. A dispatch that would exceed it is refused **before** it starts, with a readable reason the model can act on. Each expert can carry its own ceiling.
 
@@ -54,6 +66,12 @@ Full detail — what each one does, the exact tool names, and where every switch
 **Wire up the boring stuff.** *"When I connect to the office WiFi, POST my status to this API."* Workflow actions can pass data to each other and pull credentials from an encrypted store, so tokens never sit in the workflow definition.
 
 **Travel light.** Turn on the tool palette and the agent *searches* for the tool it needs, instead of carrying every schema on every turn.
+
+## Screens
+
+| Chat | Providers | Assistants |
+|:---:|:---:|:---:|
+| <img src="docs/img/chat.png" width="230" alt="Chat" /> | <img src="docs/img/providers.png" width="230" alt="Providers" /> | <img src="docs/img/assistants.png" width="230" alt="Assistants" /> |
 
 ## Getting started
 
@@ -77,7 +95,7 @@ It is a **signed debug build** (`excp.rikkahub.debug`): it installs **side by si
 
 **Settings → Assistant → tap your assistant → Local Tools** — flip the groups you want. If you turn nothing on, the app behaves exactly like vanilla RikkaHub.
 
-Inside an enabled group you can now switch **individual tools** off, not just the whole group. And **Settings → Sub-agent profiles → Tool palette** lets you search the whole tool directory (56 groups, ~180 tools) to find where a tool lives before enabling it.
+Inside an enabled group you can now switch **individual tools** off, not just the whole group. And **Settings → Sub-agent profiles → Tool palette** lets you search the whole tool directory (57 groups, ~180 tools) to find where a tool lives before enabling it.
 
 ### 3 · Your first conversation
 
@@ -141,9 +159,9 @@ cd rikkahub-agent-pure
 | | |
 |---|---|
 | **Package** | `excp.rikkahub` (debug: `excp.rikkahub.debug`) |
-| **Version** | 2.5.1 (versionCode 187) |
+| **Version** | 2.5.1-pure.2 (versionCode 189) |
 | **Stack** | Kotlin · Jetpack Compose · Room |
-| **Tests** | 2,260+ unit tests, green in CI |
+| **Tests** | 2,290+ unit tests, green in CI |
 
 ## Documentation
 
@@ -178,7 +196,15 @@ GNU AGPL-3.0, inherited from upstream. See [LICENSE](LICENSE).
 
 ## 中文说明
 
+<img src="docs/img/hero.png" width="100%" alt="RikkaHub Agent · Pure" />
+
 **RikkaHub Agent · Pure** —— 基于 [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent)（其上游为 [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)）的强化 fork，**面向长时间无人值守的 agent 运行**。它完整保留上游功能，只加一层，回答一个问题：*能不能跑几个小时，而不炸上下文、不炸钱包？*
+
+### 为什么再 fork
+
+上游的 agent 层是"功能优先"建起来的——目标是**加能力**，而不是让一次长跑能扛住自己的输出。六个拦路虎：每轮都注入所有已启用工具的 schema；压缩只在 token 阈值上触发；一个 `logcat` 转储就能灌爆上下文；子 agent 只拿到一个光秃秃的 `task` 字符串；token 有计数却从不归属；无头路径（cron、工作流）会自动批准一切。
+
+Pure 不删任何功能，只让长跑变得**可存活、可观察、可封顶**。
 
 ### 多了什么（全部默认关）
 
@@ -228,6 +254,13 @@ cd rikkahub-agent-pure
 ./gradlew :app:assembleDebug      # 产物：app/build/outputs/apk/debug/*.apk
 ./gradlew :app:testDebugUnitTest  # 单元测试
 ```
+
+| | |
+|---|---|
+| **包名** | `excp.rikkahub`（debug：`excp.rikkahub.debug`） |
+| **版本** | 2.5.1-pure.2（versionCode 189） |
+| **技术栈** | Kotlin · Jetpack Compose · Room |
+| **测试** | 2,290+ 单元测试，CI 全绿 |
 
 ### 上游功能
 
