@@ -1,21 +1,26 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -32,7 +37,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
@@ -50,9 +58,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,7 +76,8 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowDown01
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.Tools
+import me.rerere.hugeicons.stroke.PencilEdit01
+import me.rerere.hugeicons.stroke.Robot01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.agentdef.AgentDefinition
 import me.rerere.rikkahub.data.agentdef.AgentDefinitionDraft
@@ -180,20 +191,47 @@ fun SettingSubAgentsPage(
                         Column(
                             modifier = Modifier
                                 .fillParentMaxHeight(0.8f)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .padding(horizontal = 32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = HugeIcons.Robot01,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(34.dp),
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = stringResource(R.string.setting_sub_agents_page_empty),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.titleMedium,
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = stringResource(R.string.setting_sub_agents_page_empty_hint),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center,
                             )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Button(
+                                onClick = {
+                                    editState.open(AgentDefinitionDraft(id = Uuid.random().toString()))
+                                },
+                            ) {
+                                Icon(HugeIcons.Add01, null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.setting_sub_agents_page_add))
+                            }
                         }
                     }
                 } else {
@@ -311,9 +349,35 @@ private fun AgentDefinitionCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // The identity tile doubles as the status light: a live expert wears the primary
+                // container, a disabled one goes muted, so the list reads at a glance.
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (definition.enabled) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            }
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Robot01,
+                        contentDescription = null,
+                        tint = if (definition.enabled) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -349,7 +413,7 @@ private fun AgentDefinitionCard(
                     }
                 }
                 IconButton(onClick = onEdit) {
-                    Icon(HugeIcons.Tools, stringResource(R.string.setting_sub_agents_page_edit))
+                    Icon(HugeIcons.PencilEdit01, stringResource(R.string.setting_sub_agents_page_edit))
                 }
             }
         }
@@ -374,23 +438,33 @@ private fun SurfaceGroup(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(text = title, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    text = if (own) ownSummary else subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = if (own) ownSummary else subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        // D10b - a two-state segment ("Inherit / Custom") names the tri-state in words, where the
+        // old bare switch left the user guessing which way was "off" and what "off" even meant.
+        val options = listOf(
+            stringResource(R.string.setting_sub_agents_page_surface_mode_inherit),
+            stringResource(R.string.setting_sub_agents_page_surface_mode_own),
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, label ->
+                val selected = (index == 1) == own
+                SegmentedButton(
+                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                    selected = selected,
+                    onClick = {
+                        if (!selected) onOwnChange(index == 1)
+                    },
+                ) {
+                    Text(label)
+                }
             }
-            Switch(checked = own, onCheckedChange = onOwnChange)
         }
         if (own) {
             content()
@@ -581,6 +655,27 @@ private fun localToolTitle(option: LocalToolOption): String = stringResource(
     },
 )
 
+/**
+ * D10b - one titled card per concern in the edit sheet (identity, model, prompt, surface), so a
+ * long form reads as a few blocks instead of one undifferentiated scroll.
+ */
+@Composable
+private fun SheetSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
 @Composable
 private fun AgentDefinitionEditSheet(
     draft: AgentDefinitionDraft,
@@ -641,367 +736,382 @@ private fun AgentDefinitionEditSheet(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedTextField(
-                    value = draft.name,
-                    onValueChange = { onEdit(draft.copy(name = it)) },
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_name)) },
-                    singleLine = true,
-                    isError = nameDuplicate,
-                    supportingText = if (nameDuplicate) {
-                        { Text(stringResource(R.string.setting_sub_agents_page_name_duplicate)) }
-                    } else null,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = draft.description,
-                    onValueChange = { onEdit(draft.copy(description = it)) },
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_description)) },
-                    supportingText = { Text(stringResource(R.string.setting_sub_agents_page_description_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                FormItem(
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_enabled)) },
-                    tail = {
-                        Switch(
-                            checked = draft.enabled,
-                            onCheckedChange = { onEdit(draft.copy(enabled = it)) },
-                        )
-                    },
-                )
-
-                FormItem(
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_model)) },
-                    description = { Text(stringResource(R.string.setting_sub_agents_page_model_desc)) },
-                    content = {
-                        ModelSelector(
-                            // The store keeps the model id as its canonical Uuid string; the picker
-                            // speaks Uuid. A value that no longer parses (hand-edited data) reads as
-                            // "no model chosen" here rather than crashing the sheet.
-                            modelId = draft.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
-                            providers = providers,
-                            type = ModelType.CHAT,
-                            allowClear = true,
-                            onSelect = { model ->
-                                // ModelSelector's clear button calls onSelect(Model()), whose
-                                // default modelId is "" - no real model ever has a blank
-                                // provider model id, so that's the clear signal.
-                                onEdit(
-                                    draft.copy(
-                                        modelId = model.id
-                                            .takeIf { model.modelId.isNotBlank() }
-                                            ?.toString(),
-                                    ),
-                                )
-                            },
-                        )
-                    },
-                )
-
-                OutlinedTextField(
-                    value = draft.systemPrompt,
-                    onValueChange = { onEdit(draft.copy(systemPrompt = it)) },
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt)) },
-                    supportingText = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt_hint)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    minLines = 4,
-                )
-
-                // P2-07 — the expert's own orchestration ceiling. A blank field stores null,
-                // which means "inherit the parent assistant's budget"; a positive number
-                // overrides it for any dispatch that names this expert.
-                OutlinedTextField(
-                    value = draft.tokenBudget?.toString() ?: "",
-                    onValueChange = { text ->
-                        onEdit(
-                            draft.copy(
-                                tokenBudget = if (text.isBlank()) {
-                                    null
-                                } else {
-                                    text.toLongOrNull()?.takeIf { it > 0 }
-                                },
-                            ),
-                        )
-                    },
-                    label = { Text(stringResource(R.string.setting_sub_agents_page_token_budget)) },
-                    supportingText = { Text(stringResource(R.string.setting_sub_agents_page_token_budget_hint)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Text(
-                    text = stringResource(R.string.setting_sub_agents_page_surface_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.setting_sub_agents_page_surface_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                // ---- P2-05 palette: the local tool directory, searchable ------------------
-                // Built from the live factory, one group at a time: grouping is what gives every
-                // row an owner ("which group is this tool in?") without re-deriving the factory's
-                // if/else ladder here. 56 calls, all cheap object construction, once per sheet.
-                // A failure hides the section instead of taking the sheet down with it.
-                val localToolFactory = koinInject<LocalTools>()
-                val toolPalette = remember {
-                    runCatching {
-                        LocalToolPalette.build(
-                            LocalToolGroups.all.map { group ->
-                                LocalToolInventory(
-                                    group = group,
-                                    tools = localToolFactory.getTools(listOf(group)),
-                                )
-                            },
-                        )
-                    }.getOrNull()
-                }
-                var paletteQuery by rememberSaveable { mutableStateOf("") }
-                if (toolPalette != null) {
-                    // An inherited expert has no list to read: the sheet cannot see the parent
-                    // assistant's groups, so it treats "inherit" as "everything on" - the same
-                    // convention the disabled-tool candidate pool below uses.
-                    val effectiveGroups = draft.localTools ?: LocalToolGroups.all
-                    Text(
-                        text = stringResource(R.string.setting_sub_agents_page_palette_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Text(
-                        text = stringResource(R.string.setting_sub_agents_page_palette_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                // ---- identity ------------------------------------------------------------
+                SheetSection(title = stringResource(R.string.setting_sub_agents_page_section_identity)) {
                     OutlinedTextField(
-                        value = paletteQuery,
-                        onValueChange = { paletteQuery = it },
-                        label = { Text(stringResource(R.string.setting_sub_agents_page_palette_search)) },
+                        value = draft.name,
+                        onValueChange = { onEdit(draft.copy(name = it)) },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_name)) },
+                        singleLine = true,
+                        isError = nameDuplicate,
+                        supportingText = if (nameDuplicate) {
+                            { Text(stringResource(R.string.setting_sub_agents_page_name_duplicate)) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    OutlinedTextField(
+                        value = draft.description,
+                        onValueChange = { onEdit(draft.copy(description = it)) },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_description)) },
+                        supportingText = { Text(stringResource(R.string.setting_sub_agents_page_description_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    FormItem(
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_enabled)) },
+                        tail = {
+                            Switch(
+                                checked = draft.enabled,
+                                onCheckedChange = { onEdit(draft.copy(enabled = it)) },
+                            )
+                        },
+                    )
+                }
+
+                // ---- model and the orchestration ceiling ---------------------------------
+                SheetSection(title = stringResource(R.string.setting_sub_agents_page_section_model)) {
+                    FormItem(
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_model)) },
+                        description = { Text(stringResource(R.string.setting_sub_agents_page_model_desc)) },
+                        content = {
+                            ModelSelector(
+                                // The store keeps the model id as its canonical Uuid string; the picker
+                                // speaks Uuid. A value that no longer parses (hand-edited data) reads as
+                                // "no model chosen" here rather than crashing the sheet.
+                                modelId = draft.modelId?.let { runCatching { Uuid.parse(it) }.getOrNull() },
+                                providers = providers,
+                                type = ModelType.CHAT,
+                                allowClear = true,
+                                onSelect = { model ->
+                                    // ModelSelector's clear button calls onSelect(Model()), whose
+                                    // default modelId is "" - no real model ever has a blank
+                                    // provider model id, so that's the clear signal.
+                                    onEdit(
+                                        draft.copy(
+                                            modelId = model.id
+                                                .takeIf { model.modelId.isNotBlank() }
+                                                ?.toString(),
+                                        ),
+                                    )
+                                },
+                            )
+                        },
+                    )
+
+                    // P2-07 — the expert's own orchestration ceiling. A blank field stores null,
+                    // which means "inherit the parent assistant's budget"; a positive number
+                    // overrides it for any dispatch that names this expert.
+                    OutlinedTextField(
+                        value = draft.tokenBudget?.toString() ?: "",
+                        onValueChange = { text ->
+                            onEdit(
+                                draft.copy(
+                                    tokenBudget = if (text.isBlank()) {
+                                        null
+                                    } else {
+                                        text.toLongOrNull()?.takeIf { it > 0 }
+                                    },
+                                ),
+                            )
+                        },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_token_budget)) },
+                        supportingText = { Text(stringResource(R.string.setting_sub_agents_page_token_budget_hint)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (paletteQuery.isBlank()) {
+                }
+
+                // ---- system prompt -------------------------------------------------------
+                SheetSection(title = stringResource(R.string.setting_sub_agents_page_system_prompt)) {
+                    OutlinedTextField(
+                        value = draft.systemPrompt,
+                        onValueChange = { onEdit(draft.copy(systemPrompt = it)) },
+                        label = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt)) },
+                        supportingText = { Text(stringResource(R.string.setting_sub_agents_page_system_prompt_hint)) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                        minLines = 4,
+                    )
+                }
+
+                // ---- tool surface --------------------------------------------------------
+                SheetSection(title = stringResource(R.string.setting_sub_agents_page_surface_title)) {
+                    Text(
+                        text = stringResource(R.string.setting_sub_agents_page_surface_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    // ---- P2-05 palette: the local tool directory, searchable ------------------
+                    // Built from the live factory, one group at a time: grouping is what gives every
+                    // row an owner ("which group is this tool in?") without re-deriving the factory's
+                    // if/else ladder here. 56 calls, all cheap object construction, once per sheet.
+                    // A failure hides the section instead of taking the sheet down with it.
+                    val localToolFactory = koinInject<LocalTools>()
+                    val toolPalette = remember {
+                        runCatching {
+                            LocalToolPalette.build(
+                                LocalToolGroups.all.map { group ->
+                                    LocalToolInventory(
+                                        group = group,
+                                        tools = localToolFactory.getTools(listOf(group)),
+                                    )
+                                },
+                            )
+                        }.getOrNull()
+                    }
+                    var paletteQuery by rememberSaveable { mutableStateOf("") }
+                    if (toolPalette != null) {
+                        // An inherited expert has no list to read: the sheet cannot see the parent
+                        // assistant's groups, so it treats "inherit" as "everything on" - the same
+                        // convention the per-tool opt-out list below uses.
+                        val effectiveGroups = draft.localTools ?: LocalToolGroups.all
                         Text(
-                            text = stringResource(
-                                R.string.setting_sub_agents_page_palette_summary,
-                                toolPalette.groups.size,
-                                toolPalette.size,
-                            ),
+                            text = stringResource(R.string.setting_sub_agents_page_palette_title),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = stringResource(R.string.setting_sub_agents_page_palette_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    } else {
-                        val hits = toolPalette.matchAll(paletteQuery).take(TOOL_PALETTE_MAX_HITS)
-                        if (hits.isEmpty()) {
+                        OutlinedTextField(
+                            value = paletteQuery,
+                            onValueChange = { paletteQuery = it },
+                            label = { Text(stringResource(R.string.setting_sub_agents_page_palette_search)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (paletteQuery.isBlank()) {
                             Text(
-                                text = stringResource(R.string.setting_sub_agents_page_palette_no_match),
+                                text = stringResource(
+                                    R.string.setting_sub_agents_page_palette_summary,
+                                    toolPalette.groups.size,
+                                    toolPalette.size,
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
-                            hits.forEach { hit ->
-                                ToolPaletteRow(
-                                    hit = hit,
-                                    groupTitle = localToolTitle(hit.group),
-                                    groupEnabled = effectiveGroups.contains(hit.group),
-                                    disabled = draft.disabledLocalTools.orEmpty().contains(hit.name),
-                                    onDisabledChange = { disabled ->
-                                        onEdit(draft.toggleDisabledTool(hit.name, disabled))
-                                    },
-                                    onEnableGroup = {
-                                        // Owning an empty set and adding exactly this group: the
-                                        // user asked for one group, not for a guessed starting set.
-                                        onEdit(draft.ownLocalTools().toggleLocalTool(hit.group, true))
-                                    },
+                            val hits = toolPalette.matchAll(paletteQuery).take(TOOL_PALETTE_MAX_HITS)
+                            if (hits.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.setting_sub_agents_page_palette_no_match),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                hits.forEach { hit ->
+                                    ToolPaletteRow(
+                                        hit = hit,
+                                        groupTitle = localToolTitle(hit.group),
+                                        groupEnabled = effectiveGroups.contains(hit.group),
+                                        disabled = draft.disabledLocalTools.orEmpty().contains(hit.name),
+                                        onDisabledChange = { disabled ->
+                                            onEdit(draft.toggleDisabledTool(hit.name, disabled))
+                                        },
+                                        onEnableGroup = {
+                                            // Owning an empty set and adding exactly this group: the
+                                            // user asked for one group, not for a guessed starting set.
+                                            onEdit(draft.ownLocalTools().toggleLocalTool(hit.group, true))
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ---- local tool groups ---------------------------------------------------
+                    SurfaceGroup(
+                        title = stringResource(R.string.setting_sub_agents_page_surface_tools),
+                        // D9 - in inherit mode this is the parent's WHOLE surface, decided at
+                        // dispatch time, not "no tools".
+                        subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit_tools),
+                        own = draft.ownsLocalTools,
+                        ownSummary = stringResource(
+                            R.string.setting_sub_agents_page_surface_own_count,
+                            draft.localTools?.size ?: 0,
+                        ),
+                        onOwnChange = { own ->
+                            onEdit(if (own) draft.ownLocalTools() else draft.inheritLocalTools())
+                        },
+                    ) {
+                        LocalToolGroups.all.forEach { option ->
+                            PickerRow(
+                                label = localToolTitle(option),
+                                checked = draft.localTools.orEmpty().contains(option),
+                                onCheckedChange = { onEdit(draft.toggleLocalTool(option, it)) },
+                            )
+                        }
+                    }
+
+                    // ---- per-tool opt-outs ---------------------------------------------------
+                    // P2-02 semantics: a name in this set stays hidden even while its group is on.
+                    // D10b - this used to re-list every tool in the catalogue under a second set of
+                    // switches, which duplicated the palette above and buried the real question
+                    // ("what did I switch off?"). It now shows only the names actually excluded;
+                    // the palette is where a tool gets excluded in the first place.
+                    SurfaceGroup(
+                        title = stringResource(R.string.setting_sub_agents_page_surface_disabled_tools),
+                        subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                        own = draft.ownsDisabledTools,
+                        ownSummary = stringResource(
+                            R.string.setting_sub_agents_page_surface_disabled_count,
+                            draft.disabledLocalTools?.size ?: 0,
+                        ),
+                        onOwnChange = { own ->
+                            onEdit(if (own) draft.ownDisabledTools() else draft.inheritDisabledTools())
+                        },
+                    ) {
+                        val excluded = draft.disabledLocalTools.orEmpty().sorted()
+                        if (excluded.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.setting_sub_agents_page_surface_no_disabled),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            excluded.forEach { toolName ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = toolName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    TextButton(
+                                        onClick = { onEdit(draft.toggleDisabledTool(toolName, false)) },
+                                    ) {
+                                        Text(stringResource(R.string.setting_sub_agents_page_surface_restore))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ---- MCP servers ---------------------------------------------------------
+                    val enabledServers = mcpServers.filter { it.commonOptions.enable }
+                    SurfaceGroup(
+                        title = stringResource(R.string.setting_sub_agents_page_surface_mcp),
+                        subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                        own = draft.ownsMcpServers,
+                        ownSummary = stringResource(
+                            R.string.setting_sub_agents_page_surface_own_count,
+                            draft.mcpServers?.size ?: 0,
+                        ),
+                        onOwnChange = { own ->
+                            onEdit(if (own) draft.ownMcpServers() else draft.inheritMcpServers())
+                        },
+                    ) {
+                        if (enabledServers.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.setting_sub_agents_page_surface_no_mcp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            enabledServers.forEach { server ->
+                                val id = server.id.toString()
+                                PickerRow(
+                                    label = server.commonOptions.name,
+                                    checked = draft.mcpServers.orEmpty().contains(id),
+                                    onCheckedChange = { onEdit(draft.toggleMcpServer(id, it)) },
                                 )
                             }
                         }
                     }
-                }
 
-                // ---- local tool groups ----------------------------------------------------
-                SurfaceGroup(
-                    title = stringResource(R.string.setting_sub_agents_page_surface_tools),
-                    // D9 - in inherit mode this is the parent's WHOLE surface, decided at
-                    // dispatch time, not "no tools".
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit_tools),
-                    own = draft.ownsLocalTools,
-                    ownSummary = stringResource(
-                        R.string.setting_sub_agents_page_surface_own_count,
-                        draft.localTools?.size ?: 0,
-                    ),
-                    onOwnChange = { own ->
-                        onEdit(if (own) draft.ownLocalTools() else draft.inheritLocalTools())
-                    },
-                ) {
-                    LocalToolGroups.all.forEach { option ->
-                        PickerRow(
-                            label = localToolTitle(option),
-                            checked = draft.localTools.orEmpty().contains(option),
-                            onCheckedChange = { onEdit(draft.toggleLocalTool(option, it)) },
-                        )
-                    }
-                }
-
-                // ---- per-tool opt-outs ----------------------------------------------------
-                // P2-02 semantics: a name in this set stays hidden even while its group is on. The
-                // candidate names come from the live factory so they cannot drift from the surface
-                // the model actually receives; when the expert inherits its groups there is no
-                // parent list to enumerate, so the whole catalogue is used as the candidate pool.
-                SurfaceGroup(
-                    title = stringResource(R.string.setting_sub_agents_page_surface_disabled_tools),
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
-                    own = draft.ownsDisabledTools,
-                    ownSummary = stringResource(
-                        R.string.setting_sub_agents_page_surface_own_count,
-                        draft.disabledLocalTools?.size ?: 0,
-                    ),
-                    onOwnChange = { own ->
-                        onEdit(if (own) draft.ownDisabledTools() else draft.inheritDisabledTools())
-                    },
-                ) {
-                    val toolNames = remember(draft.localTools) {
-                        runCatching {
-                            localToolFactory.getTools(draft.localTools ?: LocalToolGroups.all)
-                                .map { it.name }
-                                .distinct()
-                                .sorted()
-                        }.getOrDefault(emptyList())
-                    }
-                    if (toolNames.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.setting_sub_agents_page_surface_no_tools),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        toolNames.forEach { toolName ->
-                            PickerRow(
-                                label = toolName,
-                                checked = draft.disabledLocalTools.orEmpty().contains(toolName),
-                                onCheckedChange = { onEdit(draft.toggleDisabledTool(toolName, it)) },
-                            )
-                        }
-                    }
-                }
-
-                // ---- MCP servers ----------------------------------------------------------
-                val enabledServers = mcpServers.filter { it.commonOptions.enable }
-                SurfaceGroup(
-                    title = stringResource(R.string.setting_sub_agents_page_surface_mcp),
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
-                    own = draft.ownsMcpServers,
-                    ownSummary = stringResource(
-                        R.string.setting_sub_agents_page_surface_own_count,
-                        draft.mcpServers?.size ?: 0,
-                    ),
-                    onOwnChange = { own ->
-                        onEdit(if (own) draft.ownMcpServers() else draft.inheritMcpServers())
-                    },
-                ) {
-                    if (enabledServers.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.setting_sub_agents_page_surface_no_mcp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        enabledServers.forEach { server ->
-                            val id = server.id.toString()
-                            PickerRow(
-                                label = server.commonOptions.name,
-                                checked = draft.mcpServers.orEmpty().contains(id),
-                                onCheckedChange = { onEdit(draft.toggleMcpServer(id, it)) },
-                            )
-                        }
-                    }
-                }
-
-                // ---- skills ---------------------------------------------------------------
-                SurfaceGroup(
-                    title = stringResource(R.string.setting_sub_agents_page_surface_skills),
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
-                    own = draft.ownsSkills,
-                    ownSummary = stringResource(
-                        R.string.setting_sub_agents_page_surface_own_count,
-                        draft.skills?.size ?: 0,
-                    ),
-                    onOwnChange = { own ->
-                        onEdit(if (own) draft.ownSkills() else draft.inheritSkills())
-                    },
-                ) {
-                    if (skills.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.setting_sub_agents_page_surface_no_skills),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    } else {
-                        skills.forEach { skill ->
-                            PickerRow(
-                                label = skill.name,
-                                description = skill.description.ifBlank { null },
-                                checked = draft.skills.orEmpty().contains(skill.name),
-                                onCheckedChange = { onEdit(draft.toggleSkill(skill.name, it)) },
-                            )
-                        }
-                    }
-                }
-
-                // ---- D9 namespace ---------------------------------------------------------
-                SurfaceGroup(
-                    title = stringResource(R.string.setting_sub_agents_page_surface_namespace),
-                    subtitle = stringResource(R.string.setting_sub_agents_page_surface_namespace_off),
-                    own = draft.namespaceOn,
-                    ownSummary = draft.namespacePreview()
-                        ?: stringResource(R.string.setting_sub_agents_page_surface_namespace_unsaved),
-                    onOwnChange = { own ->
-                        onEdit(
-                            if (own) draft.withNamespace(draft.suggestedNamespace())
-                            else draft.clearNamespace(),
-                        )
-                    },
-                ) {
-                    OutlinedTextField(
-                        value = draft.namespaceInput.orEmpty(),
-                        onValueChange = { onEdit(draft.withNamespace(it)) },
-                        label = { Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_label)) },
-                        singleLine = true,
-                        isError = namespaceProblem == NamespaceProblem.EMPTY,
-                        supportingText = {
-                            Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_hint))
+                    // ---- skills --------------------------------------------------------------
+                    SurfaceGroup(
+                        title = stringResource(R.string.setting_sub_agents_page_surface_skills),
+                        subtitle = stringResource(R.string.setting_sub_agents_page_surface_inherit),
+                        own = draft.ownsSkills,
+                        ownSummary = stringResource(
+                            R.string.setting_sub_agents_page_surface_own_count,
+                            draft.skills?.size ?: 0,
+                        ),
+                        onOwnChange = { own ->
+                            onEdit(if (own) draft.ownSkills() else draft.inheritSkills())
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    draft.namespacePreview()?.let { preview ->
-                        Text(
-                            text = stringResource(R.string.setting_sub_agents_page_surface_namespace_preview, preview),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    ) {
+                        if (skills.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.setting_sub_agents_page_surface_no_skills),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            skills.forEach { skill ->
+                                PickerRow(
+                                    label = skill.name,
+                                    description = skill.description.ifBlank { null },
+                                    checked = draft.skills.orEmpty().contains(skill.name),
+                                    onCheckedChange = { onEdit(draft.toggleSkill(skill.name, it)) },
+                                )
+                            }
+                        }
                     }
-                    when (namespaceProblem) {
-                        NamespaceProblem.EMPTY -> Text(
-                            text = stringResource(R.string.setting_sub_agents_page_surface_namespace_error_empty),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
 
-                        NamespaceProblem.DUPLICATE -> Text(
-                            text = stringResource(
-                                R.string.setting_sub_agents_page_surface_namespace_error_duplicate,
-                                draft.namespaceSlug().orEmpty(),
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                    // ---- D9 namespace --------------------------------------------------------
+                    SurfaceGroup(
+                        title = stringResource(R.string.setting_sub_agents_page_surface_namespace),
+                        subtitle = stringResource(R.string.setting_sub_agents_page_surface_namespace_off),
+                        own = draft.namespaceOn,
+                        ownSummary = draft.namespacePreview()
+                            ?: stringResource(R.string.setting_sub_agents_page_surface_namespace_unsaved),
+                        onOwnChange = { own ->
+                            onEdit(
+                                if (own) draft.withNamespace(draft.suggestedNamespace())
+                                else draft.clearNamespace(),
+                            )
+                        },
+                    ) {
+                        OutlinedTextField(
+                            value = draft.namespaceInput.orEmpty(),
+                            onValueChange = { onEdit(draft.withNamespace(it)) },
+                            label = { Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_label)) },
+                            singleLine = true,
+                            isError = namespaceProblem == NamespaceProblem.EMPTY,
+                            supportingText = {
+                                Text(stringResource(R.string.setting_sub_agents_page_surface_namespace_hint))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
                         )
+                        draft.namespacePreview()?.let { preview ->
+                            Text(
+                                text = stringResource(R.string.setting_sub_agents_page_surface_namespace_preview, preview),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        when (namespaceProblem) {
+                            NamespaceProblem.EMPTY -> Text(
+                                text = stringResource(R.string.setting_sub_agents_page_surface_namespace_error_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
 
-                        null -> Unit
+                            NamespaceProblem.DUPLICATE -> Text(
+                                text = stringResource(
+                                    R.string.setting_sub_agents_page_surface_namespace_error_duplicate,
+                                    draft.namespaceSlug().orEmpty(),
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+
+                            null -> Unit
+                        }
                     }
                 }
             }
@@ -1009,11 +1119,12 @@ private fun AgentDefinitionEditSheet(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.setting_sub_agents_page_cancel))
                 }
-                TextButton(
+                Button(
                     onClick = onConfirm,
                     enabled = draft.canSave(existingDefinitions),
                 ) {

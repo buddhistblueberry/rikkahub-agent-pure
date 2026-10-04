@@ -1,9 +1,13 @@
 package me.rerere.rikkahub.ui.pages.stats
 
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.ArrowDown01
+import me.rerere.hugeicons.stroke.ArrowUp01
 import me.rerere.hugeicons.stroke.ChartColumn
-import me.rerere.hugeicons.stroke.Cpu
+import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.Message01
+import me.rerere.hugeicons.stroke.Refresh03
+import me.rerere.hugeicons.stroke.Robot01
 import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.hugeicons.stroke.Zap
 import androidx.compose.foundation.Canvas
@@ -41,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
@@ -118,11 +123,16 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                     }
                 }
                 item {
-                    StatsGrid(
-                        stats = stats,
-                        ledger = ledgerStats,
+                    Column(
                         modifier = Modifier.padding(horizontal = 8.dp),
-                    )
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        StatsSectionHeader(
+                            icon = HugeIcons.ChartColumn,
+                            title = stringResource(R.string.stats_page_overview_title),
+                        )
+                        StatsOverview(stats = stats, ledger = ledgerStats)
+                    }
                 }
                 ledgerStats?.let { ledger ->
                     item {
@@ -238,6 +248,17 @@ private fun DailyUsageChartCard(
                     val slot = size.width / days.size
                     val barWidth = (slot * 0.62f).coerceAtLeast(1f)
                     val gap = (slot - barWidth) / 2f
+                    // D10b - a soft guide behind the busiest day, so the eye lands on the peak
+                    // before it has to read a number off the axis.
+                    val busiestIndex = days.indexOfFirst { it == busiest }
+                    if (busiestIndex >= 0) {
+                        drawRoundRect(
+                            color = lineColor.copy(alpha = 0.10f),
+                            topLeft = Offset(busiestIndex * slot + gap * 0.25f, 0f),
+                            size = Size(barWidth * 1.5f, size.height),
+                            cornerRadius = CornerRadius(6.dp.toPx()),
+                        )
+                    }
                     days.forEachIndexed { index, day ->
                         val x = index * slot + gap
                         val inputHeight = size.height * (day.inputTokens.toFloat() / maxTokens.toFloat())
@@ -281,20 +302,29 @@ private fun DailyUsageChartCard(
                     }
                 }
 
+                // D10b - a handful of date ticks rather than only the two ends, so a bar in the
+                // middle of the window can be placed on the calendar without counting slots.
+                val tickIndices = remember(days.size) {
+                    val tickCount = minOf(5, days.size)
+                    if (tickCount <= 1) {
+                        listOf(0)
+                    } else {
+                        (0 until tickCount)
+                            .map { i -> i * (days.size - 1) / (tickCount - 1) }
+                            .distinct()
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = days.first().key,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = days.last().key,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    tickIndices.forEach { index ->
+                        Text(
+                            text = days[index].key.takeLast(5),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 Row(
@@ -344,111 +374,203 @@ private fun LegendDot(color: Color, label: String) {
     }
 }
 
+/**
+ * D10b - one heading style for every grouped block on the page, so the overview, ledger and
+ * orchestration sections read as siblings rather than three differently-styled headers.
+ */
 @Composable
-private fun StatsGrid(stats: AppStats, ledger: LedgerStatsView?, modifier: Modifier = Modifier) {
-    // D1 - the token cards read the ledger's grand total, the same source the section below
-    // uses, so the two can never disagree. Counts (conversations / messages / launches) stay on
-    // the message DB. `ledger` is null until it loads (or if the read fails); the cards then
-    // fall back to the old `message.usage` numbers instead of blanking out.
+private fun StatsSectionHeader(
+    icon: ImageVector,
+    title: String,
+    trailing: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        if (trailing != null) {
+            Text(
+                text = trailing,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** One cell of the overview grid: an icon, a big number and the label under it. */
+private data class OverviewMetric(
+    val icon: ImageVector,
+    val label: String,
+    val value: String,
+)
+
+/**
+ * D10b - the overview is a two-column grid of paired cards rather than a stack of full-width ones.
+ * The token figures read the ledger's grand total (D1), the same source the section below uses, so
+ * the two can never disagree; the counts (conversations / messages / launches) stay on the message
+ * DB. `ledger` is null until it loads (or if the read fails), and the cards then fall back to the
+ * old `message.usage` numbers instead of blanking out. A run that leaves an odd metric (launch
+ * count) gets a full-width row with the icon beside the number, so it never reads as a half-empty
+ * card.
+ */
+@Composable
+private fun StatsOverview(stats: AppStats, ledger: LedgerStatsView?, modifier: Modifier = Modifier) {
     val total = ledger?.total
     val promptTokens = total?.inputTokens ?: stats.totalPromptTokens
     val completionTokens = total?.outputTokens ?: stats.totalCompletionTokens
     val cachedTokens = total?.cacheHitTokens ?: stats.totalCachedTokens
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            StatCard(
-                modifier = Modifier.weight(1f),
-                icon = HugeIcons.ChartColumn,
-                label = stringResource(R.string.stats_page_total_conversations),
-                value = formatCount(stats.totalConversations.toLong()),
-            )
-            StatCard(
-                modifier = Modifier.weight(1f),
-                icon = HugeIcons.Message01,
-                label = stringResource(R.string.stats_page_total_messages),
-                value = formatCount(stats.totalMessages.toLong()),
-            )
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            StatCard(
-                modifier = Modifier.weight(1f),
-                icon = HugeIcons.Cpu,
-                label = stringResource(R.string.stats_page_input_tokens),
-                value = formatTokens(promptTokens),
-            )
-            StatCard(
-                modifier = Modifier.weight(1f),
-                icon = HugeIcons.Cpu,
-                label = stringResource(R.string.stats_page_output_tokens),
-                value = formatTokens(completionTokens),
-            )
-        }
+    // Input tokens already include the cached ones, so the rate is the share of input served from
+    // cache (issue #23) - what lets a user tell an unstable prompt prefix apart from an inherently
+    // expensive workload. Null when nothing reported cache fields.
+    val cacheHitRate = if (cachedTokens > 0 && promptTokens > 0) {
+        "${cachedTokens.coerceAtMost(promptTokens) * 100 / promptTokens}%"
+    } else {
+        null
+    }
+
+    // `listOfNotNull` (not `buildList`) so every `stringResource` is evaluated in the composable
+    // scope at this call site rather than inside a non-composable builder lambda.
+    val metrics = listOfNotNull(
+        OverviewMetric(
+            icon = HugeIcons.ChartColumn,
+            label = stringResource(R.string.stats_page_total_conversations),
+            value = formatCount(stats.totalConversations.toLong()),
+        ),
+        OverviewMetric(
+            icon = HugeIcons.Message01,
+            label = stringResource(R.string.stats_page_total_messages),
+            value = formatCount(stats.totalMessages.toLong()),
+        ),
+        OverviewMetric(
+            icon = HugeIcons.ArrowDown01,
+            label = stringResource(R.string.stats_page_input_tokens),
+            value = formatTokens(promptTokens),
+        ),
+        OverviewMetric(
+            icon = HugeIcons.ArrowUp01,
+            label = stringResource(R.string.stats_page_output_tokens),
+            value = formatTokens(completionTokens),
+        ),
         if (cachedTokens > 0) {
-            StatCard(
-                modifier = Modifier.fillMaxWidth(),
+            OverviewMetric(
                 icon = HugeIcons.Zap,
                 label = stringResource(R.string.stats_page_cached_tokens),
                 value = formatTokens(cachedTokens),
             )
-            // Input tokens already include the cached ones, so the rate is the share of input
-            // served from cache. Surfacing it (issue #23) is what lets a user tell an unstable
-            // prompt prefix apart from an inherently expensive workload.
-            if (promptTokens > 0) {
-                val hit = cachedTokens.coerceAtMost(promptTokens)
-                StatCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = HugeIcons.Zap,
-                    label = stringResource(R.string.stats_page_cache_hit_rate),
-                    value = "${hit * 100 / promptTokens}%",
-                )
-            }
-        }
-        StatCard(
-            modifier = Modifier.fillMaxWidth(),
+        } else null,
+        if (cacheHitRate != null) {
+            OverviewMetric(
+                icon = HugeIcons.Refresh03,
+                label = stringResource(R.string.stats_page_cache_hit_rate),
+                value = cacheHitRate,
+            )
+        } else null,
+        OverviewMetric(
             icon = HugeIcons.Rocket01,
             label = stringResource(R.string.stats_page_launch_count),
             value = formatCount(stats.launchCount.toLong()),
-        )
+        ),
+    )
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        metrics.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (pair.size == 2) {
+                    StatCard(metric = pair[0], modifier = Modifier.weight(1f))
+                    StatCard(metric = pair[1], modifier = Modifier.weight(1f))
+                } else {
+                    StatCardWide(metric = pair[0], modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun StatCard(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    label: String,
-    value: String,
-) {
+private fun StatCard(metric: OverviewMetric, modifier: Modifier = Modifier) {
     Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
+            MetricIcon(metric.icon)
+            Text(
+                text = metric.value,
+                style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                text = label,
+                text = metric.label,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** The odd metric out: a full-width card with the icon beside the number rather than above it. */
+@Composable
+private fun StatCardWide(metric: OverviewMetric, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MetricIcon(metric.icon)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = metric.value,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = metric.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** The soft round chip every overview card leads with, so the icons read as one family. */
+@Composable
+private fun MetricIcon(icon: ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
@@ -496,24 +618,11 @@ private fun OrchestrationSection(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.stats_page_orchestration_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(R.string.stats_page_orchestration_window),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        StatsSectionHeader(
+            icon = HugeIcons.Robot01,
+            title = stringResource(R.string.stats_page_orchestration_title),
+            trailing = stringResource(R.string.stats_page_orchestration_window),
+        )
 
         if (trees.isEmpty()) {
             Card(colors = CustomColors.cardColorsOnSurfaceContainer) {
@@ -669,7 +778,7 @@ private fun OrchestrationChildRow(node: OrchestrationNode) {
 }
 
 /**
- * The four rankings of the ledger window. [StatsGrid]'s token cards read the same ledger grand
+ * The four rankings of the ledger window. [StatsOverview]'s token cards read the same ledger grand
  * total since D1; only its conversation / message / launch counts still come from the message and
  * settings stores, so no number here is ever added to a differently-windowed one.
  */
@@ -683,24 +792,11 @@ private fun LedgerStatsSection(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.stats_page_ledger_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = stringResource(R.string.stats_page_ledger_window),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        StatsSectionHeader(
+            icon = HugeIcons.Database02,
+            title = stringResource(R.string.stats_page_ledger_title),
+            trailing = stringResource(R.string.stats_page_ledger_window),
+        )
 
         if (view.total.callCount == 0) {
             Card(colors = CustomColors.cardColorsOnSurfaceContainer) {
@@ -809,6 +905,9 @@ private fun LedgerBucketRow(
     label: String,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // D10b - the label owns its own line and the numbers move below the share bar: five
+        // figures crammed onto one row clipped the label on a narrow phone and made the token
+        // count hard to scan against its neighbours.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -816,33 +915,15 @@ private fun LedgerBucketRow(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(R.string.stats_page_ledger_calls, bucket.callCount),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
                 text = formatTokens(bucket.totalTokens),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelLarge,
             )
-            // D6 — throughput, same rule as the message footer (P2-19): measured output
-            // tokens over the summed per-call latency. Null (nobody reported a latency)
-            // shows nothing rather than a made-up 0.
-            bucket.tokensPerSecond?.let { rate ->
-                Text(
-                    text = stringResource(R.string.stats_page_ledger_tok_per_sec, formatRate(rate)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            ledgerCostText(bucket.providerCostUsd, bucket.costMicros)?.let { cost ->
-                Text(text = cost, style = MaterialTheme.typography.labelSmall)
-            }
         }
         Box(
             modifier = Modifier
@@ -858,6 +939,37 @@ private fun LedgerBucketRow(
                     .clip(MaterialTheme.shapes.extraSmall)
                     .background(MaterialTheme.colorScheme.primary),
             )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.stats_page_ledger_calls, bucket.callCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // D6 — throughput, same rule as the message footer (P2-19): measured output
+            // tokens over the summed per-call latency. Null (nobody reported a latency)
+            // shows nothing rather than a made-up 0.
+            bucket.tokensPerSecond?.let { rate ->
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_tok_per_sec, formatRate(rate)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // The cost is right-aligned on the footer line, so a column of rows reads as a
+            // right-aligned price list even when the middle figures are missing.
+            val cost = ledgerCostText(bucket.providerCostUsd, bucket.costMicros)
+            if (cost != null) {
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = cost,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
     }
 }
