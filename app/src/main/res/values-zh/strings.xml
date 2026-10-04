@@ -2422,4 +2422,47 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_ssh_page_error_port_invalid">端口需在 1-65535 之间</string>
   <string name="setting_ssh_page_error_user_blank">请输入用户名</string>
   <string name="setting_ssh_page_error_credential_missing">请填写密码或私钥</string>
+  <!-- Assistant: tool result budget / cold memory / tool retry -->
+  <string name="assistant_page_tool_result_budget">工具结果预算</string>
+  <string name="assistant_page_tool_result_budget_desc">限制单条工具结果可占用的上下文大小。过长结果会保留首尾，完整文本保存到 /tool_outputs/，模型可按需读取。留空表示使用默认行为。</string>
+  <string name="assistant_page_tool_result_budget_placeholder">默认（仅 32 KB 溢出阈值）</string>
+  <string name="assistant_page_tool_result_budget_active">限制：每条工具结果约 %d 个 token</string>
+  <string name="assistant_page_tool_result_budget_off">使用默认上限（32 KB 字符，仅保留开头预览）</string>
+  <string name="assistant_page_cold_memory">冷记忆（Markdown）</string>
+  <string name="assistant_page_cold_memory_desc">新增 memory_index / memory_read / memory_write 工具，作用于所绑定工作区内的 Markdown 文件夹。与上面的记录不同，这些文档留在磁盘上、按需读取，因此知识库再大，在读取之前也不产生开销。默认关闭。</string>
+  <string name="assistant_page_cold_memory_no_workspace">未绑定工作区</string>
+  <string name="assistant_page_cold_memory_no_workspace_desc">请先在“基础设定”页绑定一个工作区。冷记忆存放在工作区的某个文件夹内。</string>
+  <string name="assistant_page_cold_memory_dir">知识库文件夹</string>
+  <string name="assistant_page_cold_memory_dir_unset">未选择</string>
+  <string name="assistant_page_tool_retry">重试偶发的工具失败</string>
+  <string name="assistant_page_tool_retry_desc">当只读工具（网页抓取、文件列举、搜索）因一次性网络或超时错误失败时，以较短的指数退避再重试最多两次，然后把失败上报给模型。只有每次调用都是纯读取的工具才会重试——任何会写入、发送或执行命令的操作绝不重试，因此重试永远不会重复产生副作用。默认关闭。</string>
+  <!-- Statistics: overview section header -->
+  <string name="stats_page_overview_title">概览</string>
+  <!-- Workflow detail: dynamic arguments + API secrets -->
+  <string name="setting_page_workflow_detail_section_dynamic_args">动态参数</string>
+  <string name="setting_page_workflow_detail_dynamic_args">引用之前动作的输出</string>
+  <string name="setting_page_workflow_detail_dynamic_args_desc">允许动作参数中包含 {{actions[0].text}} 或 {{actions[0].json.data.id}}——即同一工作流中较早动作的输出。关闭时，每个动作都按书写原样运行。</string>
+  <string name="setting_page_workflow_detail_section_secrets">API 密钥</string>
+  <string name="setting_page_workflow_detail_secrets_empty">尚未保存密钥。web_fetch 请求头可用 {{secret:NAME}} 引用一个。</string>
+  <string name="setting_page_workflow_detail_secret_add">添加密钥</string>
+  <string name="setting_page_workflow_detail_secret_add_title">添加 API 密钥</string>
+  <string name="setting_page_workflow_detail_secret_name">名称（A-Z、0-9、_）</string>
+  <string name="setting_page_workflow_detail_secret_value">值</string>
+  <string name="setting_page_workflow_detail_secret_hint">在本机加密保存，绝不写入工作流。可在 web_fetch 请求头中以 {{secret:NAME}} 引用。</string>
+  <string name="setting_page_workflow_detail_secret_save">保存</string>
+  <string name="setting_page_workflow_detail_secret_cancel">取消</string>
+  <string name="setting_page_workflow_detail_secret_delete">删除</string>
+  <!-- Workspace terminal tabs -->
+  <string name="workspace_terminal_tab">终端 %1$d</string>
+  <string name="workspace_terminal_new_tab">新建终端标签页</string>
+  <string name="workspace_terminal_close_tab">关闭终端 %1$d</string>
+  <string name="workspace_terminal_no_tabs">没有打开的终端标签页</string>
+  <!-- Sub-agent sheet sections + surface mode -->
+  <string name="setting_sub_agents_page_section_identity">身份</string>
+  <string name="setting_sub_agents_page_section_model">模型与限制</string>
+  <string name="setting_sub_agents_page_surface_disabled_count">已排除 %1$d 个</string>
+  <string name="setting_sub_agents_page_surface_no_disabled">尚未排除任何工具。在上方工具目录里关闭某个工具，即可在此显示。</string>
+  <string name="setting_sub_agents_page_surface_restore">恢复</string>
+  <string name="setting_sub_agents_page_surface_mode_inherit">继承</string>
+  <string name="setting_sub_agents_page_surface_mode_own">自定义</string>
 </resources>
