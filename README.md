@@ -59,9 +59,9 @@ Full detail — what each one does, the exact tool names, and where every switch
 
 ### 0 · Install
 
-There is **no published release** yet. Either build from source (below) or grab the `apk-debug` artifact from the latest [Actions run](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml).
+Download the latest APK from **[Releases](https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest)** — or build from source (below).
 
-The debug build installs as `excp.rikkahub.debug`, so it sits **side by side** with a release build of the upstream app — handy for comparing.
+It is a **signed debug build** (`excp.rikkahub.debug`): it installs **side by side** with a release build of the upstream app, and the UI shows a small debug marker.
 
 ### 1 · Add a model provider
 
@@ -206,7 +206,7 @@ GNU AGPL-3.0, inherited from upstream. See [LICENSE](LICENSE).
 
 ### 开始用（第一次对话）
 
-0. **安装**：暂无发布版，从源码构建，或取最新 [Actions](https://github.com/wuyhong715/rikkahub-agent-pure/actions/workflows/build.yml) 的 `apk-debug` 产物。debug 包名 `excp.rikkahub.debug`，可与上游 release **并存**。
+0. **安装**：从 **[Releases](https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest)** 下载最新 APK（或从源码构建）。它是**已签名的 debug 变体**（`excp.rikkahub.debug`），可与上游 release **并存**安装，界面会显示一个开发模式标记。
 1. **接模型**：设置 → 模型提供商 → 选一个 → 填 API key（或 Codex/Grok OAuth、本地 LiteRT、Pixel 的 AICore）。
 2. **开工具**：设置 → 助理 → 点你的助手 → **本地工具** → 打开你要的组（组内还能**逐工具**关闭）。什么都不开＝原版 RikkaHub。
 3. **第一次对话**：回到聊天，新建会话 → 问一句要用工具的，如 *"我的电量多少？"* → 弹审批就允许 → 点回复里的工具调用可查看结果、用同参数重跑。再试 *"找出手机里的 PDF，把关于发票的那份总结一下"*。
