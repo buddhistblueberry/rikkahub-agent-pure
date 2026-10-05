@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -144,6 +145,33 @@ fun SettingAccessibilityPage() {
                         Text(stringResource(R.string.setting_page_accessibility_open_settings))
                     },
                 )
+                // Android 13+ greys out this toggle for apps installed outside an app store until
+                // the user allows restricted settings. Without spelling that out, the greyed switch
+                // is a dead end, so surface the recovery path and hand over the shortcut straight to
+                // the app info page where the ⋮ menu lives.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_accessibility_restricted_title))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_page_accessibility_restricted_help))
+                        },
+                    )
+                    item(
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.parse("package:${context.packageName}")
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        },
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_accessibility_open_app_info))
+                        },
+                    )
+                }
             }
 
             // Activity overlay card
