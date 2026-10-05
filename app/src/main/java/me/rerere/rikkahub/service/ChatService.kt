@@ -2235,9 +2235,19 @@ class ChatService(
                 "${ColdMemoryRules.WORKSPACE_PREFIX}/$dir"
             },
             listDocs = {
-                workspaceRepository.listFiles(workspaceId, WorkspaceStorageArea.FILES, dir)
-                    .filter { !it.isDirectory }
-                    .map { ColdMemoryDoc(it.name, it.sizeBytes) }
+                try {
+                    workspaceRepository.listFiles(workspaceId, WorkspaceStorageArea.FILES, dir)
+                        .filter { !it.isDirectory }
+                        .map { ColdMemoryDoc(it.name, it.sizeBytes) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The directory may not exist yet (cold memory is usable the moment a path
+                    // is picked; the first write creates it). Report an empty knowledge base
+                    // rather than failing the whole memory_index call.
+                    Log.d(TAG, "coldMemory: cannot list '$dir': ${e.message}")
+                    emptyList()
+                }
             },
             readDoc = { name -> readFile(childPath(name)) },
             writeDoc = { name, content, append ->

@@ -1757,6 +1757,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="workspace_cwd_select_directory">选择工作目录</string>
   <string name="workspace_cwd_select_desc">为当前会话设置工作目录</string>
   <string name="workspace_cwd_no_subdirectories">没有子目录</string>
+  <string name="workspace_cwd_new_folder">新建文件夹</string>
+  <string name="workspace_cwd_new_folder_hint">文件夹名称</string>
+  <string name="workspace_cwd_new_folder_invalid">请输入单个文件夹名（不能包含斜杠）。</string>
   <string name="workspace_cwd_reset">重置</string>
   <string name="workspace_cwd_set">设为CWD</string>
   <string name="common_confirm">确定</string>

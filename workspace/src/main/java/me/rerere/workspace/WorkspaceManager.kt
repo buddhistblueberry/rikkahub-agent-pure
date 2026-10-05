@@ -83,6 +83,13 @@ class WorkspaceManager(
         charset: Charset = StandardCharsets.UTF_8,
     ): WorkspaceFileEntry = fileSystem.writeText(filesDir(root), path, text, overwrite, charset)
 
+    /** Creates a directory (and missing parents) in [area]; see [WorkspaceFileSystem.createDirectory]. */
+    fun createDirectory(
+        root: String,
+        path: String,
+        area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+    ): WorkspaceFileEntry = fileSystem.createDirectory(areaDir(root, area), path)
+
     fun importFile(
         root: String,
         destinationPath: String,
