@@ -19,9 +19,16 @@ concurrency:
 
 jobs:
   assemble:
-    name: assembleDebug + unit tests
+    name: assemblePure + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    # NDK >= r23 reads this and, when ccache is on PATH, routes the C/C++
+    # toolchain through it. llama.cpp (a submodule, thousands of translation
+    # units x arm64-v8a + x86_64) is by far the longest pole, so a warm ccache
+    # turns a full native compile into a near-noop.
+    env:
+      ANDROID_USE_CCACHE: '1'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - name: Checkout with submodules
         uses: actions/checkout@v4
@@ -41,6 +48,36 @@ jobs:
         with:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
+
+      # NDK + CMake are pulled in on demand by AGP; on a cold runner that is a
+      # multi-hundred-MB download every run. Cache whatever AGP installed.
+      - name: Cache Android NDK + CMake
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/ndk
+            ${{ env.ANDROID_HOME }}/cmake
+          key: android-ndk-cmake-${{ runner.os }}-v1
+          restore-keys: |
+            android-ndk-cmake-${{ runner.os }}-
+
+      - name: Cache ccache (native build)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ hashFiles('llama-cpp/native/llama.cpp/**', 'llama-cpp/src/main/cpp/**', 'workspace/src/main/cpp/**') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      # web/build.gradle.kts:installWebUiDeps downloads the web-ui dependency
+      # tree with bun; the vite buildWebUi task depends on it.
+      - name: Cache web-ui node_modules
+        uses: actions/cache@v4
+        with:
+          path: web-ui/node_modules
+          key: webui-${{ runner.os }}-${{ hashFiles('web-ui/bun.lock', 'web-ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            webui-${{ runner.os }}-
 
       - name: Android SDK inventory
         run: |
@@ -81,28 +118,18 @@ jobs:
             bun install
           fi
 
-      - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      # Single Gradle invocation: one daemon, one configuration phase. Build only
+      # the shipping variant ("pure": R8 + optimized resource shrinking, keep rules
+      # in src/main/keepRules) and run the JVM unit tests against that same variant.
+      # The old debug build is gone on purpose: it compiled every library subproject
+      # a second time and rebuilt the llama.cpp native libs a second time, for an
+      # artifact nothing shipped. The published APK is `app-*-pure-unsigned.apk`,
+      # re-signed on the VPS with p2.keystore (dl2.sh apk-pure).
+      - name: Assemble pure APK + unit tests
+        run: ./gradlew :app:assemblePure :app:testPureUnitTest --stacktrace
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-
-      # Release-grade variant: R8 code shrinking + AGP 9 optimized resource
-      # shrinking (keep rules in src/main/keepRules). Built unsigned; the VPS
-      # re-signs it with p2.keystore, exactly like the old debug package, so
-      # the published APK is unchanged on the signature/upgrade path.
-      - name: Assemble pure APK (R8-optimized)
-        run: ./gradlew :app:assemblePure --stacktrace
-
-      - name: Compare APK sizes
-        run: |
-          echo "== debug (unoptimized) =="; ls -la app/build/outputs/apk/debug/*.apk || true
-          echo "== pure (R8-optimized) =="; ls -la app/build/outputs/apk/pure/*.apk || true
+      - name: Show pure APK sizes
+        run: ls -la app/build/outputs/apk/pure/*.apk || true
 
       - name: Upload pure APK
         uses: actions/upload-artifact@v4
@@ -111,9 +138,6 @@ jobs:
           path: app/build/outputs/apk/pure/*.apk
           if-no-files-found: error
           retention-days: 14
-
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
 
       - name: Upload unit test report
         if: always()
