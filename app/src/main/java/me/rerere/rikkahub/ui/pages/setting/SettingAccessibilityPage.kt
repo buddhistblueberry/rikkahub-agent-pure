@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.DisposableEffect
 import com.dokar.sonner.ToastType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -60,36 +62,57 @@ fun SettingAccessibilityPage() {
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    // Re-read the live service singleton on every recomposition; when it appears or
-    // disappears, the running flag and lastActions flow recollect themselves.
-    val svc = remember(AccessibilityServiceHandle.isRunning()) {
-        RikkaAccessibilityService.instance
+    // The live service singleton is absent for a moment after every process restart, and a
+    // `remember` whose key never changes would latch that first miss for the whole visit: the
+    // page would then say "Not running" while the system switch is on and the tools still work.
+    // So the three facts that make up the status are kept in state, re-read on resume and on a
+    // light tick, and "is it enabled at all" falls back to the system setting - the page then
+    // corrects itself within a second instead of lying until it is reopened.
+    var liveService by remember { mutableStateOf(RikkaAccessibilityService.instance) }
+    var enabledInSettings by remember {
+        mutableStateOf(AccessibilityServiceHandle.isEnabledInSettings(context))
     }
+    var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
 
     // Pull StateFlows from the live service if present; otherwise show empty defaults.
-    val runningFlow: StateFlow<Boolean> = svc?.running
-        ?: remember { MutableStateFlow(false) }
+    val idleRunningFlow = remember { MutableStateFlow(false) }
+    val idleActionsFlow = remember { MutableStateFlow<List<ActionLogEntry>>(emptyList()) }
+    val runningFlow: StateFlow<Boolean> = liveService?.running ?: idleRunningFlow
     val running by runningFlow.collectAsStateWithLifecycle()
 
-    val actionsFlow: StateFlow<List<ActionLogEntry>> = svc?.lastActions
-        ?: remember { MutableStateFlow(emptyList()) }
+    val actionsFlow: StateFlow<List<ActionLogEntry>> = liveService?.lastActions ?: idleActionsFlow
     val actions by actionsFlow.collectAsStateWithLifecycle()
 
     val captureOkFmt = stringResource(R.string.setting_page_accessibility_capture_ok_toast)
     val captureFailFmt = stringResource(R.string.setting_page_accessibility_capture_fail_toast)
 
-    // Re-check overlay permission on resume so the row updates immediately after the user
-    // returns from the system settings deep-link.
-    var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    // Re-check on resume so the rows update immediately after the user returns from a system
+    // settings deep-link.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                liveService = RikkaAccessibilityService.instance
+                enabledInSettings = AccessibilityServiceHandle.isEnabledInSettings(context)
                 overlayGranted = Settings.canDrawOverlays(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ...and while the page is on screen, so a service that attaches a beat after the first
+    // composition still flips the status without the user having to reopen the page.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val svc = RikkaAccessibilityService.instance
+            if (svc != liveService) liveService = svc
+            if (svc == null) {
+                val enabled = AccessibilityServiceHandle.isEnabledInSettings(context)
+                if (enabled != enabledInSettings) enabledInSettings = enabled
+            }
+            delay(1_000)
+        }
     }
 
     Scaffold(
@@ -119,14 +142,25 @@ fun SettingAccessibilityPage() {
                 modifier = Modifier.padding(start = 16.dp)
             )
             CardGroup {
-                if (running) {
-                    item(
+                when {
+                    running -> item(
                         headlineContent = {
                             Text(stringResource(R.string.setting_page_accessibility_status_running))
                         }
                     )
-                } else {
-                    item(
+
+                    // Enabled in the system but not attached to this process yet: reporting that
+                    // as "not running" is what made a working setup look broken.
+                    enabledInSettings -> item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_page_accessibility_status_enabled_not_connected))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_page_accessibility_status_enabled_help))
+                        },
+                    )
+
+                    else -> item(
                         headlineContent = {
                             Text(stringResource(R.string.setting_page_accessibility_status_not_running))
                         },

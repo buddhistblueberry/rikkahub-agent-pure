@@ -1487,6 +1487,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_accessibility_overlay_section">活动悬浮窗</string>
   <string name="setting_page_accessibility_recent_section">最近操作</string>
   <string name="setting_page_accessibility_status_help">RikkaHub 需要无障碍权限来为大模型执行点击、滑动和读取屏幕。打开 设置 → 无障碍 → 已安装的应用 → RikkaHub 并开启它。</string>
+  <string name="setting_page_accessibility_status_enabled_not_connected">服务：已开启，但未连接</string>
+  <string name="setting_page_accessibility_status_enabled_help">系统里这个服务是开着的，但它还没连上应用——通常发生在进程刚重启之后。重开本页，或在系统设置里关一下再打开。</string>
   <string name="setting_page_accessibility_status_not_running">服务：未运行</string>
   <string name="setting_page_accessibility_status_running">服务：运行中</string>
   <string name="setting_page_accessibility_status_section">状态</string>
