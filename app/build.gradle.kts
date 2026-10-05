@@ -92,6 +92,27 @@ android {
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
             buildConfigField("String", "UPDATE_API_URL", "\"\"")
         }
+        // Shipping variant for RikkaHub Agent · Pure. Turns on the same
+        // release-grade R8 + (AGP 9) optimized resource shrinking as `release`
+        // — the keep rules live in src/main/keepRules/rikkahub.keep — while
+        // staying on the ".debug" applicationId so devices already running the
+        // debug-signed build upgrade in place. It is built unsigned on purpose:
+        // p2.keystore never leaves the VPS, which re-signs this APK with the
+        // same key as the old debug package, so the on-device signature is
+        // unchanged. Debug builds stay unoptimized for day-to-day iteration.
+        create("pure") {
+            applicationIdSuffix = ".debug"
+            // The library subprojects (:ai, :local-llm, :llama-cpp, …) only
+            // publish debug/release variants, so "pure" resolves to their
+            // release variant.
+            matchingFallbacks += listOf("release")
+            optimization {
+                enable = true
+            }
+            buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
+            buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+            buildConfigField("String", "UPDATE_API_URL", "\"\"")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

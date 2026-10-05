@@ -92,6 +92,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Release-grade variant: R8 code shrinking + AGP 9 optimized resource
+      # shrinking (keep rules in src/main/keepRules). Built unsigned; the VPS
+      # re-signs it with p2.keystore, exactly like the old debug package, so
+      # the published APK is unchanged on the signature/upgrade path.
+      - name: Assemble pure APK (R8-optimized)
+        run: ./gradlew :app:assemblePure --stacktrace
+
+      - name: Compare APK sizes
+        run: |
+          echo "== debug (unoptimized) =="; ls -la app/build/outputs/apk/debug/*.apk || true
+          echo "== pure (R8-optimized) =="; ls -la app/build/outputs/apk/pure/*.apk || true
+
+      - name: Upload pure APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-pure
+          path: app/build/outputs/apk/pure/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
