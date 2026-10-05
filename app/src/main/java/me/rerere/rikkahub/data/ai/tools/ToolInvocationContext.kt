@@ -56,6 +56,17 @@ data class ToolInvocationContext(
      * the only caller that can turn it on.
      */
     val subAgentToolSurfaceEnabled: Boolean = false,
+    /**
+     * Screen-automation experience memory: reads the cold-memory playbook document for an
+     * Android package (see `AppPlaybookRules.fileNameFor`), or `null` when there is none.
+     *
+     * `launch_app` / `read_window_tree` call it to surface the stored note for the app they just
+     * brought up, so the agent reuses what it learned last time instead of rediscovering it. The
+     * lambda is supplied by `ChatService`, which owns the cold-memory workspace binding; it is
+     * `null` on every other path (and when cold memory is off), which makes the tool results
+     * byte-identical to what they were before this field existed.
+     */
+    val appPlaybook: (suspend (fileName: String) -> String?)? = null,
 ) {
     companion object {
         /** No-knowledge fallback. Factories that depend on context MUST handle this. */

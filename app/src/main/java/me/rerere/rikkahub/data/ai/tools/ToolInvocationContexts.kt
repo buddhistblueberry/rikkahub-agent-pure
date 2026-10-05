@@ -47,6 +47,7 @@ object ToolInvocationContexts {
         modelCanSeeImages: Boolean,
         subAgentContextRefsEnabled: Boolean,
         subAgentToolSurfaceEnabled: Boolean,
+        appPlaybook: (suspend (fileName: String) -> String?)? = null,
     ): ToolInvocationContext = ToolInvocationContext(
         callerAssistantId = assistantId,
         callerConversationId = conversationId,
@@ -54,6 +55,7 @@ object ToolInvocationContexts {
         modelCanSeeImages = modelCanSeeImages,
         subAgentContextRefsEnabled = subAgentContextRefsEnabled,
         subAgentToolSurfaceEnabled = subAgentToolSurfaceEnabled,
+        appPlaybook = appPlaybook,
     )
 
     /**

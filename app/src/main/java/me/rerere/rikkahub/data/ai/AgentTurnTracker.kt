@@ -23,13 +23,28 @@ object AgentTurnTracker {
      */
     private val touchedPackages = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    /**
+     * Packages whose stored automation playbook has already been surfaced once this turn.
+     * The playbook rides on the result of `launch_app` / `read_window_tree`, and those tools run
+     * many times per turn; claiming here keeps it to one injection per app per turn instead of
+     * repeating the same note on every tree read.
+     */
+    private val playbookSurfaced = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     fun reset() {
         navigatedAway = false
         destination = null
         didAutomate = false
+        playbookSurfaced.clear()
         // Don't clear touchedPackages — the suppression window outlives the turn so the
         // last few flaps after the turn ends also get filtered.
     }
+
+    /**
+     * Marks [packageName] as having had its playbook surfaced this turn. Returns `true` the first
+     * time, `false` on every repeat — so a caller surfaces the note exactly once.
+     */
+    fun claimPlaybookSurface(packageName: String): Boolean = playbookSurfaced.add(packageName)
 
     fun recordNavigatedAway(packageName: String?) {
         navigatedAway = true

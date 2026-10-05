@@ -64,6 +64,7 @@ object ToolSurfaceResolver {
         conversationId: Uuid,
         model: Model,
         isHeadless: Boolean,
+        appPlaybook: (suspend (fileName: String) -> String?)? = null,
     ): ToolInvocationContext = ToolInvocationContexts.chat(
         assistantId = assistant.id.toString(),
         conversationId = conversationId.toString(),
@@ -75,6 +76,10 @@ object ToolSurfaceResolver {
         subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
         // T-09 / (8) — gates subagent_dispatch's `tools` parameter (schema AND behaviour).
         subAgentToolSurfaceEnabled = assistant.enableSubAgentToolSurface,
+        // Screen-automation experience memory: the cold-memory reader for an app's playbook.
+        // Supplied by ChatService (which owns the workspace binding); null keeps the tool
+        // results exactly as they were when cold memory is off.
+        appPlaybook = appPlaybook,
     )
 
     /** Phase 16 fast-path router — tools are executed, never shown to a model. */

@@ -128,6 +128,15 @@ fun launchAppTool(
             } else {
                 AgentTurnTracker.recordNavigatedAway(pkg)
                 AgentTurnTracker.touchPackage(pkg)
+                // Screen-automation experience memory: surface this app's stored playbook (or a
+                // one-line nudge to write one) right where an app task begins, so the agent
+                // starts from what worked last time. No-op when cold memory is not configured.
+                val playbook = surfaceAppPlaybook(
+                    packageName = pkg,
+                    invocationContext = invocationContext,
+                    force = true,
+                    includeMissingHint = true,
+                )
                 listOf(
                     UIMessagePart.Text(
                         buildJsonObject {
@@ -148,6 +157,7 @@ fun launchAppTool(
                             RikkaAccessibilityService.instance?.let { svc ->
                                 put("after", screenStateJson(svc, screenChanged = null))
                             }
+                            putAppPlaybook(playbook)
                         }.toString()
                     )
                 )
