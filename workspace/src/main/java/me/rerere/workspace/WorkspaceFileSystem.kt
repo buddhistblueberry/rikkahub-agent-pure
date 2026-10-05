@@ -53,6 +53,25 @@ class WorkspaceFileSystem(
         return file.toEntry(root)
     }
 
+    /**
+     * Creates a directory (and any missing parents) inside [root] and returns its entry.
+     *
+     * [writeText] already creates parents as a side effect, but there was no way to create a
+     * *folder* on its own — which left the workspace directory picker unable to offer "new
+     * folder", and left a feature that needs a directory (cold memory) with nothing to point at.
+     * This is the missing primitive: it writes nothing, and fails loudly when a file (not a
+     * directory) already occupies the path instead of silently succeeding.
+     */
+    fun createDirectory(root: File, path: String): WorkspaceFileEntry {
+        val dir = resolvePath(root, path)
+        if (dir.exists()) {
+            require(dir.isDirectory) { "Path is not a directory: $path" }
+        } else {
+            require(dir.mkdirs()) { "Could not create directory: $path" }
+        }
+        return dir.toEntry(root)
+    }
+
     fun importBytes(root: File, path: String, inputStream: InputStream): WorkspaceFileEntry {
         val file = resolvePath(root, path)
         file.parentFile?.mkdirs()

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -18,6 +19,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,9 +37,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.res.stringResource
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowTurnBackward
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.rikkahub.R
@@ -57,6 +62,10 @@ fun WorkspaceCwdPickerSheet(
     var browsePath by remember { mutableStateOf(fromAbsolutePath(currentCwd)) }
     var entries by remember { mutableStateOf<List<WorkspaceFileEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    var showNewFolder by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var newFolderError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(browsePath) {
         loading = true
@@ -113,6 +122,21 @@ fun WorkspaceCwdPickerSheet(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // Without this the picker could only ever select a folder that already existed,
+                // so a feature that needs its own directory (cold memory) had nothing to point
+                // at and no way to make one.
+                IconButton(
+                    onClick = {
+                        newFolderName = ""
+                        newFolderError = null
+                        showNewFolder = true
+                    },
+                ) {
+                    Icon(
+                        HugeIcons.Add01,
+                        contentDescription = stringResource(R.string.workspace_cwd_new_folder),
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -182,6 +206,72 @@ fun WorkspaceCwdPickerSheet(
                 }
             }
         }
+    }
+
+    if (showNewFolder) {
+        val invalidNameMessage = stringResource(R.string.workspace_cwd_new_folder_invalid)
+        AlertDialog(
+            onDismissRequest = { showNewFolder = false },
+            title = { Text(stringResource(R.string.workspace_cwd_new_folder)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = {
+                            newFolderName = it
+                            newFolderError = null
+                        },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.workspace_cwd_new_folder_hint)) },
+                    )
+                    newFolderError?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newFolderName.isNotBlank(),
+                    onClick = {
+                        val name = newFolderName.trim()
+                        if (name.isEmpty() || name == "." || name == ".." ||
+                            name.contains('/') || name.contains('\\')
+                        ) {
+                            newFolderError = invalidNameMessage
+                            return@TextButton
+                        }
+                        val target = if (browsePath.isBlank()) name else "$browsePath/$name"
+                        scope.launch {
+                            runCatching {
+                                workspaceRepository.createDirectory(
+                                    workspaceId,
+                                    WorkspaceStorageArea.FILES,
+                                    target,
+                                )
+                            }.onSuccess { entry ->
+                                showNewFolder = false
+                                // Descend into the folder just made, so the next tap on "Set"
+                                // picks it — the whole point of offering the button here.
+                                browsePath = entry.path
+                            }.onFailure { e ->
+                                newFolderError = e.message ?: invalidNameMessage
+                            }
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewFolder = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 

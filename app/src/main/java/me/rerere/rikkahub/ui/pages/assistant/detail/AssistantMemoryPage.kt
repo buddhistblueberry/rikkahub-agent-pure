@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.ai.WorkspaceCwdPickerSheet
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -56,8 +58,11 @@ import me.rerere.rikkahub.ui.components.ui.RikkaConfirmDialog
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.CustomColors
+import me.rerere.workspace.WorkspaceStorageArea
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
+import kotlinx.coroutines.launch
 
 @Composable
 fun AssistantMemoryPage(id: String) {
@@ -127,6 +132,8 @@ private fun AssistantMemoryContent(
     // workspace AND cold memory is on — the sheet browses that workspace's files area.
     var showColdMemoryDirPicker by remember(assistant.id) { mutableStateOf(false) }
     val coldMemoryWorkspace = workspaces.find { it.id == assistant.workspaceId?.toString() }
+    val workspaceRepository: WorkspaceRepository = koinInject()
+    val scope = rememberCoroutineScope()
 
     if (showTimeReminderIntervalDialog) {
         val interval = timeReminderIntervalInput.toIntOrNull()?.takeIf { it > 0 }
@@ -288,8 +295,32 @@ private fun AssistantMemoryContent(
                 trailingContent = {
                     Switch(
                         checked = assistant.coldMemoryEnabled,
-                        onCheckedChange = {
-                            onUpdateAssistant(assistant.copy(coldMemoryEnabled = it))
+                        onCheckedChange = { enabled ->
+                            // The app used to leave the directory entirely to the user, but the
+                            // picker could only select a folder that already existed and offered
+                            // no way to make one — so cold memory could not actually be set up.
+                            // Seed a default directory and create it, so flipping the switch just
+                            // works; the picker is still there to change it.
+                            val workspace = coldMemoryWorkspace
+                            if (enabled && assistant.coldMemoryDir == null && workspace != null) {
+                                onUpdateAssistant(
+                                    assistant.copy(
+                                        coldMemoryEnabled = true,
+                                        coldMemoryDir = DEFAULT_COLD_MEMORY_DIR_ABSOLUTE,
+                                    )
+                                )
+                                scope.launch {
+                                    runCatching {
+                                        workspaceRepository.createDirectory(
+                                            workspace.id,
+                                            WorkspaceStorageArea.FILES,
+                                            DEFAULT_COLD_MEMORY_DIR_RELATIVE,
+                                        )
+                                    }
+                                }
+                            } else {
+                                onUpdateAssistant(assistant.copy(coldMemoryEnabled = enabled))
+                            }
                         }
                     )
                 }
@@ -476,3 +507,11 @@ private fun MemoryItem(
         }
     }
 }
+
+/**
+ * Where cold memory goes when the user turns the feature on without having picked a directory.
+ * `<workspace>/memory` inside the files area — the same form the picker writes
+ * ("/workspace/memory") and the relative form the repository methods take ("memory").
+ */
+private const val DEFAULT_COLD_MEMORY_DIR_ABSOLUTE = "/workspace/memory"
+private const val DEFAULT_COLD_MEMORY_DIR_RELATIVE = "memory"
