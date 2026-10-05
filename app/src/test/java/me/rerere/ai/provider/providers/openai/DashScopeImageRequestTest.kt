@@ -1,5 +1,6 @@
 package me.rerere.ai.provider.providers.openai
 
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.provider.Model
@@ -77,18 +78,97 @@ class DashScopeImageRequestTest {
 
     @Test
     fun submit_body_has_model_input_and_parameters() {
-        val model = Model(modelId = "qwen-image-3.0")
+        val model = Model(modelId = "wanx2.1-t2i-turbo")
         val body = buildDashScopeImageRequestBody(
             model = model,
             prompt = "a red panda, watercolour",
             aspectRatio = ImageAspectRatio.LANDSCAPE,
             numOfImages = 2,
         )
-        assertEquals("qwen-image-3.0", body["model"]!!.jsonPrimitive.content)
+        assertEquals("wanx2.1-t2i-turbo", body["model"]!!.jsonPrimitive.content)
         assertEquals("a red panda, watercolour", body["input"]!!.jsonObject["prompt"]!!.jsonPrimitive.content)
         val params = body["parameters"]!!.jsonObject
         assertEquals("1664*928", params["size"]!!.jsonPrimitive.content)
         assertEquals("2", params["n"]!!.jsonPrimitive.content)
+    }
+
+    // ---- new-generation (Qwen-Image 2.x / 3.x) routing ----
+
+    @Test
+    fun new_generation_qwen_image_models_use_the_multimodal_endpoint() {
+        assertTrue(dashScopeUsesMultimodalEndpoint("qwen-image-3.0"))
+        assertTrue(dashScopeUsesMultimodalEndpoint("qwen-image-3.0-pro"))
+        assertTrue(dashScopeUsesMultimodalEndpoint("qwen-image-2.1-pro"))
+        // Case/space tolerant.
+        assertTrue(dashScopeUsesMultimodalEndpoint(" Qwen-Image-3.0 "))
+    }
+
+    @Test
+    fun legacy_image_models_keep_the_async_task_endpoint() {
+        assertFalse(dashScopeUsesMultimodalEndpoint("qwen-image"))
+        assertFalse(dashScopeUsesMultimodalEndpoint("qwen-image-plus"))
+        assertFalse(dashScopeUsesMultimodalEndpoint("qwen-image-max"))
+        assertFalse(dashScopeUsesMultimodalEndpoint("wanx2.1-t2i-turbo"))
+        assertFalse(dashScopeUsesMultimodalEndpoint("wan2.2-t2i-flash"))
+        // A chat model is never an image model.
+        assertFalse(dashScopeUsesMultimodalEndpoint("qwen-turbo"))
+    }
+
+    @Test
+    fun multimodal_body_wraps_the_prompt_in_a_user_message() {
+        val body = buildDashScopeMultimodalImageRequestBody(
+            model = Model(modelId = "qwen-image-3.0"),
+            prompt = "a single red circle",
+            aspectRatio = ImageAspectRatio.SQUARE,
+            numOfImages = 1,
+        )
+        assertEquals("qwen-image-3.0", body["model"]!!.jsonPrimitive.content)
+        val message = body["input"]!!.jsonObject["messages"]!!.jsonArray.single().jsonObject
+        assertEquals("user", message["role"]!!.jsonPrimitive.content)
+        val content = message["content"]!!.jsonArray.single().jsonObject
+        assertEquals("a single red circle", content["text"]!!.jsonPrimitive.content)
+        val params = body["parameters"]!!.jsonObject
+        assertEquals("1328*1328", params["size"]!!.jsonPrimitive.content)
+        assertEquals("1", params["n"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun parses_image_urls_from_a_synchronous_multimodal_response() {
+        val body = """
+            {"request_id":"r1","output":{"choices":[
+                {"finish_reason":"stop","message":{"role":"assistant","content":[
+                    {"image":"https://dashscope-result.oss-cn.aliyuncs.com/1.png"}
+                ]}}
+            ]}}
+        """.trimIndent()
+        assertEquals(
+            listOf("https://dashscope-result.oss-cn.aliyuncs.com/1.png"),
+            parseDashScopeMultimodalImageUrls(body),
+        )
+    }
+
+    @Test
+    fun multimodal_parser_never_throws_on_malformed_bodies() {
+        for (body in listOf("", "not json", "{}", """{"output":null}""", """{"output":{"choices":[]}}""")) {
+            assertEquals(emptyList<String>(), parseDashScopeMultimodalImageUrls(body))
+        }
+    }
+
+    @Test
+    fun detects_the_endpoint_model_mismatch_rejection() {
+        // The exact wording Alibaba returns when the model is not valid for the endpoint.
+        assertTrue(
+            isDashScopeEndpointModelMismatch(
+                """{"code":"InvalidParameter","message":"url error, please check url！"}"""
+            )
+        )
+        // Any other failure is not retryable this way.
+        assertFalse(
+            isDashScopeEndpointModelMismatch(
+                """{"code":"InvalidApiKey","message":"Invalid API-key provided."}"""
+            )
+        )
+        assertFalse(isDashScopeEndpointModelMismatch(""))
     }
 
     // ---- response parsing ----
