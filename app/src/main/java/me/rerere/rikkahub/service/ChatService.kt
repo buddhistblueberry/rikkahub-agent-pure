@@ -1580,6 +1580,7 @@ class ChatService(
                     conversationId = conversationId,
                     model = model,
                     isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations.isHeadless(conversationId),
+                    appPlaybook = coldMemoryPlaybookReader(surfaceAssistant),
                 ),
             )
         )
@@ -1883,6 +1884,7 @@ class ChatService(
                                 model = model,
                                 isHeadless = me.rerere.rikkahub.data.ai.tools.HeadlessConversations
                                     .isHeadless(conversationId),
+                                appPlaybook = coldMemoryPlaybookReader(surfaceAssistant),
                             ),
                         )
                     )
@@ -2253,6 +2255,35 @@ class ChatService(
                 )
             },
         )
+    }
+
+    /**
+     * Screen-automation experience memory — the READ half of the per-app playbook.
+     *
+     * Returns a reader for one app's cold-memory playbook document (`app-<package>.md`), or `null`
+     * when cold memory is off / unconfigured, in which case the screen tools add nothing. It
+     * resolves the directory exactly like [createColdMemoryToolsIfConfigured], so a playbook is
+     * always read from the same place the agent's `memory_write` persists it.
+     */
+    private suspend fun coldMemoryPlaybookReader(assistant: Assistant): (suspend (String) -> String?)? {
+        if (!assistant.coldMemoryEnabled) return null
+        val workspaceId = assistant.workspaceId?.toString() ?: return null
+        val dir = ColdMemoryRules.normalizeDir(assistant.coldMemoryDir) ?: return null
+        if (workspaceRepository.getById(workspaceId) == null) return null
+
+        fun childPath(name: String): String = if (dir.isEmpty()) name else "$dir/$name"
+
+        return { fileName ->
+            try {
+                workspaceRepository.readText(workspaceId, childPath(fileName))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A missing (or unreadable) playbook is simply "no note yet".
+                Log.d(TAG, "appPlaybook: cannot read '$fileName': ${e.message}")
+                null
+            }
+        }
     }
 
     // ---- 检查无效消息 ----

@@ -94,6 +94,45 @@ When looking for past context, search ALL sources in order and do not stop at th
 
 Always search when the user references something from the past, when starting a session, before decisions that could contradict past agreements, and before you are about to say "I don't have that information".
 
+## Screen Automation Playbooks (per-app experience)
+
+Driving an app through accessibility is the most expensive thing you do: every ambiguous
+screen costs a `read_window_tree` round trip and a guess. The second time you drive the same
+app should be cheaper than the first — so keep a **playbook** for it.
+
+Where it lives: cold memory (`memory_write` / `memory_read` / `memory_index`), **one document
+per Android package**, named `app-<package>.md` (for example `app-com.tencent.mm.md`).
+
+Two halves, and both are automatic enough that you should never re-derive an app twice:
+
+- **Read side (already done for you).** `launch_app` and `read_window_tree` inline the stored
+  playbook for the app under `app_playbook` (plus `app_playbook_file`). If you see
+  `app_playbook_missing`, that app has no note yet. If you are driving an app you launched
+  earlier in the session and no playbook appeared, `memory_read` its file before you start
+  tapping — it is cheaper than a wrong guess.
+- **Write side (your job).** When you finish a screen-automation task, `memory_write` the
+  playbook before you reply. This is the whole loop: one short note now, far fewer steps next
+  time.
+
+Write it the moment the task ends — the trace is still fresh and will be gone after compaction.
+Merge into the existing note (read it first if unsure); keep it terse and factual, and skip the
+write entirely when the run taught you nothing non-obvious.
+
+Template — keep it short, not an essay:
+
+```
+# <App name> (<package>)
+- Entry points: <how to reach the screen you needed; deep links / activities that worked>
+- Reliable selectors: <the view_id / text / content_description that actually resolved>
+- Traps: <dialogs that steal a tap, splash screens, permission prompts, dead ends>
+- Timing: <what needed a wait, and roughly how long>
+- Last verified: <YYYY-MM-DD>
+```
+
+Rules: never write secrets, tokens, credentials or personal data into a playbook; base it only
+on what you actually observed (not what you assume the app does); and keep it to one screen or
+two of text — it rides on every later `launch_app` for that package.
+
 ## Self-Improvement: Learning Logs
 
 ### First-use initialisation

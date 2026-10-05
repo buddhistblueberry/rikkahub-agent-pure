@@ -134,13 +134,23 @@ fun readWindowTreeTool(
                     timestampMs = System.currentTimeMillis(),
                 )
             )
-            buildJsonObject {
+            val tree = buildJsonObject {
                 put("nodes", buildJsonArray { nodes.forEach { add(it) } })
                 put("truncated", truncated)
                 put("total_seen", seen)
                 put("package", pkg)
                 root.window?.title?.toString()?.let { put("window_title", it) } ?: put("window_title", "")
                 put("screen_state", screenStateJson(svc, screenChanged = null))
+            }
+            // Screen-automation experience memory: inline this app's stored playbook the first
+            // time it is read this turn, so the agent reuses what worked last time instead of
+            // re-deriving it. Surfaced once per app per turn (AgentTurnTracker) and a no-op when
+            // cold memory is not configured.
+            val playbook = surfaceAppPlaybook(pkg, invocationContext)
+            if (playbook is AppPlaybookSurface.Stored) {
+                JsonObject(tree + buildJsonObject { putAppPlaybook(playbook) })
+            } else {
+                tree
             }
         }
         streamer.streamIfHeadless(invocationContext, "ReadWindowTree")
