@@ -7,6 +7,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonArray
@@ -350,13 +351,21 @@ class OpenAIProvider(
     }
 
     /**
-     * DashScope (Aliyun Bailian) text-to-image via the native async task API:
-     * submit `text2image/image-synthesis` -> poll `GET /api/v1/tasks/{id}` -> download the
-     * result URLs. The OpenAI-compatible base URL this provider normally uses has no
-     * `/images/generations`, so the generic path 404s there (see [DashScopeImageRequest]).
+     * DashScope (Aliyun Bailian) text-to-image. Two endpoint shapes exist on the same host and a
+     * model only works on the one that matches its family, so this picks the likely one from the
+     * model id and retries the other when the provider answers the "model does not match this
+     * endpoint" rejection:
      *
-     * `n` is sent on the submit (DashScope accepts it), so one task returns several URLs at once
-     * - unlike the OpenRouter path, this is not N sequential single-image calls.
+     *  - **Legacy** (`qwen-image`, `qwen-image-plus`, `wanx*`, `wan2.*`): asynchronous task API —
+     *    submit `text2image/image-synthesis` (with `X-DashScope-Async: enable`), then poll
+     *    `GET /api/v1/tasks/{id}` for `output.results[].url`.
+     *  - **New generation** (`qwen-image-2.x` / `qwen-image-3.x`): the multimodal endpoint
+     *    `multimodal-generation/generation`, which is **synchronous** and returns the image URLs
+     *    inline at `output.choices[].message.content[].image`.
+     *
+     * The OpenAI-compatible base URL this provider normally uses has no `/images/generations`, so
+     * the generic path 404s there (see [DashScopeImageRequest]). `n` is sent on the request, so one
+     * call yields several images — unlike the OpenRouter path, this is not N sequential calls.
      */
     private suspend fun generateImageViaDashScope(
         providerSetting: ProviderSetting.OpenAI,
@@ -366,28 +375,83 @@ class OpenAIProvider(
         val root = dashScopeNativeRoot(providerSetting.baseUrl)
             ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
 
-        val submitBody = buildDashScopeImageRequestBody(
-            model = params.model,
-            prompt = params.prompt,
-            aspectRatio = params.aspectRatio,
-            numOfImages = params.numOfImages,
-        ).mergeCustomBody(params.customBody)
+        val preferredMultimodal = dashScopeUsesMultimodalEndpoint(params.model.modelId)
+        val first = runCatching { submitDashScopeImage(root, providerSetting, params, key, preferredMultimodal) }
+        val failure = first.exceptionOrNull()
+        if (failure == null) return first.getOrThrow()
+        // Never swallow coroutine cancellation as a provider failure.
+        if (failure is CancellationException) throw failure
+
+        // A `url error` rejection means the model and the endpoint disagree about the API shape.
+        // Retry once on the other endpoint so a model we did not enumerate still works.
+        if (failure is DashScopeSubmitRejected && failure.endpointMismatch) {
+            return submitDashScopeImage(root, providerSetting, params, key, !preferredMultimodal)
+        }
+        throw failure
+    }
+
+    /** A rejected DashScope image submit; [endpointMismatch] flags the retryable "url error". */
+    private class DashScopeSubmitRejected(
+        message: String,
+        val endpointMismatch: Boolean,
+    ) : IllegalStateException(message)
+
+    /**
+     * Runs one DashScope image request against the shape selected by [multimodal] (sync
+     * messages body) or its opposite (async prompt task), and returns the downloaded images.
+     */
+    private suspend fun submitDashScopeImage(
+        root: String,
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageGenerationParams,
+        key: String,
+        multimodal: Boolean,
+    ): List<ImageGenerationItem> {
+        val (path, body) = if (multimodal) {
+            DASHSCOPE_MULTIMODAL_GENERATION_PATH to buildDashScopeMultimodalImageRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                aspectRatio = params.aspectRatio,
+                numOfImages = params.numOfImages,
+            )
+        } else {
+            DASHSCOPE_IMAGE_SYNTHESIS_PATH to buildDashScopeImageRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                aspectRatio = params.aspectRatio,
+                numOfImages = params.numOfImages,
+            )
+        }
+        val submitBody = body.mergeCustomBody(params.customBody)
 
         val submitRequest = Request.Builder()
-            .url("$root$DASHSCOPE_IMAGE_SYNTHESIS_PATH")
+            .url("$root$path")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
-            .addHeader("X-DashScope-Async", "enable")
+            .apply { if (!multimodal) addHeader("X-DashScope-Async", "enable") }
             .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
             .build()
 
         val submitResponse = client.newCall(submitRequest).await()
         val submitText = submitResponse.body?.string().orEmpty()
         if (!submitResponse.isSuccessful) {
-            error("Failed to submit image task: ${submitResponse.code} $submitText")
+            throw DashScopeSubmitRejected(
+                message = "Failed to submit image task: ${submitResponse.code} $submitText",
+                endpointMismatch = isDashScopeEndpointModelMismatch(submitText),
+            )
         }
 
+        // New generation: the synchronous response already carries the images.
+        if (multimodal) {
+            val urls = parseDashScopeMultimodalImageUrls(submitText)
+            if (urls.isEmpty()) {
+                error("DashScope returned no images for ${params.model.modelId}: $submitText")
+            }
+            return urls.map { downloadImageAsBase64(it) }
+        }
+
+        // Legacy: poll the async task until it finishes.
         val taskId = parseDashScopeTaskId(submitText)
             ?: error("No task_id in DashScope response: $submitText")
 
