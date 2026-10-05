@@ -102,6 +102,10 @@ android {
         // unchanged. Debug builds stay unoptimized for day-to-day iteration.
         create("pure") {
             applicationIdSuffix = ".debug"
+            // The library subprojects (:ai, :local-llm, :llama-cpp, …) only
+            // publish debug/release variants, so "pure" resolves to their
+            // release variant.
+            matchingFallbacks += listOf("release")
             optimization {
                 enable = true
             }
