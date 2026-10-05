@@ -79,7 +79,7 @@ Full detail — what each one does, the exact tool names, and where every switch
 
 Download the latest APK from **[Releases](https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest)** — or build from source (below).
 
-It is a **signed debug build** (`excp.rikkahub.debug`): it installs **side by side** with a release build of the upstream app, and the UI shows a small debug marker.
+It is a **signed, R8-optimized build** (`excp.rikkahub.debug`): it installs **side by side** with a release build of the upstream app.
 
 ### 1 · Add a model provider
 
@@ -141,7 +141,7 @@ That's the upstream experience. Everything below is the Pure layer — all optio
 
 | | |
 |---|---|
-| **Device** | Android 8.0+ (API 26), arm64 or x86_64, ~80 MB |
+| **Device** | Android 8.0+ (API 26), arm64 or x86_64, ~51 MB |
 | **Provider** | OpenAI, Google, Anthropic, OpenRouter, Codex, Grok, Ollama, any OpenAI-compatible endpoint — or an on-device LiteRT / AICore model |
 
 ## Build from source
@@ -153,13 +153,14 @@ git clone --recursive https://github.com/wuyhong715/rikkahub-agent-pure.git
 cd rikkahub-agent-pure
 
 ./gradlew :app:assembleDebug      # -> app/build/outputs/apk/debug/*.apk
+./gradlew :app:assemblePure       # -> app/build/outputs/apk/pure/*.apk (R8-optimized, unsigned)
 ./gradlew :app:testDebugUnitTest  # unit tests
 ```
 
 | | |
 |---|---|
 | **Package** | `excp.rikkahub` (debug: `excp.rikkahub.debug`) |
-| **Version** | 2.5.1-pure.3 (versionCode 190) |
+| **Version** | 2.5.1-pure.4 (versionCode 191) |
 | **Stack** | Kotlin · Jetpack Compose · Room |
 | **Tests** | 2,290+ unit tests, green in CI |
 
@@ -232,7 +233,7 @@ Pure 不删任何功能，只让长跑变得**可存活、可观察、可封顶*
 
 ### 开始用（第一次对话）
 
-0. **安装**：从 **[Releases](https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest)** 下载最新 APK（或从源码构建）。它是**已签名的 debug 变体**（`excp.rikkahub.debug`），可与上游 release **并存**安装，界面会显示一个开发模式标记。
+0. **安装**：从 **[Releases](https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest)** 下载最新 APK（或从源码构建）。它是**已签名、经 R8 优化**的构建（`excp.rikkahub.debug`），可与上游 release **并存**安装。
 1. **接模型**：设置 → 模型提供商 → 选一个 → 填 API key（或 Codex/Grok OAuth、本地 LiteRT、Pixel 的 AICore）。
 2. **开工具**：设置 → 助理 → 点你的助手 → **本地工具** → 打开你要的组（组内还能**逐工具**关闭）。什么都不开＝原版 RikkaHub。
 3. **第一次对话**：回到聊天，新建会话 → 问一句要用工具的，如 *"我的电量多少？"* → 弹审批就允许 → 点回复里的工具调用可查看结果、用同参数重跑。再试 *"找出手机里的 PDF，把关于发票的那份总结一下"*。
@@ -252,13 +253,14 @@ Pure 不删任何功能，只让长跑变得**可存活、可观察、可封顶*
 git clone --recursive https://github.com/wuyhong715/rikkahub-agent-pure.git
 cd rikkahub-agent-pure
 ./gradlew :app:assembleDebug      # 产物：app/build/outputs/apk/debug/*.apk
+./gradlew :app:assemblePure       # 产物：app/build/outputs/apk/pure/*.apk（R8 优化，未签名）
 ./gradlew :app:testDebugUnitTest  # 单元测试
 ```
 
 | | |
 |---|---|
 | **包名** | `excp.rikkahub`（debug：`excp.rikkahub.debug`） |
-| **版本** | 2.5.1-pure.3（versionCode 190） |
+| **版本** | 2.5.1-pure.4（versionCode 191） |
 | **技术栈** | Kotlin · Jetpack Compose · Room |
 | **测试** | 2,290+ 单元测试，CI 全绿 |
 
