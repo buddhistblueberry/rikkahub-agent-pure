@@ -238,94 +238,13 @@ private fun DailyUsageChartCard(
 
                 val inputColor = MaterialTheme.colorScheme.primary
                 val outputColor = MaterialTheme.colorScheme.tertiary
-                val lineColor = MaterialTheme.colorScheme.secondary
 
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(96.dp),
-                ) {
-                    val slot = size.width / days.size
-                    val barWidth = (slot * 0.62f).coerceAtLeast(1f)
-                    val gap = (slot - barWidth) / 2f
-                    // D10b - a soft guide behind the busiest day, so the eye lands on the peak
-                    // before it has to read a number off the axis.
-                    val busiestIndex = days.indexOfFirst { it == busiest }
-                    if (busiestIndex >= 0) {
-                        drawRoundRect(
-                            color = lineColor.copy(alpha = 0.10f),
-                            topLeft = Offset(busiestIndex * slot + gap * 0.25f, 0f),
-                            size = Size(barWidth * 1.5f, size.height),
-                            cornerRadius = CornerRadius(6.dp.toPx()),
-                        )
-                    }
-                    days.forEachIndexed { index, day ->
-                        val x = index * slot + gap
-                        val inputHeight = size.height * (day.inputTokens.toFloat() / maxTokens.toFloat())
-                        val outputHeight = size.height * (day.outputTokens.toFloat() / maxTokens.toFloat())
-                        if (outputHeight > 0f) {
-                            drawRect(
-                                color = outputColor,
-                                topLeft = Offset(x, size.height - outputHeight),
-                                size = Size(barWidth, outputHeight),
-                            )
-                        }
-                        if (inputHeight > 0f) {
-                            drawRect(
-                                color = inputColor,
-                                topLeft = Offset(x, size.height - outputHeight - inputHeight),
-                                size = Size(barWidth, inputHeight),
-                            )
-                        }
-                    }
-                }
-
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp),
-                ) {
-                    if (days.size >= 2) {
-                        val slot = size.width / days.size
-                        val path = Path()
-                        days.forEachIndexed { index, day ->
-                            val x = index * slot + slot / 2f
-                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
-                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                        }
-                        drawPath(path = path, color = lineColor, style = Stroke(width = 2.dp.toPx()))
-                        days.forEachIndexed { index, day ->
-                            val x = index * slot + slot / 2f
-                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
-                            drawCircle(color = lineColor, radius = 2.dp.toPx(), center = Offset(x, y))
-                        }
-                    }
-                }
-
-                // D10b - a handful of date ticks rather than only the two ends, so a bar in the
-                // middle of the window can be placed on the calendar without counting slots.
-                val tickIndices = remember(days.size) {
-                    val tickCount = minOf(5, days.size)
-                    if (tickCount <= 1) {
-                        listOf(0)
-                    } else {
-                        (0 until tickCount)
-                            .map { i -> i * (days.size - 1) / (tickCount - 1) }
-                            .distinct()
-                    }
-                }
-                Row(
+                StatsDailyChart(
+                    days = days,
+                    inputColor = inputColor,
+                    outputColor = outputColor,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    tickIndices.forEach { index ->
-                        Text(
-                            text = days[index].key.takeLast(5),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -333,7 +252,6 @@ private fun DailyUsageChartCard(
                 ) {
                     LegendDot(color = inputColor, label = stringResource(R.string.stats_page_input_tokens))
                     LegendDot(color = outputColor, label = stringResource(R.string.stats_page_output_tokens))
-                    LegendDot(color = lineColor, label = stringResource(R.string.stats_page_daily_calls_legend))
                 }
             }
         }

@@ -206,6 +206,9 @@ dependencies {
     implementation(libs.androidx.material3.adaptive)
     implementation(libs.androidx.material3.adaptive.layout)
 
+    // Vico — Compose-native charts for the statistics page.
+    implementation(libs.vico.compose.m3)
+
     // Navigation 3
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
