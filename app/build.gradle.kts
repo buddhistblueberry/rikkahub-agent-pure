@@ -1,4 +1,6 @@
 import com.android.build.api.dsl.Packaging
+import com.android.build.api.variant.HasHostTestsBuilder
+import com.android.build.api.variant.HostTestBuilder
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.io.FileInputStream
@@ -10,6 +12,14 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+// `checkReleaseBuilds` (a.k.a. the lintVital pass) drags a
+// `lintVitalAnalyzeRelease` run into every library subproject plus the app's
+// own lintVital — measured at ~3.5 min of a ~13 min pipeline. It is the
+// fast-iteration CI builds (feat/** pushes) that opt out with -PskipLintVital;
+// master pushes and pull requests keep it as the release gate. `./gradlew lint`
+// runs the full report locally.
+val skipLintVital = providers.gradleProperty("skipLintVital").isPresent
 
 android {
     namespace = "me.rerere.rikkahub"
@@ -148,6 +158,9 @@ android {
         // pattern as redundant; the runtime accepts it. Keep the rules; mute
         // the check.
         disable.add("FullBackupContent")
+        // See skipLintVital above: the fast CI lane turns the release-build lint
+        // pass off, everything else keeps it on.
+        checkReleaseBuilds = !skipLintVital
     }
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
@@ -162,6 +175,20 @@ android {
         compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
         // ExperimentalNavigation3Api was renamed/removed in newer navigation3 — opt-in is
         // no longer required and the marker class no longer exists in the runtime artifact.
+    }
+}
+
+// AGP 9 only creates a JVM unit-test task for the default tested build type
+// (debug): `unitTestEnabled` / `enableUnitTest` are gone, and a non-default
+// build type has to opt in through the host-tests API. CI ships `pure`, so run
+// the unit tests against that same variant — which also means the debug variant
+// (and its own copy of the llama.cpp native libs) is never built in CI.
+androidComponents {
+    beforeVariants(selector().withBuildType("pure")) { variantBuilder ->
+        (variantBuilder as? HasHostTestsBuilder)
+            ?.hostTests
+            ?.get(HostTestBuilder.UNIT_TEST_TYPE)
+            ?.let { it.enable = true }
     }
 }
 
