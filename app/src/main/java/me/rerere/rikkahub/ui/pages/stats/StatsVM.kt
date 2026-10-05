@@ -50,6 +50,10 @@ class StatsVM(
     private val _ledgerStats = MutableStateFlow<LedgerStatsView?>(null)
     val ledgerStats = _ledgerStats.asStateFlow()
 
+    /** How far back the ledger section reads; [setRange] reloads it. */
+    private val _range = MutableStateFlow(StatsRange.LAST_30)
+    val range = _range.asStateFlow()
+
     /** assistant id -> display name, so the "by assistant" ranking shows names, not UUIDs. */
     private val _assistantNames = MutableStateFlow<Map<String, String>>(emptyMap())
     val assistantNames = _assistantNames.asStateFlow()
@@ -67,6 +71,13 @@ class StatsVM(
 
     init {
         viewModelScope.launch { loadStats() }
+    }
+
+    /** Switches the ledger window and re-reads it. A no-op when the value is unchanged. */
+    fun setRange(value: StatsRange) {
+        if (_range.value == value) return
+        _range.value = value
+        viewModelScope.launch { loadLedger() }
     }
 
     private suspend fun loadStats() {
@@ -113,7 +124,7 @@ class StatsVM(
 
         runCatching {
             val sinceMs = System.currentTimeMillis() -
-                UsageLedgerDefaults.RETENTION_DAYS * 24L * 60L * 60L * 1000L
+                _range.value.days * 24L * 60L * 60L * 1000L
             val rows = usageLedger.recordsSince(sinceMs)
             val conversationToAssistant = withContext(Dispatchers.IO) {
                 conversationDAO.getAll().first().associate { it.id to it.assistantId }
@@ -172,3 +183,10 @@ class StatsVM(
  * of the ledger UI.
  */
 private const val ORCHESTRATION_RUN_LIMIT = 50
+
+/** The window the statistics page's ledger section covers. */
+enum class StatsRange(val days: Int) {
+    LAST_7(7),
+    LAST_30(30),
+    LAST_90(90),
+}

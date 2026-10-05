@@ -32,6 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +85,7 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
     val assistantNames by vm.assistantNames.collectAsStateWithLifecycle()
     val orchestrationTrees by vm.orchestrationTrees.collectAsStateWithLifecycle()
     val conversationTitles by vm.conversationTitles.collectAsStateWithLifecycle()
+    val range by vm.range.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -114,9 +116,21 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                 contentPadding = padding + PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                item {
+                    StatsRangeSelector(
+                        selected = range,
+                        onSelect = vm::setRange,
+                    )
+                }
                 ledgerStats?.let { ledger ->
                     item {
                         DailyUsageChartCard(
+                            byDay = ledger.byDay,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                    item {
+                        StatsCallsCard(
                             byDay = ledger.byDay,
                             modifier = Modifier.padding(horizontal = 8.dp),
                         )
@@ -173,7 +187,7 @@ private fun DailyUsageChartCard(
     byDay: List<UsageStatBucket>,
     modifier: Modifier = Modifier,
 ) {
-    val days = byDay.take(DAILY_CHART_DAYS).reversed()
+    val days = byDay.reversed()
 
     Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
         Column(
@@ -207,8 +221,6 @@ private fun DailyUsageChartCard(
                 val totalTokens = days.sumOf { it.totalTokens }
                 val totalCalls = days.sumOf { it.callCount }
                 val busiest = days.maxByOrNull { it.totalTokens }
-                val maxTokens = (busiest?.totalTokens ?: 0L).coerceAtLeast(1L)
-                val peakCalls = days.maxOf { it.callCount }.coerceAtLeast(1)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -253,6 +265,81 @@ private fun DailyUsageChartCard(
                     LegendDot(color = inputColor, label = stringResource(R.string.stats_page_input_tokens))
                     LegendDot(color = outputColor, label = stringResource(R.string.stats_page_output_tokens))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsRangeSelector(
+    selected: StatsRange,
+    onSelect: (StatsRange) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatsRange.entries.forEach { range ->
+            FilterChip(
+                selected = range == selected,
+                onClick = { onSelect(range) },
+                label = { Text(stringResource(R.string.stats_page_daily_window, range.days)) },
+            )
+        }
+    }
+}
+
+/**
+ * The call-count trend as its own card, mirroring the "API requests" card on the DeepSeek
+ * dashboard: a big total on top, an area line beneath it.
+ */
+@Composable
+private fun StatsCallsCard(
+    byDay: List<UsageStatBucket>,
+    modifier: Modifier = Modifier,
+) {
+    val days = remember(byDay) { byDay.reversed() }
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.stats_page_calls_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.stats_page_daily_window, days.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (days.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    text = formatCount(days.sumOf { it.callCount }.toLong()),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                StatsCallsChart(
+                    days = days,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
