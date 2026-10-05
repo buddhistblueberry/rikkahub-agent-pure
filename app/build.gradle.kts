@@ -13,6 +13,14 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// `checkReleaseBuilds` (a.k.a. the lintVital pass) drags a
+// `lintVitalAnalyzeRelease` run into every library subproject plus the app's
+// own lintVital — measured at ~3.5 min of a ~13 min pipeline. It is the
+// fast-iteration CI builds (feat/** pushes) that opt out with -PskipLintVital;
+// master pushes and pull requests keep it as the release gate. `./gradlew lint`
+// runs the full report locally.
+val skipLintVital = providers.gradleProperty("skipLintVital").isPresent
+
 android {
     namespace = "me.rerere.rikkahub"
     compileSdk = 37
@@ -150,6 +158,9 @@ android {
         // pattern as redundant; the runtime accepts it. Keep the rules; mute
         // the check.
         disable.add("FullBackupContent")
+        // See skipLintVital above: the fast CI lane turns the release-build lint
+        // pass off, everything else keeps it on.
+        checkReleaseBuilds = !skipLintVital
     }
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")

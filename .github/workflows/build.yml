@@ -120,7 +120,18 @@ jobs:
       # artifact nothing shipped. The published APK is `app-*-pure-unsigned.apk`,
       # re-signed on the VPS with p2.keystore (dl2.sh apk-pure).
       - name: Assemble pure APK + unit tests
-        run: ./gradlew :app:assemblePure :app:testPureUnitTest --stacktrace
+        env:
+          # Fast lane: a push to a non-master branch (feat/**) skips the release
+          # lint pass. master pushes and pull requests keep lintVital as the
+          # release gate — see skipLintVital in app/build.gradle.kts.
+          SKIP_LINT: ${{ github.event_name == 'push' && github.ref != 'refs/heads/master' }}
+        run: |
+          FLAGS=""
+          if [ "$SKIP_LINT" = "true" ]; then
+            echo "fast lane: -PskipLintVital"
+            FLAGS="-PskipLintVital"
+          fi
+          ./gradlew :app:assemblePure :app:testPureUnitTest $FLAGS --stacktrace
 
       - name: Show pure APK sizes
         run: ls -la app/build/outputs/apk/pure/*.apk || true
