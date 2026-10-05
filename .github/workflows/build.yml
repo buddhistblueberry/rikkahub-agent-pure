@@ -53,6 +53,16 @@ jobs:
       # the NDKs, AGP never downloads one on this project, and the archive is
       # ~2 GB — saving it alone cost ~7 minutes while restoring it merely
       # overwrote files that were already on disk.
+      - name: Install ccache
+        run: |
+          # ubuntu-latest does not ship ccache, so ANDROID_USE_CCACHE alone did
+          # nothing. Install it before CMake configures the native toolchain.
+          sudo apt-get install -y -qq ccache > /dev/null 2>&1 || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ccache
+          }
+          ccache --version | head -1
+
       - name: Cache ccache (native build)
         uses: actions/cache@v4
         with:
