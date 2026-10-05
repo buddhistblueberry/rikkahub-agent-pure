@@ -49,18 +49,10 @@ jobs:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
 
-      # NDK + CMake are pulled in on demand by AGP; on a cold runner that is a
-      # multi-hundred-MB download every run. Cache whatever AGP installed.
-      - name: Cache Android NDK + CMake
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ANDROID_HOME }}/ndk
-            ${{ env.ANDROID_HOME }}/cmake
-          key: android-ndk-cmake-${{ runner.os }}-v1
-          restore-keys: |
-            android-ndk-cmake-${{ runner.os }}-
-
+      # NOTE: do *not* cache $ANDROID_HOME/ndk. The runner image already ships
+      # the NDKs, AGP never downloads one on this project, and the archive is
+      # ~2 GB — saving it alone cost ~7 minutes while restoring it merely
+      # overwrote files that were already on disk.
       - name: Cache ccache (native build)
         uses: actions/cache@v4
         with:
@@ -104,6 +96,8 @@ jobs:
           java -version
           bun --version
           pnpm --version
+          echo "--- ccache ---"
+          which ccache && ccache --version && ccache -s || echo "ccache NOT installed"
 
       # web-ui/bun.lock is not committed upstream (only pnpm-lock.yaml is), while
       # web/build.gradle.kts:installWebUiDeps runs `bun install --frozen-lockfile`.
@@ -130,6 +124,10 @@ jobs:
 
       - name: Show pure APK sizes
         run: ls -la app/build/outputs/apk/pure/*.apk || true
+
+      - name: Show ccache stats
+        if: always()
+        run: ccache -s -v || true
 
       - name: Upload pure APK
         uses: actions/upload-artifact@v4
