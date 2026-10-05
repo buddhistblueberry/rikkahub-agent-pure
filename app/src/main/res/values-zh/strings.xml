@@ -1477,6 +1477,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_accessibility_diagnostics_section">诊断</string>
   <string name="setting_page_accessibility_no_actions">暂无最近操作。</string>
   <string name="setting_page_accessibility_open_settings">打开无障碍设置</string>
+  <string name="setting_page_accessibility_restricted_title">开关是灰色 / 打开后弹回？请放行「受限设置」</string>
+  <string name="setting_page_accessibility_restricted_help">Android 13 及以后，会对非应用商店安装的应用禁用此开关。请打开本应用的「应用信息」页 → 右上角 ⋮ → 允许受限设置，然后返回这里重新打开 RikkaHub。若找不到「允许受限设置」这一项，先点一下灰色开关让它弹出系统提示，该项就会出现。</string>
+  <string name="setting_page_accessibility_open_app_info">打开应用信息</string>
   <string name="setting_page_accessibility_overlay_granted">在其他应用上层显示：已授予</string>
   <string name="setting_page_accessibility_overlay_help">智能体自动化操作时，在屏幕顶部显示一个小小的“智能体正在工作”标签，让你始终知道它何时在操控界面。可选，但推荐开启。</string>
   <string name="setting_page_accessibility_overlay_not_granted">在其他应用上层显示：未授予</string>
