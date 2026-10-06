@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -42,6 +43,10 @@ import me.rerere.rikkahub.data.ai.tools.local.AccessibilityServiceHandle
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
 import me.rerere.rikkahub.service.ActionLogEntry
 import me.rerere.rikkahub.service.RikkaAccessibilityService
+import me.rerere.rikkahub.shizuku.ACCESSIBILITY_REPAIR_TIMEOUT_MS
+import me.rerere.rikkahub.shizuku.ShizukuManager
+import me.rerere.rikkahub.shizuku.ShizukuStatus
+import me.rerere.rikkahub.shizuku.buildAccessibilityRepairCommand
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -85,6 +90,14 @@ fun SettingAccessibilityPage() {
 
     val captureOkFmt = stringResource(R.string.setting_page_accessibility_capture_ok_toast)
     val captureFailFmt = stringResource(R.string.setting_page_accessibility_capture_fail_toast)
+    val repairOkFmt = stringResource(R.string.setting_page_accessibility_repair_ok_toast)
+    val repairFailFmt = stringResource(R.string.setting_page_accessibility_repair_fail_toast)
+    val repairShizukuNotInstalled =
+        stringResource(R.string.setting_page_accessibility_repair_shizuku_not_installed)
+    val repairShizukuNotRunning =
+        stringResource(R.string.setting_page_accessibility_repair_shizuku_not_running)
+    val repairShizukuPermissionDenied =
+        stringResource(R.string.setting_page_accessibility_repair_shizuku_permission_denied)
 
     // Re-check on resume so the rows update immediately after the user returns from a system
     // settings deep-link.
@@ -177,6 +190,54 @@ fun SettingAccessibilityPage() {
                     },
                     headlineContent = {
                         Text(stringResource(R.string.setting_page_accessibility_open_settings))
+                    },
+                )
+                // The system Accessibility page can rewrite the enabled list out from under us
+                // (on some OEM builds the toggle "springs back" the moment you leave that page)
+                // and the only cure used to be a trip back through that same page. With Shizuku
+                // already granted, this re-asserts the entry in place.
+                item(
+                    onClick = {
+                        scope.launch {
+                            val needShizuku = when (ShizukuManager.status(context)) {
+                                ShizukuStatus.READY -> null
+                                ShizukuStatus.NOT_INSTALLED -> repairShizukuNotInstalled
+                                ShizukuStatus.NOT_RUNNING -> repairShizukuNotRunning
+                                ShizukuStatus.PERMISSION_DENIED -> repairShizukuPermissionDenied
+                            }
+                            if (needShizuku != null) {
+                                toaster.show(needShizuku, type = ToastType.Error)
+                                return@launch
+                            }
+                            val component = ComponentName(
+                                context,
+                                RikkaAccessibilityService::class.java,
+                            ).flattenToString()
+                            val result = ShizukuManager.exec(
+                                context,
+                                buildAccessibilityRepairCommand(component),
+                                ACCESSIBILITY_REPAIR_TIMEOUT_MS,
+                            )
+                            // The command cannot report whether its write landed - that is the
+                            // whole reason it carries two write paths - so ask the system instead.
+                            val repaired = AccessibilityServiceHandle.isEnabledInSettings(context)
+                            enabledInSettings = repaired
+                            liveService = RikkaAccessibilityService.instance
+                            if (repaired) {
+                                toaster.show(repairOkFmt)
+                            } else {
+                                toaster.show(
+                                    String.format(repairFailFmt, result.toString().take(200)),
+                                    type = ToastType.Error,
+                                )
+                            }
+                        }
+                    },
+                    headlineContent = {
+                        Text(stringResource(R.string.setting_page_accessibility_repair))
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.setting_page_accessibility_repair_desc))
                     },
                 )
                 // Android 13+ greys out this toggle for apps installed outside an app store until
