@@ -160,7 +160,7 @@ cd rikkahub-agent-pure
 | | |
 |---|---|
 | **Package** | `excp.rikkahub` (debug: `excp.rikkahub.debug`) |
-| **Version** | 2.5.1-pure.6 (versionCode 193) |
+| **Version** | 2.5.1-pure.7 (versionCode 194) |
 | **Stack** | Kotlin · Jetpack Compose · Room |
 | **Tests** | 2,290+ unit tests, green in CI |
 
@@ -260,7 +260,7 @@ cd rikkahub-agent-pure
 | | |
 |---|---|
 | **包名** | `excp.rikkahub`（debug：`excp.rikkahub.debug`） |
-| **版本** | 2.5.1-pure.6（versionCode 193） |
+| **版本** | 2.5.1-pure.7（versionCode 194） |
 | **技术栈** | Kotlin · Jetpack Compose · Room |
 | **测试** | 2,290+ 单元测试，CI 全绿 |
 
