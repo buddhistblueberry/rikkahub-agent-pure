@@ -14,6 +14,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.AgentTurnTracker
+import me.rerere.rikkahub.data.ai.AutomationRecorder
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.service.ActionLogEntry
 import me.rerere.rikkahub.service.RikkaAccessibilityService
@@ -146,6 +147,15 @@ fun findNodeTool(
                 }
             }
             val (matches, truncated) = findMatchesUnified(svc, root, by, value)
+            if (matches.isEmpty()) {
+                AutomationRecorder.recordAction(
+                    packageName = pkg,
+                    screen = svc.lastWindowClassName,
+                    action = "find",
+                    selector = AutomationRecorder.selectorLabel(by, value),
+                    ok = false,
+                )
+            }
             svc.appendLog(
                 ActionLogEntry(
                     type = "find_node",
@@ -259,6 +269,13 @@ fun clickNodeTool(
                     }
                 }
                 if (target == null) {
+                    AutomationRecorder.recordAction(
+                        packageName = pkg,
+                        screen = svc.lastWindowClassName,
+                        action = "click",
+                        selector = AutomationRecorder.selectorLabel(by, value),
+                        ok = false,
+                    )
                     return@withActionEnvelope buildJsonObject {
                         put("error", staleReason ?: "no_match")
                         if (staleReason == "stale_node_id") {
@@ -269,6 +286,18 @@ fun clickNodeTool(
                 val clickable = svc.resolveClickable(target)
                     ?: return@withActionEnvelope buildJsonObject { put("error", "no_clickable_ancestor") }
                 val ok = clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                AutomationRecorder.recordAction(
+                    packageName = pkg,
+                    screen = svc.lastWindowClassName,
+                    action = "click",
+                    selector = AutomationRecorder.selectorLabel(by, value)
+                        ?: AutomationRecorder.nodeLabel(
+                            clickable.viewIdResourceName,
+                            clickable.text?.toString(),
+                            clickable.contentDescription?.toString(),
+                        ),
+                    ok = ok,
+                )
                 svc.appendLog(
                     ActionLogEntry(
                         type = "click_node",
@@ -414,6 +443,13 @@ fun setTextTool(
                     }
                 }
                 if (target == null) {
+                    AutomationRecorder.recordAction(
+                        packageName = pkg,
+                        screen = svc.lastWindowClassName,
+                        action = "set_text",
+                        selector = AutomationRecorder.selectorLabel(by, value),
+                        ok = false,
+                    )
                     return@withActionEnvelope buildJsonObject {
                         put("error", staleReason ?: "no_match")
                         if (staleReason == "stale_node_id") {
@@ -440,6 +476,19 @@ fun setTextTool(
                     )
                 }
                 val ok = editable.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                // Deliberately no typed value: the text the user dictated must not be persisted.
+                AutomationRecorder.recordAction(
+                    packageName = pkg,
+                    screen = svc.lastWindowClassName,
+                    action = "set_text",
+                    selector = AutomationRecorder.selectorLabel(by, value)
+                        ?: AutomationRecorder.nodeLabel(
+                            editable.viewIdResourceName,
+                            null,
+                            editable.contentDescription?.toString(),
+                        ),
+                    ok = ok,
+                )
                 svc.appendLog(
                     ActionLogEntry(
                         type = "set_text",
