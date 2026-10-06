@@ -246,6 +246,6 @@ fun parseDashScopeMultimodalImageUrls(body: String): List<String> = dashScopeOut
     .orEmpty()
 
 /** `output` of a DashScope envelope, or `null` for any malformed body (never throws). */
-private fun dashScopeOutput(body: String): JsonObject? = runCatching {
+internal fun dashScopeOutput(body: String): JsonObject? = runCatching {
     json.parseToJsonElement(body).jsonObject["output"]?.jsonObject
 }.getOrNull()

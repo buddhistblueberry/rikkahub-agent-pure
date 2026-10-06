@@ -955,6 +955,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_provider_page_audio">音频</string>
   <string name="setting_provider_page_video">视频</string>
   <string name="setting_provider_page_image_model">图像</string>
+  <string name="setting_provider_page_video_model">视频</string>
   <string name="setting_provider_page_image_qr_decode_failed">解析图片中的二维码失败：%s</string>
   <string name="setting_provider_page_import_dialog_message">请选择导入方式：</string>
   <string name="setting_provider_page_import_dialog_title">导入供应商配置</string>
@@ -1224,6 +1225,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <!-- P2-33 image generation tools -->
   <string name="assistant_page_local_tools_image_generation_title">图片生成</string>
   <string name="assistant_page_local_tools_image_generation_desc">让助手按提示词生成或编辑图片，结果会显示在聊天中并存入图片库。</string>
+  <string name="assistant_page_local_tools_video_generation_title">视频生成</string>
+  <string name="assistant_page_local_tools_video_generation_desc">让助手按提示词生成短视频（万相 / 火山 Seedance），耗时数分钟，结果会显示在聊天中并存入媒体库。</string>
   <string name="assistant_page_local_tools_contacts_desc">搜索或列出设备联系人（姓名、电话号码、邮箱）。</string>
   <string name="assistant_page_local_tools_contacts_title">联系人</string>
   <string name="assistant_page_local_tools_cost_guards_desc">让助手对照每个助手的软/硬上限检查其累计 token 用量并自我限流。只读 — 与流式管道的自动停止集成将在后续版本中提供。</string>

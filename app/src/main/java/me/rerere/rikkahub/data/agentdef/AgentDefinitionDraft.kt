@@ -305,6 +305,8 @@ object LocalToolGroups {
         LocalToolOption.CameraPhoto,
         // P2-33 image generation tools
         LocalToolOption.ImageGeneration,
+        // P2-33b video generation tool
+        LocalToolOption.VideoGeneration,
         LocalToolOption.MicRecorder,
         LocalToolOption.SpeechToText,
         LocalToolOption.Fingerprint,
