@@ -1525,6 +1525,13 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_accessibility_diagnostics_section">诊断</string>
   <string name="setting_page_accessibility_no_actions">暂无最近操作。</string>
   <string name="setting_page_accessibility_open_settings">打开无障碍设置</string>
+  <string name="setting_page_accessibility_repair">一键修复（Shizuku）</string>
+  <string name="setting_page_accessibility_repair_desc">系统把开关写回「关闭」时，用 RikkaHub 已有的 Shizuku 权限直接写回启用项，不必再去系统设置里开关一次。</string>
+  <string name="setting_page_accessibility_repair_ok_toast">已写回无障碍启用项。</string>
+  <string name="setting_page_accessibility_repair_fail_toast">写回失败：%1$s</string>
+  <string name="setting_page_accessibility_repair_shizuku_not_installed">需要 Shizuku：未安装 Shizuku 应用。</string>
+  <string name="setting_page_accessibility_repair_shizuku_not_running">需要 Shizuku：Shizuku 服务未运行。</string>
+  <string name="setting_page_accessibility_repair_shizuku_permission_denied">需要 Shizuku：尚未授予 RikkaHub Shizuku 权限。</string>
   <string name="setting_page_accessibility_restricted_title">开关是灰色 / 打开后弹回？请放行「受限设置」</string>
   <string name="setting_page_accessibility_restricted_help">Android 13 及以后，会对非应用商店安装的应用禁用此开关。请打开本应用的「应用信息」页 → 右上角 ⋮ → 允许受限设置，然后返回这里重新打开 RikkaHub。若找不到「允许受限设置」这一项，先点一下灰色开关让它弹出系统提示，该项就会出现。</string>
   <string name="setting_page_accessibility_open_app_info">打开应用信息</string>

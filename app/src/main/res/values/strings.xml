@@ -1490,6 +1490,13 @@
   <string name="setting_page_accessibility_status_enabled_not_connected">Service: Enabled, not connected</string>
   <string name="setting_page_accessibility_status_enabled_help">The system has this service switched on, but it has not attached to the app yet - usually right after a restart. Reopen this page, or toggle the service off and on in system settings.</string>
   <string name="setting_page_accessibility_open_settings">Open Accessibility settings</string>
+  <string name="setting_page_accessibility_repair">One-tap repair (Shizuku)</string>
+  <string name="setting_page_accessibility_repair_desc">When system settings writes the switch back to off, re-assert the enabled entry directly with the Shizuku permission RikkaHub already holds - no trip through system settings.</string>
+  <string name="setting_page_accessibility_repair_ok_toast">Accessibility entry restored.</string>
+  <string name="setting_page_accessibility_repair_fail_toast">Repair failed: %1$s</string>
+  <string name="setting_page_accessibility_repair_shizuku_not_installed">Shizuku required: the Shizuku app is not installed.</string>
+  <string name="setting_page_accessibility_repair_shizuku_not_running">Shizuku required: the Shizuku service is not running.</string>
+  <string name="setting_page_accessibility_repair_shizuku_permission_denied">Shizuku required: RikkaHub has not been granted the Shizuku permission yet.</string>
   <string name="setting_page_accessibility_restricted_title">Switch greyed out? Allow restricted settings</string>
   <string name="setting_page_accessibility_restricted_help">Android 13 and later blocks this toggle for apps installed outside an app store. Open the app info page → ⋮ (top right) → Allow restricted settings, then come back and switch RikkaHub on. If that ⋮ entry is missing, tap the greyed switch once so the system offers it.</string>
   <string name="setting_page_accessibility_open_app_info">Open app info</string>
