@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -35,8 +37,9 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.usage.TurnFooter
+import me.rerere.rikkahub.data.usage.TurnNode
 import me.rerere.rikkahub.data.usage.UsageLedger
-import me.rerere.rikkahub.data.usage.TurnUsageView
 import me.rerere.rikkahub.data.usage.UsageTurnViewFactory
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
@@ -56,6 +59,9 @@ import java.util.Locale
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatVM"
+
+/** D6 — how often the footer re-reads the ledger while a turn is running. */
+private const val TURN_FOOTER_LIVE_REFRESH_MS = 1_000L
 
 class ChatVM(
     id: String,
@@ -86,39 +92,63 @@ class ChatVM(
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * P2-12b - ledger rows folded into a per-turn view, keyed by assistant message id.
+     * P2-12b / D6 - the ledger rows folded into a per-turn footer, keyed by assistant message id.
      *
      * Attribution is by time window: a node owns `[its createdAt, the next node's createdAt)`.
      * The window ends at the next node, not at `message.finishedAt`, because a streamed call
      * writes its ledger row just after the `Finish` chunk stamped `finishedAt` - a window
      * closed there would miss the whole default streaming path. Windows are recomputed only
      * when the node timestamps change, not on every streamed token, and a read failure simply
-     * yields an empty map so the footer falls back to `message.usage`.
+     * yields an empty map so the footer renders nothing rather than stale numbers.
      *
-     * The ledger is also re-read once `conversationJob` goes idle: the row lands after the
-     * message's `finishedAt` was persisted, so keying only on the node list would leave the
-     * just-finished turn stuck on the single-call fallback until the next message arrives.
+     * Two things make the footer real-time (D6):
+     *  - while a turn is running the ledger is re-read on a short tick, so a call that just
+     *    completed shows up without waiting for the whole turn (tool loop and all) to end;
+     *  - the just-finished turn is re-read once `conversationJob` goes idle, because its last row
+     *    lands after the message's `finishedAt` was persisted.
+     *
+     * `TurnFooter.startedAtMs` is the wall clock of the round the user started, so the UI can
+     * count the turn's elapsed time up from there and freeze it when the reply ends.
      */
-    val turnUsages: StateFlow<Map<String, TurnUsageView>> =
+    val turnFooters: StateFlow<Map<String, TurnFooter>> =
         combine(
             conversation.map { conv ->
                 val zone = TimeZone.currentSystemDefault()
                 conv.messageNodes.mapNotNull { node ->
                     val message = runCatching { node.currentMessage }.getOrNull()
                         ?: return@mapNotNull null
-                    message.id.toString() to
-                        message.createdAt.toInstant(zone).toEpochMilliseconds()
+                    TurnNode(
+                        messageId = message.id.toString(),
+                        role = message.role,
+                        createdAtMs = message.createdAt.toInstant(zone).toEpochMilliseconds(),
+                        finishedAtMs = message.finishedAt?.let { finished ->
+                            runCatching { finished.toInstant(zone).toEpochMilliseconds() }.getOrNull()
+                        },
+                    )
                 }
             },
             conversationJob.map { it != null },
         ) { nodes, busy -> nodes to busy }
             .distinctUntilChanged()
-            .flatMapLatest { (nodes, _) ->
+            .flatMapLatest { (nodes, busy) ->
                 flow {
-                    val records = runCatching {
-                        usageLedger.recordsForConversation(_conversationId.toString())
-                    }.getOrDefault(emptyList())
-                    emit(UsageTurnViewFactory.map(UsageTurnViewFactory.windowsFor(nodes), records))
+                    // Only an assistant node can be the turn being generated right now.
+                    val liveMessageId = if (busy) {
+                        nodes.lastOrNull()?.takeIf { it.role == MessageRole.ASSISTANT }?.messageId
+                    } else {
+                        null
+                    }
+                    suspend fun snapshot(): Map<String, TurnFooter> {
+                        val records = runCatching {
+                            usageLedger.recordsForConversation(_conversationId.toString())
+                        }.getOrDefault(emptyList())
+                        return UsageTurnViewFactory.footersFor(nodes, records, liveMessageId)
+                    }
+                    emit(snapshot())
+                    while (busy) {
+                        delay(TURN_FOOTER_LIVE_REFRESH_MS)
+                        emit(snapshot())
+                    }
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyMap())

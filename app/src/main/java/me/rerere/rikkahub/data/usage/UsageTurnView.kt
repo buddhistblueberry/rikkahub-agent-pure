@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.usage
 
+import me.rerere.ai.core.MessageRole
+
 /**
  * P2-12b — the per-turn reading of the usage ledger.
  *
@@ -93,6 +95,32 @@ data class TurnUsageView(
      */
     val estimatedCostOnly: Boolean get() = providerCostUsd == null && costMicros != null
 }
+
+/**
+ * D6 — one conversation node, reduced to what the footer needs: where it sits in time, its role
+ * (a turn's wall clock starts at the last **user** message before it) and when its reply ended.
+ */
+data class TurnNode(
+    val messageId: String,
+    val role: MessageRole,
+    val createdAtMs: Long,
+    val finishedAtMs: Long?,
+)
+
+/**
+ * D6 — everything the message footer renders for one turn: the aggregated ledger rows (null until
+ * the first row of the turn lands) plus the wall-clock window the turn spans.
+ *
+ * [running] is passed in rather than derived from [finishedAtMs] so the view stays pure, and so a
+ * turn that is still streaming counts up to “now” instead of freezing on a stale `finishedAt`.
+ * [finishedAtMs] is null whenever the end is not known — a running turn, or a stopped/failed one.
+ */
+data class TurnFooter(
+    val usage: TurnUsageView?,
+    val startedAtMs: Long,
+    val finishedAtMs: Long?,
+    val running: Boolean,
+)
 
 object UsageTurnViewFactory {
     /**
@@ -191,6 +219,44 @@ object UsageTurnViewFactory {
         val result = LinkedHashMap<String, TurnUsageView>()
         for ((messageId, window) in windows) {
             turnUsageFor(records, window)?.let { result[messageId] = it }
+        }
+        return result
+    }
+
+    /**
+     * D6 — the per-message footers.
+     *
+     * A node earns a footer when the ledger already holds rows for it, or when it is the turn
+     * currently being generated ([liveMessageId]) and its first row has not landed yet — the UI
+     * shows “counting…” in that window instead of falling back to a second, older widget.
+     *
+     * The wall clock starts at the most recent **user** message before the node (the round the
+     * user actually started) and ends at the node's own `finishedAt`, so the idle time between two
+     * turns is never billed to the one that just ended. While [liveMessageId] is the node the end
+     * is unknown, so [TurnFooter.finishedAtMs] is null and [TurnFooter.running] is true.
+     */
+    fun footersFor(
+        nodes: List<TurnNode>,
+        records: List<UsageRecordEntity>,
+        liveMessageId: String? = null,
+    ): Map<String, TurnFooter> {
+        val usageByMessage = map(windowsFor(nodes.map { it.messageId to it.createdAtMs }), records)
+        val result = LinkedHashMap<String, TurnFooter>()
+        var lastUserStartMs: Long? = null
+        for (node in nodes) {
+            if (node.role == MessageRole.USER) {
+                lastUserStartMs = node.createdAtMs
+                continue
+            }
+            val running = node.messageId == liveMessageId
+            val usage = usageByMessage[node.messageId]
+            if (usage == null && !running) continue
+            result[node.messageId] = TurnFooter(
+                usage = usage,
+                startedAtMs = lastUserStartMs ?: node.createdAtMs,
+                finishedAtMs = if (running) null else node.finishedAtMs,
+                running = running,
+            )
         }
         return result
     }
