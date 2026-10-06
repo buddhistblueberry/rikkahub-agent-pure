@@ -898,6 +898,20 @@ private fun AssistantLocalToolContent(
             )
             item(
                 headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_model_control_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_model_control_desc))
+                },
+                trailingContent = {
+                    PermissionedSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.ModelControl),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.ModelControl, it) }
+                    )
+                }
+            )
+            item(
+                headlineContent = {
                     Text(stringResource(R.string.assistant_page_local_tools_mcp_control_title))
                 },
                 supportingContent = {

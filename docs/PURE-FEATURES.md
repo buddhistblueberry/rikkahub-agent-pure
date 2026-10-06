@@ -71,7 +71,7 @@ only per *group* — you could not turn off one tool inside a group you wanted.
 **What it does**
 
 - **Tool palette** — search the local tool directory and see which group a tool belongs to
-  before enabling it. **56 tool groups, ~180 individual tools.**
+  before enabling it. **59 tool groups, ~180 individual tools.**
 - **Per-tool switches** — `Assistant.disabledLocalTools` narrows the granularity from a
   *group* to an *individual tool*.
 - **Progressive exposure** — an opt-in tool-surface mode replaces the MCP tools in each
@@ -232,6 +232,7 @@ resolved that by auto-approving *everything* — bypassing the never-auto-allow 
 | `memory_index` / `memory_read` / `memory_write` | Cold memory (opt-in) |
 | `subagent_dispatch` / `subagent_get` / `subagent_list` / `subagent_cancel` / `subagent_tool` | Sub-agent control |
 | `subagent_create` / `subagent_update` / `subagent_delete` | Expert library management |
+| `model_list` / `model_add` / `model_update` / `model_delete` | Model-roster management (opt-in) |
 | `usage_export` / `usage_get_prices` / `usage_set_prices` | Ledger export and price table |
 
 **Switches added by this fork**

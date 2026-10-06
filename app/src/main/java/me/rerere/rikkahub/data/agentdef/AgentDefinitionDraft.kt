@@ -339,6 +339,7 @@ object LocalToolGroups {
         LocalToolOption.AppLauncher,
         LocalToolOption.Termux,
         LocalToolOption.KeyboardControl,
+        LocalToolOption.ModelControl,
     )
 
     private val index: Map<LocalToolOption, Int> =

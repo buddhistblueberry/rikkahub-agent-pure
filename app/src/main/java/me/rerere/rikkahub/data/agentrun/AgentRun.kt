@@ -138,7 +138,16 @@ enum class AgentRunKind(val wire: String) {
     AgentDefWrite("agent_def_write"),
 
     /** A write of the model price table (P2-11d-3). */
-    PriceTable("price_table");
+    PriceTable("price_table"),
+
+    /**
+     * P2-37 — a write against the model roster (`model_add` / `model_update` /
+     * `model_delete`). One row per call, marked terminal whether it succeeded or failed, like
+     * [AgentDefWrite] above. Metadata-only: the operation, the provider id/name, the model's
+     * id/uuid, and (for deletions) how many assistants referenced it — never an api key, a
+     * base URL or any provider secret.
+     */
+    ModelWrite("model_write");
 
     companion object {
         fun fromWire(wire: String?): AgentRunKind? = entries.firstOrNull { it.wire == wire }

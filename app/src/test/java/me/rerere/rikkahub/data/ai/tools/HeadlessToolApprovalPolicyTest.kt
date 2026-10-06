@@ -18,7 +18,7 @@ import org.junit.Test
  *
  *  - every tool the user reserved for a per-call confirmation (`NO_ALWAYS_ALLOW`) is refused,
  *  - the microphone group is refused too (nobody present to consent),
- *  - an ordinary tool is never refused — the policy only ever subtracts four named groups,
+ *  - an ordinary tool is never refused — the policy only ever subtracts five named groups,
  *  - a conversation WITH an approval channel is untouched,
  *  - the refusal is a deterministic envelope, so it can never be retried.
  *
@@ -109,12 +109,13 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the refused set is exactly the union of the four groups`() {
+    fun `the refused set is exactly the union of the five groups`() {
         assertEquals(
             HeadlessToolApprovalPolicy.PER_CALL_CONFIRM_TOOL_NAMES +
                 HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES +
                 HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES +
-                HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES,
+                HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES +
+                HeadlessToolApprovalPolicy.MODEL_WRITE_TOOL_NAMES,
             HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES,
         )
         HeadlessToolApprovalPolicy.REFUSED_TOOL_NAMES.forEach { name ->
@@ -123,17 +124,38 @@ class HeadlessToolApprovalPolicyTest {
     }
 
     @Test
-    fun `the four groups do not overlap`() {
+    fun `the five groups do not overlap`() {
         val upstream = ToolApprovalDefaults.NO_ALWAYS_ALLOW
         val mic = HeadlessToolApprovalPolicy.PRIVACY_SENSITIVE_TOOL_NAMES
         val private = HeadlessToolApprovalPolicy.PRIVATE_DATA_TOOL_NAMES
         val expertWrites = HeadlessToolApprovalPolicy.EXPERT_WRITE_TOOL_NAMES
-        assertTrue("NO_ALWAYS_ALLOW and the microphone group overlap", (upstream intersect mic).isEmpty())
-        assertTrue("NO_ALWAYS_ALLOW and the private-data group overlap", (upstream intersect private).isEmpty())
-        assertTrue("NO_ALWAYS_ALLOW and the expert-write group overlap", (upstream intersect expertWrites).isEmpty())
-        assertTrue("the microphone and private-data groups overlap", (mic intersect private).isEmpty())
-        assertTrue("the microphone and expert-write groups overlap", (mic intersect expertWrites).isEmpty())
-        assertTrue("the private-data and expert-write groups overlap", (private intersect expertWrites).isEmpty())
+        val modelWrites = HeadlessToolApprovalPolicy.MODEL_WRITE_TOOL_NAMES
+        val groups = listOf(upstream, mic, private, expertWrites, modelWrites)
+        groups.forEachIndexed { index, left ->
+            groups.drop(index + 1).forEach { right ->
+                assertTrue("two headless-refusal groups overlap", (left intersect right).isEmpty())
+            }
+        }
+    }
+
+    @Test
+    fun `the model-roster writes are refused, and only in a headless run`() {
+        // P2-37 — a headless run has no approval channel, and the model roster is what every
+        // assistant's model picker and every later generation resolves against. model_list
+        // stays available so a schedule can still see what exists.
+        assertEquals(
+            setOf("model_add", "model_update", "model_delete"),
+            HeadlessToolApprovalPolicy.MODEL_WRITE_TOOL_NAMES,
+        )
+        HeadlessToolApprovalPolicy.MODEL_WRITE_TOOL_NAMES.forEach { name ->
+            assertTrue("$name must be refused", HeadlessToolApprovalPolicy.isRefused(name))
+            assertNotNull(HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = true))
+            assertNull(
+                "$name must still prompt normally in the foreground",
+                HeadlessToolApprovalPolicy.refusalEnvelopeFor(name, headless = false),
+            )
+        }
+        assertNull(HeadlessToolApprovalPolicy.refusalDetail("model_list"))
     }
 
     // ------------------------------------------------------------- non-refusals
