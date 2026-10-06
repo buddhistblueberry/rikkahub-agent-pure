@@ -705,6 +705,41 @@ internal fun AssistantBasicContent(
                     )
                 }
             )
+            if (assistant.enableCompactContextTool) {
+                val reminderPercent = assistant.contextBudgetReminderPercent.coerceIn(5, 95)
+                HorizontalDivider()
+                FormItem(
+                    modifier = Modifier.padding(8.dp),
+                    label = {
+                        Text(stringResource(R.string.assistant_page_context_reminder_threshold))
+                    },
+                    description = {
+                        Text(stringResource(R.string.assistant_page_context_reminder_threshold_desc))
+                    },
+                ) {
+                    Slider(
+                        value = reminderPercent.toFloat(),
+                        onValueChange = { value ->
+                            onUpdate(
+                                assistant.copy(
+                                    contextBudgetReminderPercent = (value / 5f).roundToInt() * 5
+                                )
+                            )
+                        },
+                        valueRange = 5f..95f,
+                        steps = 17,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.assistant_page_context_reminder_threshold_value,
+                            reminderPercent
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.75f),
+                    )
+                }
+            }
             HorizontalDivider()
             FormItem(
                 modifier = Modifier.padding(8.dp),
