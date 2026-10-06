@@ -1632,6 +1632,10 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         allowContextRetry: Boolean = true,
     ) {
+        // A generation is one "turn" for read_window_tree's snapshot: within it a re-read can be
+        // answered with "unchanged" or a delta, but a diff never spans two turns — so a model
+        // coming back to a screen (possibly after a compaction) always gets the whole tree.
+        me.rerere.rikkahub.data.ai.tools.local.TreeSnapshotCache.clear()
         val settings = settingsStore.settingsFlow.first()
         // Resolve the assistant from this conversation's own assistantId — the global
         // current-assistant pointer can have moved if the user switched assistants while
