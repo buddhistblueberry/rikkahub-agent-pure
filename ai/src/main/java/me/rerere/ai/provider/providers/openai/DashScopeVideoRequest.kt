@@ -31,6 +31,15 @@ import me.rerere.ai.ui.ImageAspectRatio
 /** `POST {root}/api/v1/services/aigc/video-generation/video-synthesis` (with `X-DashScope-Async: enable`). */
 const val DASHSCOPE_VIDEO_SYNTHESIS_PATH = "/api/v1/services/aigc/video-generation/video-synthesis"
 
+/**
+ * `POST {root}/api/v1/services/aigc/image2video/video-synthesis` — the **first-frame** (i2v) sibling
+ * of the text-to-video path. Same async task API (one `task_id`, polled on the shared
+ * `/api/v1/tasks/{id}`), but the frame goes in `input.img_url` and resolution is a quality tier
+ * (`480P` / `720P` / `1080P`) rather than a `size`; the output keeps the first frame's aspect ratio,
+ * so [dashScopeVideoSize] does not apply here.
+ */
+const val DASHSCOPE_IMAGE2VIDEO_SYNTHESIS_PATH = "/api/v1/services/aigc/image2video/video-synthesis"
+
 /** Video jobs take 1–5 minutes, so this is much longer than the image poll budget (~9 min). */
 const val DASHSCOPE_VIDEO_POLL_ATTEMPTS = 90
 
@@ -89,3 +98,32 @@ fun parseDashScopeVideoUrl(body: String): String? = dashScopeOutput(body)
     ?.get("video_url")
     ?.jsonPrimitive
     ?.contentOrNull
+
+/**
+ * The first-frame (i2v) submit body: `{ model, input:{prompt, img_url}, parameters:{duration?} }`.
+ *
+ * [firstFrameUrl] may be a public HTTP(S) URL or a `data:{mime};base64,...` string — DashScope
+ * accepts both, which is why the caller inlines the picked file rather than hosting it.
+ */
+fun buildDashScopeImageToVideoRequestBody(
+    model: Model,
+    prompt: String,
+    firstFrameUrl: String,
+    durationSeconds: Int?,
+): JsonObject {
+    val duration = dashScopeVideoDuration(model.modelId, durationSeconds)
+    return buildJsonObject {
+        put("model", model.modelId)
+        putJsonObject("input") {
+            put("prompt", prompt)
+            put("img_url", firstFrameUrl)
+        }
+        // Resolution is a quality tier for i2v and the output follows the first frame's aspect, so
+        // `size` is deliberately not sent; only an accepted duration is passed through.
+        if (duration != null) {
+            putJsonObject("parameters") {
+                put("duration", duration)
+            }
+        }
+    }
+}

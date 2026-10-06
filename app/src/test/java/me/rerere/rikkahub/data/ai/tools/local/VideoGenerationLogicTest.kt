@@ -143,4 +143,41 @@ class VideoGenerationLogicTest {
         assertEquals("missing_prompt", json["error"]?.jsonPrimitive?.content)
         assertEquals("`prompt` is required.", json["detail"]?.jsonPrimitive?.content)
     }
+
+    // ---------------------------------------------------------------- count
+
+    @Test
+    fun `count defaults to one and is clamped into range`() {
+        assertEquals(1, clampVideoCount(null))
+        assertEquals(1, clampVideoCount(0))
+        assertEquals(1, clampVideoCount(-2))
+        assertEquals(3, clampVideoCount(3))
+        assertEquals(MAX_VIDEO_GEN_COUNT, clampVideoCount(99))
+    }
+
+    // ---------------------------------------------------------------- mode
+
+    @Test
+    fun `envelope reports image_to_video and the first frame when one was used`() {
+        val json = parse(
+            buildVideoGenEnvelope(
+                tool = "generate_video",
+                prompt = "p",
+                model = "Wan",
+                videos = listOf(GeneratedVideoInfo("/data/v/1.mp4", 1L, "video/mp4")),
+                modelCanSeeVideos = true,
+                firstFrame = "/data/i/frame.png",
+            )
+        )
+
+        assertEquals("image_to_video", json["mode"]?.jsonPrimitive?.content)
+        assertEquals("/data/i/frame.png", json["first_frame"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `envelope reports text_to_video with no frame key`() {
+        val json = parse(buildVideoGenEnvelope("generate_video", "p", "Wan", emptyList(), true))
+        assertEquals("text_to_video", json["mode"]?.jsonPrimitive?.content)
+        assertFalse(json.containsKey("first_frame"))
+    }
 }

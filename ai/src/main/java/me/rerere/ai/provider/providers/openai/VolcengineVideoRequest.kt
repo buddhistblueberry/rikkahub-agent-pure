@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.ImageAspectRatio
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -102,6 +103,9 @@ internal fun volcengineTextCommands(
 /**
  * The `contents/generations/tasks` submit body. For Seedance 1.0 the knobs are folded into the
  * prompt text; for everyone else they ride as top-level fields (and the prompt is left untouched).
+ *
+ * [firstFrameUrl] (a public URL or `data:{mime};base64,...`) adds an `image_url` content part with
+ * `role: first_frame`, turning the request into image-to-video; `null` keeps it text-to-video.
  */
 fun buildVolcengineVideoRequestBody(
     model: Model,
@@ -109,6 +113,7 @@ fun buildVolcengineVideoRequestBody(
     aspectRatio: ImageAspectRatio,
     durationSeconds: Int?,
     fps: Int = 24,
+    firstFrameUrl: String? = null,
 ): JsonObject {
     val duration = volcengineVideoDuration(durationSeconds)
     val usesTextCommands = volcengineUsesTextCommands(model.modelId)
@@ -123,6 +128,15 @@ fun buildVolcengineVideoRequestBody(
             addJsonObject {
                 put("type", "text")
                 put("text", text)
+            }
+            if (firstFrameUrl != null) {
+                addJsonObject {
+                    put("type", "image_url")
+                    putJsonObject("image_url") {
+                        put("url", firstFrameUrl)
+                    }
+                    put("role", "first_frame")
+                }
             }
         }
         if (!usesTextCommands) {

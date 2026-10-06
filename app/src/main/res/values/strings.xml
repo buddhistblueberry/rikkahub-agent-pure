@@ -450,6 +450,13 @@
   <string name="videogen_page_model_selection_desc">Video model used for generation. Configure a DashScope (Wan) or Volcengine Ark (Seedance) provider first.</string>
   <string name="videogen_page_duration">Duration</string>
   <string name="videogen_page_duration_desc">Requested clip length in seconds (2\u201315). Some models are fixed at 5 s and ignore this.</string>
+  <string name="videogen_page_count">Number of videos</string>
+  <string name="videogen_page_count_desc">How many clips to generate (1\u20134). Each clip is a separate, multi-minute job.</string>
+  <string name="videogen_page_first_frame">First frame (image-to-video)</string>
+  <string name="videogen_page_remove_first_frame">Remove first frame</string>
+  <string name="videogen_page_save">Save to gallery</string>
+  <string name="videogen_page_save_success">Video saved to gallery</string>
+  <string name="videogen_page_save_failed">Save failed: %1$s</string>
   <string name="videogen_page_aspect_ratio">Aspect ratio</string>
   <string name="videogen_page_aspect_ratio_desc">Shape of the generated clip.</string>
   <string name="videogen_page_aspect_ratio_landscape">Landscape</string>

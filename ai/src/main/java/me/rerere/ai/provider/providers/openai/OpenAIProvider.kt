@@ -708,28 +708,53 @@ class OpenAIProvider(
 
         val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
 
+        // Neither vendor takes an `n` for video, so a count > 1 is N sequential jobs (each of which
+        // can take minutes) - see collectSequentialImages. The tool caps the count for exactly that
+        // reason.
         val items = withContext(Dispatchers.IO) {
-            when {
-                isDashScopeBaseUrl(providerSetting.baseUrl) ->
-                    generateVideoViaDashScope(providerSetting, params, key)
-
-                isVolcengineArkBaseUrl(providerSetting.baseUrl) ->
-                    generateVideoViaVolcengine(providerSetting, params, key)
-
-                else -> error(
-                    "Video generation is not supported for this provider yet " +
-                        "(${providerSetting.baseUrl}). Configure a DashScope (Wan) or " +
-                        "Volcengine Ark (Seedance) provider.",
-                )
+            collectSequentialImages(params.numOfVideos.coerceAtLeast(1)) {
+                generateVideoOnce(providerSetting, params, key)
             }
         }
 
         items.forEach { emit(it) }
     }
 
+    /** One vendor job. Split out so [generateVideo] can run it N times for a count > 1. */
+    private suspend fun generateVideoOnce(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> = when {
+        isDashScopeBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaDashScope(providerSetting, params, key)
+
+        isVolcengineArkBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaVolcengine(providerSetting, params, key)
+
+        else -> error(
+            "Video generation is not supported for this provider yet " +
+                "(${providerSetting.baseUrl}). Configure a DashScope (Wan) or " +
+                "Volcengine Ark (Seedance) provider.",
+        )
+    }
+
     /**
-     * DashScope Wan text-to-video: submit `video-synthesis` (async), poll the shared task endpoint
-     * until `SUCCEEDED`, then download the clip. See [DashScopeVideoRequest] for the shapes.
+     * Reads the optional first frame (image-to-video) as a `data:` URI. Both vendors accept an
+     * inline base64 image, which is why nothing is uploaded anywhere.
+     */
+    private fun firstFrameDataUri(params: VideoGenerationParams): String? =
+        params.sourceImages.firstOrNull()?.let { path ->
+            val file = File(path)
+            require(file.exists()) { "First-frame image does not exist: $path" }
+            file.toDataUri()
+        }
+
+    /**
+     * DashScope Wan video: submit an async task, poll the shared task endpoint until `SUCCEEDED`,
+     * then download the clip. Text-to-video uses `video-synthesis` with `parameters.size`;
+     * image-to-video (a first frame was supplied) uses `image2video/video-synthesis` with
+     * `input.img_url` instead. See [DashScopeVideoRequest] for both shapes.
      */
     private suspend fun generateVideoViaDashScope(
         providerSetting: ProviderSetting.OpenAI,
@@ -739,15 +764,27 @@ class OpenAIProvider(
         val root = dashScopeNativeRoot(providerSetting.baseUrl)
             ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
 
-        val submitBody = buildDashScopeVideoRequestBody(
-            model = params.model,
-            prompt = params.prompt,
-            aspectRatio = params.aspectRatio,
-            durationSeconds = params.durationSeconds,
-        ).mergeCustomBody(params.customBody)
+        val firstFrame = firstFrameDataUri(params)
+        val (path, body) = if (firstFrame == null) {
+            DASHSCOPE_VIDEO_SYNTHESIS_PATH to buildDashScopeVideoRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                aspectRatio = params.aspectRatio,
+                durationSeconds = params.durationSeconds,
+            )
+        } else {
+            // i2v: the clip follows the first frame's aspect ratio, so the shape argument is moot.
+            DASHSCOPE_IMAGE2VIDEO_SYNTHESIS_PATH to buildDashScopeImageToVideoRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                firstFrameUrl = firstFrame,
+                durationSeconds = params.durationSeconds,
+            )
+        }
+        val submitBody = body.mergeCustomBody(params.customBody)
 
         val submitRequest = Request.Builder()
-            .url("$root$DASHSCOPE_VIDEO_SYNTHESIS_PATH")
+            .url("$root$path")
             .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
@@ -811,6 +848,7 @@ class OpenAIProvider(
             prompt = params.prompt,
             aspectRatio = params.aspectRatio,
             durationSeconds = params.durationSeconds,
+            firstFrameUrl = firstFrameDataUri(params),
         ).mergeCustomBody(params.customBody)
 
         val createRequest = Request.Builder()

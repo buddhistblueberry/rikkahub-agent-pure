@@ -29,11 +29,20 @@ internal const val MIN_VIDEO_DURATION_SECONDS: Int = 2
 internal const val MAX_VIDEO_DURATION_SECONDS: Int = 15
 
 /**
+ * Upper bound on `count`. Deliberately smaller than the image tool's 4-in-one-call: neither video
+ * vendor takes an `n`, so N clips are N sequential jobs, each of which can take minutes.
+ */
+internal const val MAX_VIDEO_GEN_COUNT: Int = 4
+
+/**
  * Clamps a requested clip length into the tool's advertised range; `null` stays `null` (let the
  * model/vendor pick its own default).
  */
 internal fun clampVideoDuration(raw: Int?): Int? =
     raw?.coerceIn(MIN_VIDEO_DURATION_SECONDS, MAX_VIDEO_DURATION_SECONDS)
+
+/** Clamps a requested clip count into `1..`[MAX_VIDEO_GEN_COUNT]; absent → 1. */
+internal fun clampVideoCount(raw: Int?): Int = (raw ?: 1).coerceIn(1, MAX_VIDEO_GEN_COUNT)
 
 /**
  * The slice of a provider `Model` the selection logic needs, flattened so this file stays free of
@@ -110,11 +119,14 @@ internal fun buildVideoGenEnvelope(
     model: String,
     videos: List<GeneratedVideoInfo>,
     modelCanSeeVideos: Boolean,
+    firstFrame: String? = null,
 ): String = buildJsonObject {
     put("success", true)
     put("tool", tool)
     put("model", model)
     put("prompt", prompt)
+    put("mode", if (firstFrame == null) "text_to_video" else "image_to_video")
+    firstFrame?.let { put("first_frame", it) }
     put("count", videos.size)
     put("videos", buildJsonArray {
         videos.forEach { video ->

@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.exportImageFile
+import me.rerere.rikkahub.utils.exportVideoToGallery
 import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -300,6 +301,17 @@ class FilesManager(
         file.parentFile?.mkdirs()
         file.writeBytes(byteArray)
         return file
+    }
+
+    /** Saves a generated video into the system gallery. Video sibling of [saveMessageImage]. */
+    suspend fun saveMessageVideo(activityContext: Context, video: String) = withContext(Dispatchers.IO) {
+        val activity = requireNotNull(activityContext.getActivity()) { "Activity not found" }
+        val file = when {
+            video.startsWith("file:") -> video.toUri().toFile()
+            video.startsWith("/") -> File(video)
+            else -> error("Unsupported video source: $video")
+        }
+        activityContext.exportVideoToGallery(activity, file)
     }
 
     fun listImageFiles(): List<File> {

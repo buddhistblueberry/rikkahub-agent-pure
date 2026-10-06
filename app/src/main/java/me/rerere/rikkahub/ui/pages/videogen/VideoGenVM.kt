@@ -24,6 +24,9 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.VideoGenerationParams
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.VideoGenerationItem
+import me.rerere.rikkahub.data.ai.tools.local.MAX_VIDEO_DURATION_SECONDS
+import me.rerere.rikkahub.data.ai.tools.local.MIN_VIDEO_DURATION_SECONDS
+import me.rerere.rikkahub.data.ai.tools.local.clampVideoCount
 import me.rerere.rikkahub.data.ai.tools.local.videoGalleryRelativePath
 import me.rerere.rikkahub.data.ai.tools.local.videoGenFilename
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -91,6 +94,20 @@ class VideoGenVM(
     private val _durationSeconds = MutableStateFlow(DEFAULT_DURATION_SECONDS)
     val durationSeconds: StateFlow<Int> = _durationSeconds
 
+    /**
+     * How many clips one generate call produces. Shared with the `generate_video` tool: the provider
+     * runs N sequential jobs (neither vendor takes an `n` for video).
+     */
+    private val _numberOfVideos = MutableStateFlow(1)
+    val numberOfVideos: StateFlow<Int> = _numberOfVideos
+
+    /**
+     * The single first frame for image-to-video, or `null` for text-to-video. Deliberately one
+     * slot: the wired i2v endpoints take exactly one first frame.
+     */
+    private val _referenceImage = MutableStateFlow<String?>(null)
+    val referenceImage: StateFlow<String?> = _referenceImage
+
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
     private var cancelJob: Job? = null
@@ -140,7 +157,16 @@ class VideoGenVM(
 
     /** Clamped to the same 2–15 window the `generate_video` tool advertises. */
     fun updateDurationSeconds(seconds: Int) {
-        _durationSeconds.value = seconds.coerceIn(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS)
+        _durationSeconds.value = seconds.coerceIn(MIN_VIDEO_DURATION_SECONDS, MAX_VIDEO_DURATION_SECONDS)
+    }
+
+    /** Clamped to the same 1–4 window (and the same helper) the `generate_video` tool uses. */
+    fun updateNumberOfVideos(count: Int) {
+        _numberOfVideos.value = clampVideoCount(count)
+    }
+
+    fun setReferenceImage(path: String?) {
+        _referenceImage.value = path
     }
 
     fun clearError() {
@@ -150,6 +176,7 @@ class VideoGenVM(
     fun startNewSession() {
         cancelJob?.cancel()
         _prompt.value = ""
+        _referenceImage.value = null
         _currentVideos.value = emptyList()
         _error.value = null
         _isGenerating.value = false
@@ -177,6 +204,8 @@ class VideoGenVM(
                         prompt = promptText,
                         aspectRatio = _aspectRatio.value,
                         durationSeconds = _durationSeconds.value,
+                        numOfVideos = _numberOfVideos.value,
+                        sourceImages = listOfNotNull(_referenceImage.value),
                         customHeaders = model.customHeaders,
                         customBody = model.customBodies,
                     ),
@@ -257,8 +286,6 @@ class VideoGenVM(
 
     companion object {
         private const val TAG = "VideoGenVM"
-        const val MIN_DURATION_SECONDS = 2
-        const val MAX_DURATION_SECONDS = 15
         const val DEFAULT_DURATION_SECONDS = 5
     }
 }

@@ -132,6 +132,18 @@ data class VideoGenerationParams(
      * per-provider request builders for the clamping.
      */
     val durationSeconds: Int? = null,
+    /**
+     * How many clips to produce. Neither wired vendor takes an `n` for video, so a count > 1 is
+     * emulated with **sequential** calls (each of which can take minutes) — see the provider.
+     */
+    val numOfVideos: Int = 1,
+    /**
+     * Local file paths used as the **first frame** (image-to-video). Empty means plain
+     * text-to-video. Only the first entry is used: the DashScope first-frame endpoint takes a
+     * single `img_url`, and Seedance's `first_frame` role is likewise one image. It is read and
+     * inlined as a data URI, exactly like `ImageEditParams.images`.
+     */
+    val sourceImages: List<String> = emptyList(),
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )
