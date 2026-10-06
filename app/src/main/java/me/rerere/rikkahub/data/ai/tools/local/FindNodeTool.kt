@@ -22,6 +22,9 @@ import me.rerere.rikkahub.service.RikkaAccessibilityService
 private val ALLOWED_BY = setOf("text", "content_description", "view_id_resource_name")
 private const val MATCH_CAP = 50
 
+/** How many values a miss scans for suggestions before giving up on completeness. */
+private const val SUGGESTION_POOL_CAP = 300
+
 private data class NodeMatch(val node: AccessibilityNodeInfo, val traversalIndex: Int)
 
 /**
@@ -83,6 +86,61 @@ private fun parseSelector(input: kotlinx.serialization.json.JsonElement): Triple
     val value = input.jsonObject["value"]?.jsonPrimitive?.contentOrNull
     val pkg = input.jsonObject["package_name"]?.jsonPrimitive?.contentOrNull
     return Triple(by, value, pkg)
+}
+
+/** The value a node exposes on [by]'s axis, or null when it has none. */
+private fun axisValue(node: AccessibilityNodeInfo, by: String): String? = when (by) {
+    "text" -> node.text?.toString()?.takeIf { it.isNotBlank() }
+    "content_description" -> node.contentDescription?.toString()?.takeIf { it.isNotBlank() }
+    "view_id_resource_name" -> node.viewIdResourceName?.takeIf { it.isNotBlank() }
+    else -> null
+}
+
+/**
+ * The values actually on screen for [by]'s axis, each with the traversal index needed to rebuild
+ * a node_id. Runs over the same traversal as the match itself, so a suggested node_id is valid.
+ */
+private fun collectAxisValues(
+    svc: RikkaAccessibilityService,
+    root: AccessibilityNodeInfo,
+    by: String,
+): List<Pair<String, Int>> {
+    val out = mutableListOf<Pair<String, Int>>()
+    svc.traverseTree(
+        root = root,
+        filter = { n, _ -> axisValue(n, by) != null },
+        cap = SUGGESTION_POOL_CAP,
+        emit = { n, _, idx -> axisValue(n, by)?.let { out.add(it to idx) } },
+    )
+    return out
+}
+
+/**
+ * "Did you mean one of these?" — the closest values on the same axis, as clickable node_ids.
+ *
+ * Answers the one failure mode that most reliably stalls a run: a selector that misses, with no
+ * hint about what *is* there, so the model retries the same wrong value or pays for a fresh
+ * `read_window_tree`. Empty when nothing is close enough to be worth suggesting.
+ */
+private fun suggestAlternativesJson(
+    svc: RikkaAccessibilityService,
+    root: AccessibilityNodeInfo,
+    by: String,
+    value: String,
+): kotlinx.serialization.json.JsonArray {
+    val pool = collectAxisValues(svc, root, by)
+    val ranked = NodeDiagnostics.rank(value, pool.map { it.first })
+    return buildJsonArray {
+        ranked.forEach { candidate ->
+            val (candidateValue, traversalIndex) = pool[candidate.index]
+            add(buildJsonObject {
+                put("node_id", "${root.windowId}:$traversalIndex")
+                put("by", by)
+                put("value", candidateValue)
+                put("score", candidate.score)
+            })
+        }
+    }
 }
 
 fun findNodeTool(
@@ -169,6 +227,14 @@ fun findNodeTool(
                     matches.forEach { m -> add(nodeToJson(m.node, root.windowId, m.traversalIndex)) }
                 })
                 if (truncated) put("truncated", true)
+                if (matches.isEmpty()) {
+                    put("candidates", suggestAlternativesJson(svc, root, by, value))
+                    put(
+                        "hint",
+                        "No exact match on by=$by. `candidates` holds the closest values present " +
+                            "on that axis — click one by node_id, or try by=view_id_resource_name.",
+                    )
+                }
                 put("screen_state", screenStateJson(svc, screenChanged = null))
             }
         }
@@ -280,6 +346,15 @@ fun clickNodeTool(
                         put("error", staleReason ?: "no_match")
                         if (staleReason == "stale_node_id") {
                             put("hint", "the screen changed since read_window_tree; re-run it and use a fresh node_id")
+                        }
+                        if (staleReason == "no_match" && by != null && value != null) {
+                            put("candidates", suggestAlternativesJson(svc, root, by, value))
+                            put(
+                                "hint",
+                                "No exact match on by=$by — the closest values on that axis are in " +
+                                    "`candidates`. Click one by node_id, or retry with " +
+                                    "by=view_id_resource_name, which survives label changes.",
+                            )
                         }
                     }
                 }
@@ -454,6 +529,15 @@ fun setTextTool(
                         put("error", staleReason ?: "no_match")
                         if (staleReason == "stale_node_id") {
                             put("hint", "the screen changed since read_window_tree; re-run it and use a fresh node_id")
+                        }
+                        if (staleReason == "no_match" && by != null && value != null) {
+                            put("candidates", suggestAlternativesJson(svc, root, by, value))
+                            put(
+                                "hint",
+                                "No exact match on by=$by — the closest values on that axis are in " +
+                                    "`candidates`. Click one by node_id, or retry with " +
+                                    "by=view_id_resource_name, which survives label changes.",
+                            )
                         }
                     }
                 }
