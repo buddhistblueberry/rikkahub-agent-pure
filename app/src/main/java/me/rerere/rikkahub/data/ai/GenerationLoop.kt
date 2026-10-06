@@ -1219,6 +1219,9 @@ class GenerationLoop(
             // Reset per-turn navigation tracking and surface the overlay so the user
             // sees that automation is happening even when the agent runs from Telegram.
             AgentTurnTracker.reset()
+            // Screen-automation observations are per-turn too: they are flushed to the app's
+            // cold-memory playbook when the turn ends (ChatService.flushAutomationPlaybook).
+            AutomationRecorder.reset()
             AgentOverlay.show(context)
         }
         .onCompletion {
