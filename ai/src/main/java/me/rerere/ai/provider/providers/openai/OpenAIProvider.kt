@@ -456,7 +456,19 @@ class OpenAIProvider(
         // Legacy: poll the async task until it finishes.
         val taskId = parseDashScopeTaskId(submitText)
             ?: error("No task_id in DashScope response: $submitText")
+        return pollDashScopeImageTask(root, key, taskId)
+    }
 
+    /**
+     * Polls `GET /api/v1/tasks/{taskId}` until the task reaches a terminal status and returns its
+     * downloaded images. Shared by the text-to-image submit and the legacy image-**edit** submit,
+     * which differ only in the body they post and both answer with a `task_id`.
+     */
+    private suspend fun pollDashScopeImageTask(
+        root: String,
+        key: String,
+        taskId: String,
+    ): List<ImageGenerationItem> {
         val taskRequest = Request.Builder()
             .url("$root${dashScopeTaskPath(taskId)}")
             .addHeader("Authorization", "Bearer $key")
@@ -630,6 +642,17 @@ class OpenAIProvider(
                         }
                     }
                 }
+            }
+            items.forEach { emit(it) }
+            return@flow
+        }
+
+        // DashScope's OpenAI-compatible base URL has no /images/edits either - same 404 as
+        // /images/generations - so an edit goes to the provider's native edit endpoints instead.
+        // See editImageViaDashScope; other providers never enter this branch.
+        if (isDashScopeBaseUrl(providerSetting.baseUrl)) {
+            val items = withContext(Dispatchers.IO) {
+                editImageViaDashScope(providerSetting, params, key)
             }
             items.forEach { emit(it) }
             return@flow
@@ -926,6 +949,119 @@ class OpenAIProvider(
             data = base64,
             mimeType = mimeType,
         )
+    }
+
+    /**
+     * DashScope (Aliyun Bailian) image editing. The OpenAI-compatible base URL this provider
+     * normally uses has no `/images/edits` (it 404s, exactly like `/images/generations`), so the
+     * source images go to one of the provider's native edit endpoints instead. Which one is picked
+     * from the model id and, like [generateImageViaDashScope], retried on the other when the
+     * gateway answers the "model does not match this endpoint" rejection:
+     *
+     *  - **Multimodal** (`qwen-image-edit*`, `qwen-image-2.x` / `3.x`, `wan2.6-image`): the
+     *    synchronous `multimodal-generation/generation` endpoint, whose one user message carries
+     *    the source image(s) and the instruction as content parts.
+     *  - **Legacy** (`wanx*imageedit`): the asynchronous `image2image/image-synthesis` task API
+     *    with `input.function = description_edit` and `input.base_image_url`.
+     *
+     * Source images are read as `data:{mime};base64,...` URIs, which DashScope accepts wherever it
+     * accepts a public URL, so no upload step is needed. `size` is not sent - the edit output
+     * follows the source image's aspect (see [buildDashScopeMultimodalEditRequestBody]) - and `n`
+     * is, so one call yields several images rather than N sequential calls.
+     */
+    private suspend fun editImageViaDashScope(
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageEditParams,
+        key: String,
+    ): List<ImageGenerationItem> {
+        val root = dashScopeNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
+
+        val imageDataUris = params.images.map { path ->
+            val file = File(path)
+            require(file.exists()) { "Image file does not exist: $path" }
+            file.toDataUri()
+        }
+        require(imageDataUris.isNotEmpty()) { "At least one image is required" }
+
+        val preferredMultimodal = dashScopePrefersMultimodalEdit(params.model.modelId)
+        val first = runCatching {
+            submitDashScopeEdit(root, providerSetting, params, key, imageDataUris, preferredMultimodal)
+        }
+        val failure = first.exceptionOrNull()
+        if (failure == null) return first.getOrThrow()
+        // Never swallow coroutine cancellation as a provider failure.
+        if (failure is CancellationException) throw failure
+
+        // A `url error` rejection means the model and the endpoint disagree about the body shape.
+        // Retry once on the other endpoint so a model we did not enumerate still works.
+        if (failure is DashScopeSubmitRejected && failure.endpointMismatch) {
+            return submitDashScopeEdit(root, providerSetting, params, key, imageDataUris, !preferredMultimodal)
+        }
+        throw failure
+    }
+
+    /**
+     * Runs one DashScope image-edit request against the shape selected by [multimodal] (sync
+     * messages body carrying the images) or its opposite (legacy `description_edit` async task),
+     * and returns the downloaded images.
+     */
+    private suspend fun submitDashScopeEdit(
+        root: String,
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageEditParams,
+        key: String,
+        imageDataUris: List<String>,
+        multimodal: Boolean,
+    ): List<ImageGenerationItem> {
+        val (path, body) = if (multimodal) {
+            DASHSCOPE_MULTIMODAL_GENERATION_PATH to buildDashScopeMultimodalEditRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                imageDataUris = imageDataUris,
+                numOfImages = params.numOfImages,
+            )
+        } else {
+            DASHSCOPE_IMAGE_EDIT_SYNTHESIS_PATH to buildDashScopeEditRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                baseImageUri = imageDataUris.first(),
+                numOfImages = params.numOfImages,
+            )
+        }
+        val submitBody = body.mergeCustomBody(params.customBody)
+
+        val submitRequest = Request.Builder()
+            .url("$root$path")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .apply { if (!multimodal) addHeader("X-DashScope-Async", "enable") }
+            .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val submitResponse = client.newCall(submitRequest).await()
+        val submitText = submitResponse.body?.string().orEmpty()
+        if (!submitResponse.isSuccessful) {
+            throw DashScopeSubmitRejected(
+                message = "Failed to submit image edit: ${submitResponse.code} $submitText",
+                endpointMismatch = isDashScopeEndpointModelMismatch(submitText),
+            )
+        }
+
+        // Multimodal: the synchronous response already carries the edited images.
+        if (multimodal) {
+            val urls = parseDashScopeMultimodalImageUrls(submitText)
+            if (urls.isEmpty()) {
+                error("DashScope returned no edited images for ${params.model.modelId}: $submitText")
+            }
+            return urls.map { downloadImageAsBase64(it) }
+        }
+
+        // Legacy: the edit is an async task, polled exactly like text-to-image.
+        val taskId = parseDashScopeTaskId(submitText)
+            ?: error("No task_id in DashScope edit response: $submitText")
+        return pollDashScopeImageTask(root, key, taskId)
     }
 
     private suspend fun parseImageResponse(bodyStr: String): List<ImageGenerationItem> {
