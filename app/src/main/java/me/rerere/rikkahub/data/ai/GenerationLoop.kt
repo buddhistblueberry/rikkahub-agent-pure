@@ -10,7 +10,11 @@ import me.rerere.rikkahub.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -210,6 +214,35 @@ private fun retryStatusText(
     maxRetries,
     retryFailureReason(failure),
 )
+
+/**
+ * Poll [notifier] while a streamed reply is in flight and turn its verdict into the same
+ * processing-status line the retry path already writes, so the chat can say "still working" or
+ * "looks stalled" instead of counting seconds with no explanation. Never cancels anything: once
+ * output has started the stream retry policy refuses to re-run the turn, so cancelling here would
+ * only turn a slow-but-alive reply into a failure. See [StreamIdleNotifier].
+ */
+private suspend fun watchStreamIdle(
+    context: Context,
+    notifier: StreamIdleNotifier,
+    processingStatus: MutableStateFlow<String?>,
+) {
+    while (currentCoroutineContext().isActive) {
+        delay(StreamIdleThresholds.POLL_MS)
+        when (val notice = notifier.tick()) {
+            null -> Unit
+            StreamIdleNotice.Clear -> processingStatus.value = null
+            is StreamIdleNotice.Waiting -> processingStatus.value = context.getString(
+                R.string.chat_stream_waiting_first_output,
+                notice.idleMs / 1000,
+            )
+            is StreamIdleNotice.Stalled -> processingStatus.value = context.getString(
+                R.string.chat_stream_stalled,
+                notice.idleMs / 1000,
+            )
+        }
+    }
+}
 
 private fun clearRetryStatus(processingStatus: MutableStateFlow<String?>) {
     processingStatus.value = null
@@ -1379,6 +1412,9 @@ class GenerationLoop(
                 var receivedMeaningfulOutput = false
                 var receivedAnyChunk = false
                 val streamChunkHandler = StreamChunkHandler(model)
+                // Stream-idle watchdog: lets the chat say "still working" vs "wedged"
+                // instead of counting seconds with no explanation (see StreamIdleNotifier).
+                val idleNotifier = StreamIdleNotifier()
                 // P2-12a - a streamed call is a model round trip exactly like the non-stream
                 // one below, so it carries the same ambient context. It was previously left
                 // unwrapped, which (once the decorator started wrapping `streamText`) would have
@@ -1386,75 +1422,85 @@ class GenerationLoop(
                 // P2-12d — a sub-agent conversation carries a run attribution registered by
                 // SubAgentEngine; interactive turns resolve to null and keep today's context.
                 val usageAttribution = conversationId?.let { UsageRunContexts.get(it.toString()) }
-                withContext(
-                    UsageCallContext(
-                        purpose = usageAttribution?.purpose
-                            ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
-                        conversationId = conversationId?.toString(),
-                        assistantId = assistant.id.toString(),
-                        runId = usageAttribution?.runId,
-                        parentRunId = usageAttribution?.parentRunId,
-                    )
-                ) {
-                    providerImpl.streamText(
-                        providerSetting = provider,
-                        messages = internalMessages,
-                        params = params
-                    )
-                }.onCompletion { cause ->
-                    // Some SSE implementations report an abruptly closed socket through onClosed
-                    // without an exception. Treat a clean close with no chunks at all as a transport
-                    // failure so the retry policy can recover a background continuation. A clean
-                    // close after chunks arrived but none produced parseable parts is a permanent
-                    // condition (unrecognized part shapes), not a transport hiccup, so it must not
-                    // burn retries - log it and let the generation end normally with an empty reply.
-                    if (cause == null && shouldReportEmptyGenerationStream(receivedAnyChunk)) {
-                        throw IOException("Model stream closed without meaningful output")
+                    coroutineScope {
+                        val idleWatchdog = launch { watchStreamIdle(context, idleNotifier, processingStatus) }
+                        try {
+                            withContext(
+                                UsageCallContext(
+                                    purpose = usageAttribution?.purpose
+                                        ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
+                                    conversationId = conversationId?.toString(),
+                                    assistantId = assistant.id.toString(),
+                                    runId = usageAttribution?.runId,
+                                    parentRunId = usageAttribution?.parentRunId,
+                                )
+                            ) {
+                                providerImpl.streamText(
+                                    providerSetting = provider,
+                                    messages = internalMessages,
+                                    params = params
+                                )
+                            }.onCompletion { cause ->
+                                // Some SSE implementations report an abruptly closed socket through onClosed
+                                // without an exception. Treat a clean close with no chunks at all as a transport
+                                // failure so the retry policy can recover a background continuation. A clean
+                                // close after chunks arrived but none produced parseable parts is a permanent
+                                // condition (unrecognized part shapes), not a transport hiccup, so it must not
+                                // burn retries - log it and let the generation end normally with an empty reply.
+                                if (cause == null && shouldReportEmptyGenerationStream(receivedAnyChunk)) {
+                                    throw IOException("Model stream closed without meaningful output")
+                                }
+                                if (cause == null && receivedAnyChunk && !receivedMeaningfulOutput) {
+                                    Log.w(
+                                        TAG,
+                                        "streamText: stream closed after chunks arrived but none contained " +
+                                            "parseable parts; ending without retry",
+                                    )
+                                }
+                            }.retryWhen { cause, retryAttempt ->
+                                val shouldRetry = shouldRetryGenerationStreamFailure(
+                                    failure = cause,
+                                    retryAttempt = retryAttempt,
+                                    maxRetries = params.maxStreamRetries,
+                                    receivedMeaningfulOutput = receivedMeaningfulOutput,
+                                )
+                                if (shouldRetry) {
+                                    // A new attempt is about to start collecting from scratch: reset the
+                                    // per-attempt "did anything arrive" flag so onCompletion's transport-failure
+                                    // check reflects this attempt, not a chunk seen in an earlier one.
+                                    receivedAnyChunk = false
+                                    idleNotifier.onAttemptStart()
+                                    val delayMs = generationStreamRetryDelayMs(retryAttempt)
+                                    processingStatus.value = retryStatusText(
+                                        context = context,
+                                        retryNumber = retryAttempt + 1,
+                                        maxRetries = params.maxStreamRetries,
+                                        failure = cause,
+                                    )
+                                    Log.w(
+                                        TAG,
+                                        "streamText: retrying after failure " +
+                                            "(${retryAttempt + 1}/${params.maxStreamRetries}) in ${delayMs}ms",
+                                        cause,
+                                    )
+                                    delay(delayMs)
+                                }
+                                shouldRetry
+                            }.collect {
+                                receivedAnyChunk = true
+                                val meaningful = isMeaningfulStreamChunk(it)
+                                if (meaningful) {
+                                    receivedMeaningfulOutput = true
+                                    clearRetryStatus(processingStatus)
+                                }
+                                idleNotifier.onChunk(meaningful)
+                                messages = streamChunkHandler.handle(messages, it)
+                                onUpdateMessages(messages)
+                            }
+                        } finally {
+                            idleWatchdog.cancel()
+                        }
                     }
-                    if (cause == null && receivedAnyChunk && !receivedMeaningfulOutput) {
-                        Log.w(
-                            TAG,
-                            "streamText: stream closed after chunks arrived but none contained " +
-                                "parseable parts; ending without retry",
-                        )
-                    }
-                }.retryWhen { cause, retryAttempt ->
-                    val shouldRetry = shouldRetryGenerationStreamFailure(
-                        failure = cause,
-                        retryAttempt = retryAttempt,
-                        maxRetries = params.maxStreamRetries,
-                        receivedMeaningfulOutput = receivedMeaningfulOutput,
-                    )
-                    if (shouldRetry) {
-                        // A new attempt is about to start collecting from scratch: reset the
-                        // per-attempt "did anything arrive" flag so onCompletion's transport-failure
-                        // check reflects this attempt, not a chunk seen in an earlier one.
-                        receivedAnyChunk = false
-                        val delayMs = generationStreamRetryDelayMs(retryAttempt)
-                        processingStatus.value = retryStatusText(
-                            context = context,
-                            retryNumber = retryAttempt + 1,
-                            maxRetries = params.maxStreamRetries,
-                            failure = cause,
-                        )
-                        Log.w(
-                            TAG,
-                            "streamText: retrying after failure " +
-                                "(${retryAttempt + 1}/${params.maxStreamRetries}) in ${delayMs}ms",
-                            cause,
-                        )
-                        delay(delayMs)
-                    }
-                    shouldRetry
-                }.collect {
-                    receivedAnyChunk = true
-                    if (isMeaningfulStreamChunk(it)) {
-                        receivedMeaningfulOutput = true
-                        clearRetryStatus(processingStatus)
-                    }
-                    messages = streamChunkHandler.handle(messages, it)
-                    onUpdateMessages(messages)
-                }
             } else {
                 aiLoggingManager.addLog(
                     AILogging.Generation(
