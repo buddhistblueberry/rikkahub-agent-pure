@@ -21,6 +21,7 @@ class UsageStatsViewTest {
         atMs: Long = day1Morning,
         purpose: UsagePurpose = UsagePurpose.MAIN,
         modelId: String? = "deepseek-chat",
+        providerId: String? = null,
         assistantId: String? = null,
         conversationId: String? = null,
         input: Int = 0,
@@ -34,6 +35,7 @@ class UsageStatsViewTest {
         id = id,
         createdAtMs = atMs,
         purpose = purpose.name,
+        providerId = providerId,
         modelId = modelId,
         assistantId = assistantId,
         conversationId = conversationId,
@@ -58,9 +60,46 @@ class UsageStatsViewTest {
         assertNull(view.total.providerCostUsd)
         assertTrue(view.byDay.isEmpty())
         assertTrue(view.byPurpose.isEmpty())
+        assertTrue(view.byProvider.isEmpty())
         assertTrue(view.byModel.isEmpty())
         assertTrue(view.byAssistant.isEmpty())
         assertEquals(0f, view.shareOfTokens(view.total), 0f)
+    }
+
+    // ---- provider ------------------------------------------------------------------------
+
+    @Test
+    fun `groups rows by provider and sums their tokens`() {
+        val view = UsageStatsFactory.build(
+            listOf(
+                row("a", providerId = "DeepSeek", input = 100, output = 10),
+                row("b", providerId = "DeepSeek", input = 200, output = 20),
+                row("c", providerId = "阿里云百炼", input = 50, output = 5),
+            ),
+            utc,
+        )
+
+        assertEquals(2, view.byProvider.size)
+        val deepseek = view.byProvider.first { it.key == "DeepSeek" }
+        assertEquals(2, deepseek.callCount)
+        assertEquals(300L, deepseek.inputTokens)
+        assertEquals(30L, deepseek.outputTokens)
+        // Largest first, so the provider carrying the most tokens heads the ranking.
+        assertEquals("DeepSeek", view.byProvider.first().key)
+    }
+
+    @Test
+    fun `buckets a null provider id under unknown`() {
+        val view = UsageStatsFactory.build(
+            listOf(
+                row("a", providerId = null, input = 10),
+                row("b", providerId = "DeepSeek", input = 100),
+            ),
+            utc,
+        )
+
+        assertEquals(setOf("unknown", "DeepSeek"), view.byProvider.map { it.key }.toSet())
+        assertEquals(10L, view.byProvider.first { it.key == "unknown" }.inputTokens)
     }
 
     // ---- purpose -------------------------------------------------------------------------

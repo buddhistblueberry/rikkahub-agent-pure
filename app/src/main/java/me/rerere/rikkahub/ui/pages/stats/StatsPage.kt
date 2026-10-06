@@ -783,9 +783,10 @@ private fun OrchestrationChildRow(node: OrchestrationNode) {
 }
 
 /**
- * The four rankings of the ledger window. [StatsOverview]'s token cards read the same ledger grand
- * total since D1; only its conversation / message / launch counts still come from the message and
- * settings stores, so no number here is ever added to a differently-windowed one.
+ * The rankings of the ledger window, headed by a totals card. [StatsOverview]'s token cards read
+ * the same ledger grand total since D1; only its conversation / message / launch counts still come
+ * from the message and settings stores, so no number here is ever added to a differently-windowed
+ * one.
  */
 @Composable
 private fun LedgerStatsSection(
@@ -813,6 +814,7 @@ private fun LedgerStatsSection(
                 )
             }
         } else {
+            LedgerSummaryCard(view = view, modifier = Modifier.fillMaxWidth())
             LedgerBucketCard(
                 title = stringResource(R.string.stats_page_ledger_by_day),
                 buckets = view.byDay,
@@ -827,6 +829,19 @@ private fun LedgerStatsSection(
                 buckets = UsagePurposeGroups.merge(view.byPurpose),
                 view = view,
                 labelOf = { key -> stringResource(usageGroupLabelRes(key)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_provider),
+                buckets = view.byProvider,
+                view = view,
+                labelOf = { key ->
+                    if (key == UsageStatsFactory.UNKNOWN_KEY) {
+                        stringResource(R.string.stats_page_ledger_unknown)
+                    } else {
+                        key
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             LedgerBucketCard(
@@ -856,6 +871,83 @@ private fun LedgerStatsSection(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/**
+ * The window's headline figures, in one card above the rankings: how many calls, how many tokens,
+ * and what they cost. The rankings below answer *where* the spend went; this answers *how much*,
+ * which otherwise had to be rebuilt by adding up the ranked rows by hand. Every figure is the same
+ * grand total the rankings are a share of, so the card can never disagree with them.
+ *
+ * The price follows the ledger's long-standing rule (see [ledgerCostText]): a provider-reported
+ * cost is shown bare, a table-computed one gets a `~`, and a window nobody could price simply
+ * leaves the cell out instead of claiming "$0".
+ */
+@Composable
+private fun LedgerSummaryCard(view: LedgerStatsView, modifier: Modifier = Modifier) {
+    val total = view.total
+    val cost = ledgerCostText(total.providerCostUsd, total.costMicros)
+
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.stats_page_ledger_summary_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DailyMetric(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.stats_page_ledger_summary_calls),
+                    value = formatCount(total.callCount.toLong()),
+                )
+                DailyMetric(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.stats_page_ledger_summary_tokens),
+                    value = formatTokens(total.totalTokens),
+                )
+                if (cost != null) {
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_ledger_summary_cost),
+                        value = cost,
+                    )
+                }
+            }
+            // The two rates are shown on their own line, and only when they are knowable: a
+            // cache rate with no reporter and a throughput with no measured latency both stay
+            // off rather than reading as a real zero (the bucket rule, applied to the total).
+            val cacheRate = total.cacheHitRate
+            val rate = total.tokensPerSecond
+            if (cacheRate != null || rate != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (cacheRate != null) {
+                        Text(
+                            text = stringResource(R.string.stats_page_ledger_cache_hit, cacheRate),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (rate != null) {
+                        Text(
+                            text = stringResource(R.string.stats_page_ledger_tok_per_sec, formatRate(rate)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }
