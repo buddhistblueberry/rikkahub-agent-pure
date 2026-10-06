@@ -38,6 +38,7 @@ import me.rerere.rikkahub.data.ai.tools.local.cameraPhotoTool
 // P2-33 image generation tools
 import me.rerere.rikkahub.data.ai.tools.local.editImageTool
 import me.rerere.rikkahub.data.ai.tools.local.generateImageTool
+import me.rerere.rikkahub.data.ai.tools.local.generateVideoTool
 import me.rerere.rikkahub.data.ai.tools.local.clickNodeTool
 import me.rerere.rikkahub.data.ai.tools.local.downloadTool
 import me.rerere.rikkahub.data.ai.tools.local.fingerprintTool
@@ -212,6 +213,7 @@ sealed class LocalToolOption {
 
     // P2-33 image generation tools
     @Serializable @SerialName("image_generation")     data object ImageGeneration     : LocalToolOption()
+    @Serializable @SerialName("video_generation")     data object VideoGeneration     : LocalToolOption()
 }
 
 /**
@@ -254,6 +256,8 @@ object LenientLocalToolListSerializer : KSerializer<List<LocalToolOption>> {
 private val TOP_TOOL_EXAMPLES: Map<String, String> = mapOf(
     // P2-33 image generation tools
     "generate_image" to "generate_image(prompt=\"a red panda on a bamboo branch, watercolor\")",
+    // P2-33b video generation tool
+    "generate_video" to "generate_video(prompt=\"a drone shot flying over a misty mountain lake at sunrise\")",
     "get_battery_status" to "get_battery_status()",
     "get_audio_info" to "get_audio_info()",
     "get_telephony_info" to "get_telephony_info()",
@@ -1142,6 +1146,18 @@ class LocalTools(
                     filesManager = filesManager,
                     genMediaRepository = genMediaRepository,
                     modelCanSeeImages = invocationContext.modelCanSeeImages,
+                )
+            )
+        }
+        if (options.contains(LocalToolOption.VideoGeneration)) {
+            // P2-33b video generation tool
+            tools.add(
+                generateVideoTool(
+                    settingsStore = settingsStore,
+                    providerManager = providerManager,
+                    filesManager = filesManager,
+                    genMediaRepository = genMediaRepository,
+                    modelCanSeeVideos = invocationContext.modelCanSeeVideos,
                 )
             )
         }

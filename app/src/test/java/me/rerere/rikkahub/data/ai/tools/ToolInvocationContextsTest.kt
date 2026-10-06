@@ -24,6 +24,7 @@ class ToolInvocationContextsTest {
             conversationId = "conv-1",
             isHeadless = false,
             modelCanSeeImages = false,
+            modelCanSeeVideos = false,
             subAgentContextRefsEnabled = false,
             subAgentToolSurfaceEnabled = false,
         )
@@ -32,6 +33,7 @@ class ToolInvocationContextsTest {
         assertEquals("conv-1", ctx.callerConversationId)
         assertFalse(ctx.isHeadless)
         assertFalse(ctx.modelCanSeeImages)
+        assertFalse(ctx.modelCanSeeVideos)
         assertFalse(ctx.subAgentContextRefsEnabled)
         assertFalse(ctx.subAgentToolSurfaceEnabled)
     }
@@ -45,6 +47,7 @@ class ToolInvocationContextsTest {
             conversationId = "conv-2",
             isHeadless = false,
             modelCanSeeImages = true,
+            modelCanSeeVideos = true,
             subAgentContextRefsEnabled = true,
             subAgentToolSurfaceEnabled = true,
         )
@@ -53,6 +56,7 @@ class ToolInvocationContextsTest {
         assertEquals("conv-2", ctx.callerConversationId)
         assertFalse(ctx.isHeadless)
         assertTrue(ctx.modelCanSeeImages)
+        assertTrue(ctx.modelCanSeeVideos)
         assertTrue(ctx.subAgentContextRefsEnabled)
         assertTrue(ctx.subAgentToolSurfaceEnabled)
     }
@@ -66,6 +70,7 @@ class ToolInvocationContextsTest {
             conversationId = "sub-conv",
             isHeadless = true,
             modelCanSeeImages = true,
+            modelCanSeeVideos = true,
             subAgentContextRefsEnabled = false,
             subAgentToolSurfaceEnabled = true,
         )

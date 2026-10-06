@@ -29,10 +29,12 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.VideoGenerationParams
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.VideoGenerationItem
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.json
@@ -687,6 +689,205 @@ class OpenAIProvider(
         }
 
         items.forEach { emit(it) }
+    }
+
+    /**
+     * Text-to-video for the OpenAI-compatible provider. Only two families are wired, both driven
+     * on their vendor's **native** async task API (see [DashScopeVideoRequest] /
+     * [VolcengineVideoRequest]) rather than the OpenAI surface: DashScope Wan and Volcengine
+     * Seedance. Any other base URL refuses with a clear message — the tool layer turns the failure
+     * into a structured envelope instead of an opaque `tool_failed`.
+     */
+    override suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams
+    ): Flow<VideoGenerationItem> = flow {
+        require(providerSetting is ProviderSetting.OpenAI) {
+            "Expected OpenAI provider setting"
+        }
+
+        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+
+        val items = withContext(Dispatchers.IO) {
+            when {
+                isDashScopeBaseUrl(providerSetting.baseUrl) ->
+                    generateVideoViaDashScope(providerSetting, params, key)
+
+                isVolcengineArkBaseUrl(providerSetting.baseUrl) ->
+                    generateVideoViaVolcengine(providerSetting, params, key)
+
+                else -> error(
+                    "Video generation is not supported for this provider yet " +
+                        "(${providerSetting.baseUrl}). Configure a DashScope (Wan) or " +
+                        "Volcengine Ark (Seedance) provider.",
+                )
+            }
+        }
+
+        items.forEach { emit(it) }
+    }
+
+    /**
+     * DashScope Wan text-to-video: submit `video-synthesis` (async), poll the shared task endpoint
+     * until `SUCCEEDED`, then download the clip. See [DashScopeVideoRequest] for the shapes.
+     */
+    private suspend fun generateVideoViaDashScope(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val root = dashScopeNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
+
+        val submitBody = buildDashScopeVideoRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            durationSeconds = params.durationSeconds,
+        ).mergeCustomBody(params.customBody)
+
+        val submitRequest = Request.Builder()
+            .url("$root$DASHSCOPE_VIDEO_SYNTHESIS_PATH")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("X-DashScope-Async", "enable")
+            .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val submitResponse = client.newCall(submitRequest).await()
+        val submitText = submitResponse.body?.string().orEmpty()
+        if (!submitResponse.isSuccessful) {
+            error("Failed to submit DashScope video task: ${submitResponse.code} $submitText")
+        }
+
+        val taskId = parseDashScopeTaskId(submitText)
+            ?: error("No task_id in DashScope video response: $submitText")
+
+        val pollRequest = Request.Builder()
+            .url("$root${dashScopeTaskPath(taskId)}")
+            .addHeader("Authorization", "Bearer $key")
+            .build()
+
+        repeat(DASHSCOPE_VIDEO_POLL_ATTEMPTS) {
+            delay(DASHSCOPE_VIDEO_POLL_INTERVAL_MS)
+            val pollResponse = client.newCall(pollRequest).await()
+            val pollText = pollResponse.body?.string().orEmpty()
+            if (!pollResponse.isSuccessful) {
+                error("Failed to poll DashScope video task $taskId: ${pollResponse.code} $pollText")
+            }
+            when (parseDashScopeTaskStatus(pollText)) {
+                "SUCCEEDED" -> {
+                    val url = parseDashScopeVideoUrl(pollText)
+                        ?: error("DashScope video task $taskId succeeded with no video_url: $pollText")
+                    return listOf(downloadVideoAsBase64(url))
+                }
+
+                "FAILED", "CANCELED", "UNKNOWN" -> error(
+                    "DashScope video task $taskId did not succeed: " +
+                        (parseDashScopeTaskMessage(pollText) ?: pollText),
+                )
+
+                // PENDING / RUNNING - keep polling.
+                else -> Unit
+            }
+        }
+        error("DashScope video task $taskId timed out after $DASHSCOPE_VIDEO_POLL_ATTEMPTS polls")
+    }
+
+    /**
+     * Volcengine Ark (Seedance) text-to-video: create a contents task, poll until `succeeded`,
+     * then download the clip. See [VolcengineVideoRequest] for the shapes.
+     */
+    private suspend fun generateVideoViaVolcengine(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val base = providerSetting.baseUrl.trimEnd('/')
+
+        val createBody = buildVolcengineVideoRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            durationSeconds = params.durationSeconds,
+        ).mergeCustomBody(params.customBody)
+
+        val createRequest = Request.Builder()
+            .url("$base$VOLCENGINE_CREATE_VIDEO_TASK_PATH")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .post(json.encodeToString(createBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val createResponse = client.newCall(createRequest).await()
+        val createText = createResponse.body?.string().orEmpty()
+        if (!createResponse.isSuccessful) {
+            error(
+                "Failed to create Volcengine video task: ${createResponse.code} " +
+                    (parseVolcengineErrorMessage(createText) ?: createText),
+            )
+        }
+
+        val taskId = parseVolcengineTaskId(createText)
+            ?: error("No id in Volcengine video response: $createText")
+
+        val pollRequest = Request.Builder()
+            .url("$base${volcengineVideoTaskPath(taskId)}")
+            .addHeader("Authorization", "Bearer $key")
+            .build()
+
+        repeat(VOLCENGINE_VIDEO_POLL_ATTEMPTS) {
+            delay(VOLCENGINE_VIDEO_POLL_INTERVAL_MS)
+            val pollResponse = client.newCall(pollRequest).await()
+            val pollText = pollResponse.body?.string().orEmpty()
+            if (!pollResponse.isSuccessful) {
+                error("Failed to poll Volcengine video task $taskId: ${pollResponse.code} $pollText")
+            }
+            when (parseVolcengineTaskStatus(pollText)) {
+                "succeeded" -> {
+                    val url = parseVolcengineVideoUrl(pollText)
+                        ?: error("Volcengine video task $taskId succeeded with no video_url: $pollText")
+                    return listOf(downloadVideoAsBase64(url))
+                }
+
+                "failed", "expired", "canceled", "cancelled" -> error(
+                    "Volcengine video task $taskId did not succeed: " +
+                        (parseVolcengineErrorMessage(pollText) ?: pollText),
+                )
+
+                // queued / running - keep polling.
+                else -> Unit
+            }
+        }
+        error("Volcengine video task $taskId timed out after $VOLCENGINE_VIDEO_POLL_ATTEMPTS polls")
+    }
+
+    /**
+     * Downloads a finished clip and hands it back base64-encoded, mirroring
+     * [downloadImageAsBase64]. Both vendors expire their result URLs (Ark: 24 h), so fetching here
+     * — while the URL is guaranteed fresh — is the whole point.
+     */
+    private suspend fun downloadVideoAsBase64(url: String): VideoGenerationItem {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        val response = client.newCall(request).await()
+        if (!response.isSuccessful) {
+            error("Failed to download generated video: ${response.code}")
+        }
+
+        val body = response.body
+        val mimeType = body.contentType()?.toString() ?: "video/mp4"
+        val base64 = Base64.encode(body.bytes())
+
+        return VideoGenerationItem(
+            data = base64,
+            mimeType = mimeType,
+        )
     }
 
     private suspend fun parseImageResponse(bodyStr: String): List<ImageGenerationItem> {

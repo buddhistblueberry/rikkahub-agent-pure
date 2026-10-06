@@ -1011,6 +1011,7 @@
   <string name="setting_provider_page_audio">Audio</string>
   <string name="setting_provider_page_video">Video</string>
   <string name="setting_provider_page_image_model">Image</string>
+  <string name="setting_provider_page_video_model">Video</string>
   <string name="setting_provider_page_image_qr_decode_failed">Failed to parse QR code from image: %s</string>
   <string name="setting_provider_page_import_dialog_message">Please select import method:</string>
   <string name="setting_provider_page_import_dialog_title">Import Provider Configuration</string>
@@ -1385,6 +1386,8 @@
   <!-- P2-33 image generation tools -->
   <string name="assistant_page_local_tools_image_generation_title">Image generation</string>
   <string name="assistant_page_local_tools_image_generation_desc">Let the assistant generate or edit images from a prompt; results appear in the chat and in the gallery.</string>
+  <string name="assistant_page_local_tools_video_generation_title">Video generation</string>
+  <string name="assistant_page_local_tools_video_generation_desc">Let the assistant generate short videos from a prompt (DashScope Wan or Volcengine Seedance); takes a few minutes and results appear in the chat and in the gallery.</string>
   <string name="assistant_page_local_tools_camera_photo_desc">Open the system camera so the user can take a photo and return its file path.</string>
   <string name="assistant_page_local_tools_mic_recorder_title">Mic recorder</string>
   <string name="assistant_page_local_tools_mic_recorder_desc">Record audio from the microphone for a bounded duration to a local file.</string>

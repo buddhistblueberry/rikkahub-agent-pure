@@ -33,6 +33,7 @@ data class Model(
 enum class ModelType {
     CHAT,
     IMAGE,
+    VIDEO,
     EMBEDDING,
 }
 
