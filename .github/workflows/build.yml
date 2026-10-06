@@ -5,6 +5,9 @@ on:
     branches:
       - master
       - 'feat/**'
+      # Maintenance branches (CI tweaks, dependency bumps, docs) build too — they
+      # are still code that will be merged, so they deserve the same gate.
+      - 'chore/**'
   pull_request:
     branches:
       - master
@@ -129,6 +132,11 @@ jobs:
       # a second time and rebuilt the llama.cpp native libs a second time, for an
       # artifact nothing shipped. The published APK is `app-*-pure-unsigned.apk`,
       # re-signed on the VPS with p2.keystore (dl2.sh apk-pure).
+      #
+      # :ai:testDebugUnitTest is listed explicitly: :app:testPureUnitTest does not
+      # run the library modules' tests, so the provider request-shape tests in
+      # :ai never executed in CI. They are plain JVM tests (android.util.Log is
+      # stubbed via returnDefaultValues), so this is seconds, not minutes.
       - name: Assemble pure APK + unit tests
         env:
           # Fast lane: a push to a non-master branch (feat/**) skips the release
@@ -141,7 +149,7 @@ jobs:
             echo "fast lane: -PskipLintVital"
             FLAGS="-PskipLintVital"
           fi
-          ./gradlew :app:assemblePure :app:testPureUnitTest $FLAGS --stacktrace
+          ./gradlew :app:assemblePure :app:testPureUnitTest :ai:testDebugUnitTest $FLAGS --stacktrace
 
       - name: Show pure APK sizes
         run: ls -la app/build/outputs/apk/pure/*.apk || true
@@ -163,6 +171,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-report
-          path: app/build/reports/tests/
+          path: |
+            app/build/reports/tests/
+            ai/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 14
