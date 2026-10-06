@@ -36,15 +36,21 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 private const val VOLCES_HOST_SUFFIX = ".volces.com"
 
+/** BytePlus hosts the international ModelArk region under this domain (`ark.<region>.bytepluses.com`). */
+private const val BYTEPLUS_HOST_SUFFIX = ".bytepluses.com"
+
 /** The host of [baseUrl] when it is a Volcengine Ark host, else `null`. */
 private fun arkHost(baseUrl: String): String? {
     val host = baseUrl.toHttpUrlOrNull()?.host?.lowercase() ?: return null
-    if (!host.endsWith(VOLCES_HOST_SUFFIX)) return null
+    if (!host.endsWith(VOLCES_HOST_SUFFIX) && !host.endsWith(BYTEPLUS_HOST_SUFFIX)) return null
     val firstLabel = host.substringBefore('.')
     return if (firstLabel.startsWith("ark")) host else null
 }
 
-/** True when [baseUrl] points at a Volcengine Ark host (`ark.cn-beijing.volces.com`, ...). */
+/**
+ * True when [baseUrl] points at a Volcengine Ark host — the mainland `ark.cn-beijing.volces.com`
+ * or the international BytePlus ModelArk host (`ark.<region>.bytepluses.com`).
+ */
 fun isVolcengineArkBaseUrl(baseUrl: String): Boolean = arkHost(baseUrl) != null
 
 /** `POST {baseUrl}/contents/generations/tasks`. */

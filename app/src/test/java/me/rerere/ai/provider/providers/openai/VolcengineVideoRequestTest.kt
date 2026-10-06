@@ -32,8 +32,9 @@ class VolcengineVideoRequestTest {
     fun other_hosts_are_not_ark() {
         assertFalse(isVolcengineArkBaseUrl("https://api.openai.com/v1"))
         assertFalse(isVolcengineArkBaseUrl("https://dashscope.aliyuncs.com/compatible-mode/v1"))
-        // A non-ark label on the volces domain must not match.
+        // A non-ark label on either domain must not match.
         assertFalse(isVolcengineArkBaseUrl("https://notark.cn-beijing.volces.com/api/v3"))
+        assertFalse(isVolcengineArkBaseUrl("https://open.volces.com/api/v3"))
         assertFalse(isVolcengineArkBaseUrl("not a url"))
     }
 
