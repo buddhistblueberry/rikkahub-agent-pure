@@ -9,7 +9,7 @@ import java.time.ZoneId
  * The page used to read `message.usage` out of the message JSON only, so it could not say which
  * assistant, day, purpose or model a token went to, and could not price a call at all. The ledger
  * (P2-11) records one row per model round trip carrying exactly those dimensions, so this file
- * turns a window of rows into four rankings plus the grand total they are a share of.
+ * turns a window of rows into five rankings plus the grand total they are a share of.
  *
  * Pure by construction: no Room runtime, no Android, no coroutines. [UsageRecordEntity] is a plain
  * data class — only its annotations need androidx.room on the compile classpath — and the zone is
@@ -73,14 +73,16 @@ data class UsageStatBucket(
 /**
  * The four rankings of one window, plus the grand total.
  *
- * [byDay] is newest first and its keys are ISO dates; the other three are largest first and their
- * keys are a purpose name, a model id, and an assistant id. An empty window yields a zeroed
- * [total] and four empty lists — never null — so the UI has a single shape to render.
+ * [byDay] is newest first and its keys are ISO dates; the other four are largest first and their
+ * keys are a purpose name, a provider name, a model id, and an assistant id. An empty window
+ * yields a zeroed [total] and five empty lists — never null — so the UI has a single shape to
+ * render.
  */
 data class LedgerStatsView(
     val total: UsageStatBucket,
     val byDay: List<UsageStatBucket>,
     val byPurpose: List<UsageStatBucket>,
+    val byProvider: List<UsageStatBucket>,
     val byModel: List<UsageStatBucket>,
     val byAssistant: List<UsageStatBucket>,
 ) {
@@ -105,6 +107,7 @@ data class LedgerStatsView(
             ),
             byDay = emptyList(),
             byPurpose = emptyList(),
+            byProvider = emptyList(),
             byModel = emptyList(),
             byAssistant = emptyList(),
         )
@@ -116,7 +119,7 @@ object UsageStatsFactory {
     const val UNKNOWN_KEY = "unknown"
 
     /**
-     * Buckets the window's rows along the four axes the stats page shows.
+     * Buckets the window's rows along the five axes the stats page shows.
      *
      * @param records every ledger row in the window, any order.
      * @param zone device zone, so the day buckets line up with the rest of the page.
@@ -138,6 +141,11 @@ object UsageStatsFactory {
 
         val byPurpose = group(records) { it.purpose }.sortedWith(RANKING)
 
+        // The column is named `providerId` but the recorder stores the provider's **display name**
+        // (UsageCallRecorder passes `providerSetting.name`), so this ranking needs no lookup and
+        // reads as the "which API key / account did this go to" axis.
+        val byProvider = group(records) { it.providerId ?: UNKNOWN_KEY }.sortedWith(RANKING)
+
         val byModel = group(records) { it.modelId ?: UNKNOWN_KEY }.sortedWith(RANKING)
 
         val byAssistant = group(records) { row ->
@@ -150,6 +158,7 @@ object UsageStatsFactory {
             total = aggregate(records, key = ""),
             byDay = byDay,
             byPurpose = byPurpose,
+            byProvider = byProvider,
             byModel = byModel,
             byAssistant = byAssistant,
         )
