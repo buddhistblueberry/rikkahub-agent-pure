@@ -663,6 +663,21 @@ private fun AssistantLocalToolContent(
             )
             item(
                 headlineContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_video_generation_title))
+                },
+                supportingContent = {
+                    Text(stringResource(R.string.assistant_page_local_tools_video_generation_desc))
+                },
+                trailingContent = {
+                    // P2-33b video generation tool
+                    PermissionedSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.VideoGeneration),
+                        onCheckedChange = { toggleLocalTool(LocalToolOption.VideoGeneration, it) },
+                    )
+                }
+            )
+            item(
+                headlineContent = {
                     Text(stringResource(R.string.assistant_page_local_tools_mic_recorder_title))
                 },
                 supportingContent = {

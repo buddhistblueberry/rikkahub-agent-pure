@@ -72,6 +72,8 @@ object ToolSurfaceResolver {
         // show_image keys its result envelope off this — a text-only model gets told it
         // cannot see the image instead of confabulating one.
         modelCanSeeImages = Modality.IMAGE in model.inputModalities,
+        // generate_video keys its result envelope off this the same way.
+        modelCanSeeVideos = Modality.VIDEO in model.inputModalities,
         // T-04 / (4) — gates subagent_dispatch's `include_recent_turns` parameter.
         subAgentContextRefsEnabled = assistant.enableSubAgentContextRefs,
         // T-09 / (8) — gates subagent_dispatch's `tools` parameter (schema AND behaviour).

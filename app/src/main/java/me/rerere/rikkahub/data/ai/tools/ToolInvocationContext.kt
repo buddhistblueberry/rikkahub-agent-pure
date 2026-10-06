@@ -34,6 +34,15 @@ data class ToolInvocationContext(
     val isHeadless: Boolean = false,
     val modelCanSeeImages: Boolean = true,
     /**
+     * P2-33b — true iff the model handling this turn has video input in its modalities.
+     * `generate_video` reads this so a model that cannot watch the clip is told plainly that the
+     * result is displayed to the user but invisible to it, rather than being handed byte counts
+     * that read like \"I watched it\" (the same anti-confabulation guard [modelCanSeeImages] gives
+     * `show_image`). Defaults to `true` to mirror [modelCanSeeImages]; the only model-derived
+     * dispatch path (ChatService -> ToolSurfaceResolver.chatContext) always sets it explicitly.
+     */
+    val modelCanSeeVideos: Boolean = true,
+    /**
      * T-04 / (4): true when the calling assistant has `enableSubAgentContextRefs` on.
      * `subagent_dispatch` reads this to decide whether to OFFER its `include_recent_turns`
      * parameter at all - the flag gates the tool SCHEMA, not just the behaviour, so an

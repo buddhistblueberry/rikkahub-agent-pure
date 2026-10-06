@@ -29,8 +29,8 @@ android {
         applicationId = "excp.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 191
-        versionName = "2.5.1-pure.4"
+        versionCode = 193
+        versionName = "2.5.1-pure.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -232,6 +232,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material3.adaptive)
     implementation(libs.androidx.material3.adaptive.layout)
+
+    // Vico — Compose-native charts for the statistics page.
+    implementation(libs.vico.compose.m3)
 
     // Navigation 3
     implementation(libs.androidx.navigation3.runtime)

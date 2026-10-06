@@ -17,6 +17,7 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.AgentTurnTracker
+import me.rerere.rikkahub.data.ai.AutomationRecorder
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.service.RikkaAccessibilityService
 
@@ -128,6 +129,7 @@ fun launchAppTool(
             } else {
                 AgentTurnTracker.recordNavigatedAway(pkg)
                 AgentTurnTracker.touchPackage(pkg)
+                AutomationRecorder.recordEntry(pkg, "launch_app")
                 // Screen-automation experience memory: surface this app's stored playbook (or a
                 // one-line nudge to write one) right where an app task begins, so the agent
                 // starts from what worked last time. No-op when cold memory is not configured.
@@ -408,7 +410,10 @@ fun openUrlTool(
             context.startActivity(intent)
             val handlerPkg = resolved.activityInfo?.packageName
             AgentTurnTracker.recordNavigatedAway(handlerPkg)
-            if (!handlerPkg.isNullOrBlank()) AgentTurnTracker.touchPackage(handlerPkg)
+            if (!handlerPkg.isNullOrBlank()) {
+                AgentTurnTracker.touchPackage(handlerPkg)
+                AutomationRecorder.recordEntry(handlerPkg, "open_url")
+            }
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {
@@ -620,6 +625,7 @@ fun launchActivityTool(
             val finalForeground: String? = if (accessibilityRunning && !keyLocked) {
                 waitForForegroundPackage(pkg)
             } else null
+            AutomationRecorder.recordEntry(pkg, "launch_activity")
             listOf(
                 UIMessagePart.Text(
                     buildJsonObject {

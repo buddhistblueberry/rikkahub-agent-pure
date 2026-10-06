@@ -620,6 +620,8 @@ private fun localToolTitle(option: LocalToolOption): String = stringResource(
         LocalToolOption.CameraPhoto -> R.string.assistant_page_local_tools_camera_photo_title
         // P2-33 image generation tools
         LocalToolOption.ImageGeneration -> R.string.assistant_page_local_tools_image_generation_title
+        // P2-33b video generation tool
+        LocalToolOption.VideoGeneration -> R.string.assistant_page_local_tools_video_generation_title
         LocalToolOption.MicRecorder -> R.string.assistant_page_local_tools_mic_recorder_title
         LocalToolOption.SpeechToText -> R.string.assistant_page_local_tools_speech_to_text_title
         LocalToolOption.Fingerprint -> R.string.assistant_page_local_tools_fingerprint_title

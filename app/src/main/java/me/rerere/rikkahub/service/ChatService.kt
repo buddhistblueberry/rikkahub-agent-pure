@@ -69,6 +69,9 @@ import me.rerere.rikkahub.utils.cancelNotification
 import me.rerere.rikkahub.utils.sendNotification
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.AssistantResolver
+import me.rerere.rikkahub.data.ai.AutomationRecorder
+import me.rerere.rikkahub.data.ai.tools.AppPlaybookFile
+import me.rerere.rikkahub.data.ai.tools.AppPlaybookRules
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationLoop
 import me.rerere.rikkahub.data.ai.ContextBudgetPlanner
@@ -1632,6 +1635,10 @@ class ChatService(
         messageRange: ClosedRange<Int>? = null,
         allowContextRetry: Boolean = true,
     ) {
+        // A generation is one "turn" for read_window_tree's snapshot: within it a re-read can be
+        // answered with "unchanged" or a delta, but a diff never spans two turns — so a model
+        // coming back to a screen (possibly after a compaction) always gets the whole tree.
+        me.rerere.rikkahub.data.ai.tools.local.TreeSnapshotCache.clear()
         val settings = settingsStore.settingsFlow.first()
         // Resolve the assistant from this conversation's own assistantId — the global
         // current-assistant pointer can have moved if the user switched assistants while
@@ -2077,6 +2084,10 @@ class ChatService(
         }
 
         val generationFailure = generationResult.exceptionOrNull()
+        // Screen-automation experience memory: whatever the agent just did to an app is written
+        // to that app's cold-memory playbook here, by the host — the model never has to remember
+        // to do it. Best-effort and no-op unless cold memory is configured.
+        flushAutomationPlaybook(assistant)
         val lastMessage = getConversationFlow(conversationId).value.currentMessages.lastOrNull()
         // A tool round normally ends with an ASSISTANT message containing executed
         // tool calls. That message is still a valid point for a context-limit retry:
@@ -2292,6 +2303,46 @@ class ChatService(
                 // A missing (or unreadable) playbook is simply "no note yet".
                 Log.d(TAG, "appPlaybook: cannot read '$fileName': ${e.message}")
                 null
+            }
+        }
+    }
+
+    /**
+     * Screen-automation experience memory — the WRITE half, and the **host** does it.
+     *
+     * The screen tools fed [AutomationRecorder] with what actually happened this turn (how the
+     * app was entered, which selectors resolved, which missed). Here that is merged into the
+     * app's cold-memory playbook, so recall works even on a model running without deep thinking
+     * that never remembers to write anything itself. The observations live in a delimited block
+     * ([AppPlaybookFile]), so prose the agent adds through `memory_write` is preserved untouched.
+     *
+     * Best-effort: failures are logged and swallowed, and it is a no-op unless cold memory is
+     * configured. Observation state is drained first, so a retried turn cannot double-write.
+     */
+    private suspend fun flushAutomationPlaybook(assistant: Assistant) {
+        val snapshots = AutomationRecorder.drain()
+        if (snapshots.isEmpty()) return
+        if (!assistant.coldMemoryEnabled) return
+        val workspaceId = assistant.workspaceId?.toString() ?: return
+        val dir = ColdMemoryRules.normalizeDir(assistant.coldMemoryDir) ?: return
+        if (workspaceRepository.getById(workspaceId) == null) return
+
+        for (snapshot in snapshots) {
+            val fileName = AppPlaybookRules.fileNameFor(snapshot.packageName) ?: continue
+            val path = if (dir.isEmpty()) fileName else "$dir/$fileName"
+            runCatching {
+                val existing = runCatching { workspaceRepository.readText(workspaceId, path) }
+                    .getOrNull()
+                    .orEmpty()
+                val (prose, oldLines) = AppPlaybookFile.split(existing)
+                workspaceRepository.writeText(
+                    workspaceId,
+                    path,
+                    AppPlaybookFile.render(prose, AppPlaybookFile.mergeLines(oldLines, snapshot.lines)),
+                    overwrite = true,
+                )
+            }.onFailure { e ->
+                Log.d(TAG, "flushAutomationPlaybook($fileName) failed: ${e.message}")
             }
         }
     }

@@ -29,10 +29,12 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationResult
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.VideoGenerationParams
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.VideoGenerationItem
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.json
@@ -454,7 +456,19 @@ class OpenAIProvider(
         // Legacy: poll the async task until it finishes.
         val taskId = parseDashScopeTaskId(submitText)
             ?: error("No task_id in DashScope response: $submitText")
+        return pollDashScopeImageTask(root, key, taskId)
+    }
 
+    /**
+     * Polls `GET /api/v1/tasks/{taskId}` until the task reaches a terminal status and returns its
+     * downloaded images. Shared by the text-to-image submit and the legacy image-**edit** submit,
+     * which differ only in the body they post and both answer with a `task_id`.
+     */
+    private suspend fun pollDashScopeImageTask(
+        root: String,
+        key: String,
+        taskId: String,
+    ): List<ImageGenerationItem> {
         val taskRequest = Request.Builder()
             .url("$root${dashScopeTaskPath(taskId)}")
             .addHeader("Authorization", "Bearer $key")
@@ -633,6 +647,17 @@ class OpenAIProvider(
             return@flow
         }
 
+        // DashScope's OpenAI-compatible base URL has no /images/edits either - same 404 as
+        // /images/generations - so an edit goes to the provider's native edit endpoints instead.
+        // See editImageViaDashScope; other providers never enter this branch.
+        if (isDashScopeBaseUrl(providerSetting.baseUrl)) {
+            val items = withContext(Dispatchers.IO) {
+                editImageViaDashScope(providerSetting, params, key)
+            }
+            items.forEach { emit(it) }
+            return@flow
+        }
+
         val bodyBuilder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("model", params.model.modelId)
@@ -687,6 +712,356 @@ class OpenAIProvider(
         }
 
         items.forEach { emit(it) }
+    }
+
+    /**
+     * Text-to-video for the OpenAI-compatible provider. Only two families are wired, both driven
+     * on their vendor's **native** async task API (see [DashScopeVideoRequest] /
+     * [VolcengineVideoRequest]) rather than the OpenAI surface: DashScope Wan and Volcengine
+     * Seedance. Any other base URL refuses with a clear message — the tool layer turns the failure
+     * into a structured envelope instead of an opaque `tool_failed`.
+     */
+    override suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams
+    ): Flow<VideoGenerationItem> = flow {
+        require(providerSetting is ProviderSetting.OpenAI) {
+            "Expected OpenAI provider setting"
+        }
+
+        val key = keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())
+
+        // Neither vendor takes an `n` for video, so a count > 1 is N sequential jobs (each of which
+        // can take minutes) - see collectSequentialImages. The tool caps the count for exactly that
+        // reason.
+        val items = withContext(Dispatchers.IO) {
+            collectSequentialImages(params.numOfVideos.coerceAtLeast(1)) {
+                generateVideoOnce(providerSetting, params, key)
+            }
+        }
+
+        items.forEach { emit(it) }
+    }
+
+    /** One vendor job. Split out so [generateVideo] can run it N times for a count > 1. */
+    private suspend fun generateVideoOnce(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> = when {
+        isDashScopeBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaDashScope(providerSetting, params, key)
+
+        isVolcengineArkBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaVolcengine(providerSetting, params, key)
+
+        else -> error(
+            "Video generation is not supported for this provider yet " +
+                "(${providerSetting.baseUrl}). Configure a DashScope (Wan) or " +
+                "Volcengine Ark (Seedance) provider.",
+        )
+    }
+
+    /**
+     * Reads the optional first frame (image-to-video) as a `data:` URI. Both vendors accept an
+     * inline base64 image, which is why nothing is uploaded anywhere.
+     */
+    private fun firstFrameDataUri(params: VideoGenerationParams): String? =
+        params.sourceImages.firstOrNull()?.let { path ->
+            val file = File(path)
+            require(file.exists()) { "First-frame image does not exist: $path" }
+            file.toDataUri()
+        }
+
+    /**
+     * DashScope Wan video: submit an async task, poll the shared task endpoint until `SUCCEEDED`,
+     * then download the clip. Text-to-video uses `video-synthesis` with `parameters.size`;
+     * image-to-video (a first frame was supplied) uses `image2video/video-synthesis` with
+     * `input.img_url` instead. See [DashScopeVideoRequest] for both shapes.
+     */
+    private suspend fun generateVideoViaDashScope(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val root = dashScopeNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
+
+        val firstFrame = firstFrameDataUri(params)
+        val (path, body) = if (firstFrame == null) {
+            DASHSCOPE_VIDEO_SYNTHESIS_PATH to buildDashScopeVideoRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                aspectRatio = params.aspectRatio,
+                durationSeconds = params.durationSeconds,
+            )
+        } else {
+            // i2v: the clip follows the first frame's aspect ratio, so the shape argument is moot.
+            DASHSCOPE_IMAGE2VIDEO_SYNTHESIS_PATH to buildDashScopeImageToVideoRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                firstFrameUrl = firstFrame,
+                durationSeconds = params.durationSeconds,
+            )
+        }
+        val submitBody = body.mergeCustomBody(params.customBody)
+
+        val submitRequest = Request.Builder()
+            .url("$root$path")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("X-DashScope-Async", "enable")
+            .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val submitResponse = client.newCall(submitRequest).await()
+        val submitText = submitResponse.body?.string().orEmpty()
+        if (!submitResponse.isSuccessful) {
+            error("Failed to submit DashScope video task: ${submitResponse.code} $submitText")
+        }
+
+        val taskId = parseDashScopeTaskId(submitText)
+            ?: error("No task_id in DashScope video response: $submitText")
+
+        val pollRequest = Request.Builder()
+            .url("$root${dashScopeTaskPath(taskId)}")
+            .addHeader("Authorization", "Bearer $key")
+            .build()
+
+        repeat(DASHSCOPE_VIDEO_POLL_ATTEMPTS) {
+            delay(DASHSCOPE_VIDEO_POLL_INTERVAL_MS)
+            val pollResponse = client.newCall(pollRequest).await()
+            val pollText = pollResponse.body?.string().orEmpty()
+            if (!pollResponse.isSuccessful) {
+                error("Failed to poll DashScope video task $taskId: ${pollResponse.code} $pollText")
+            }
+            when (parseDashScopeTaskStatus(pollText)) {
+                "SUCCEEDED" -> {
+                    val url = parseDashScopeVideoUrl(pollText)
+                        ?: error("DashScope video task $taskId succeeded with no video_url: $pollText")
+                    return listOf(downloadVideoAsBase64(url))
+                }
+
+                "FAILED", "CANCELED", "UNKNOWN" -> error(
+                    "DashScope video task $taskId did not succeed: " +
+                        (parseDashScopeTaskMessage(pollText) ?: pollText),
+                )
+
+                // PENDING / RUNNING - keep polling.
+                else -> Unit
+            }
+        }
+        error("DashScope video task $taskId timed out after $DASHSCOPE_VIDEO_POLL_ATTEMPTS polls")
+    }
+
+    /**
+     * Volcengine Ark (Seedance) text-to-video: create a contents task, poll until `succeeded`,
+     * then download the clip. See [VolcengineVideoRequest] for the shapes.
+     */
+    private suspend fun generateVideoViaVolcengine(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val base = providerSetting.baseUrl.trimEnd('/')
+
+        val createBody = buildVolcengineVideoRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            durationSeconds = params.durationSeconds,
+            firstFrameUrl = firstFrameDataUri(params),
+        ).mergeCustomBody(params.customBody)
+
+        val createRequest = Request.Builder()
+            .url("$base$VOLCENGINE_CREATE_VIDEO_TASK_PATH")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .post(json.encodeToString(createBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val createResponse = client.newCall(createRequest).await()
+        val createText = createResponse.body?.string().orEmpty()
+        if (!createResponse.isSuccessful) {
+            error(
+                "Failed to create Volcengine video task: ${createResponse.code} " +
+                    (parseVolcengineErrorMessage(createText) ?: createText),
+            )
+        }
+
+        val taskId = parseVolcengineTaskId(createText)
+            ?: error("No id in Volcengine video response: $createText")
+
+        val pollRequest = Request.Builder()
+            .url("$base${volcengineVideoTaskPath(taskId)}")
+            .addHeader("Authorization", "Bearer $key")
+            .build()
+
+        repeat(VOLCENGINE_VIDEO_POLL_ATTEMPTS) {
+            delay(VOLCENGINE_VIDEO_POLL_INTERVAL_MS)
+            val pollResponse = client.newCall(pollRequest).await()
+            val pollText = pollResponse.body?.string().orEmpty()
+            if (!pollResponse.isSuccessful) {
+                error("Failed to poll Volcengine video task $taskId: ${pollResponse.code} $pollText")
+            }
+            when (parseVolcengineTaskStatus(pollText)) {
+                "succeeded" -> {
+                    val url = parseVolcengineVideoUrl(pollText)
+                        ?: error("Volcengine video task $taskId succeeded with no video_url: $pollText")
+                    return listOf(downloadVideoAsBase64(url))
+                }
+
+                "failed", "expired", "canceled", "cancelled" -> error(
+                    "Volcengine video task $taskId did not succeed: " +
+                        (parseVolcengineErrorMessage(pollText) ?: pollText),
+                )
+
+                // queued / running - keep polling.
+                else -> Unit
+            }
+        }
+        error("Volcengine video task $taskId timed out after $VOLCENGINE_VIDEO_POLL_ATTEMPTS polls")
+    }
+
+    /**
+     * Downloads a finished clip and hands it back base64-encoded, mirroring
+     * [downloadImageAsBase64]. Both vendors expire their result URLs (Ark: 24 h), so fetching here
+     * — while the URL is guaranteed fresh — is the whole point.
+     */
+    private suspend fun downloadVideoAsBase64(url: String): VideoGenerationItem {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        val response = client.newCall(request).await()
+        if (!response.isSuccessful) {
+            error("Failed to download generated video: ${response.code}")
+        }
+
+        val body = response.body
+        val mimeType = body.contentType()?.toString() ?: "video/mp4"
+        val base64 = Base64.encode(body.bytes())
+
+        return VideoGenerationItem(
+            data = base64,
+            mimeType = mimeType,
+        )
+    }
+
+    /**
+     * DashScope (Aliyun Bailian) image editing. The OpenAI-compatible base URL this provider
+     * normally uses has no `/images/edits` (it 404s, exactly like `/images/generations`), so the
+     * source images go to one of the provider's native edit endpoints instead. Which one is picked
+     * from the model id and, like [generateImageViaDashScope], retried on the other when the
+     * gateway answers the "model does not match this endpoint" rejection:
+     *
+     *  - **Multimodal** (`qwen-image-edit*`, `qwen-image-2.x` / `3.x`, `wan2.6-image`): the
+     *    synchronous `multimodal-generation/generation` endpoint, whose one user message carries
+     *    the source image(s) and the instruction as content parts.
+     *  - **Legacy** (`wanx*imageedit`): the asynchronous `image2image/image-synthesis` task API
+     *    with `input.function = description_edit` and `input.base_image_url`.
+     *
+     * Source images are read as `data:{mime};base64,...` URIs, which DashScope accepts wherever it
+     * accepts a public URL, so no upload step is needed. `size` is not sent - the edit output
+     * follows the source image's aspect (see [buildDashScopeMultimodalEditRequestBody]) - and `n`
+     * is, so one call yields several images rather than N sequential calls.
+     */
+    private suspend fun editImageViaDashScope(
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageEditParams,
+        key: String,
+    ): List<ImageGenerationItem> {
+        val root = dashScopeNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a DashScope base URL: ${providerSetting.baseUrl}")
+
+        val imageDataUris = params.images.map { path ->
+            val file = File(path)
+            require(file.exists()) { "Image file does not exist: $path" }
+            file.toDataUri()
+        }
+        require(imageDataUris.isNotEmpty()) { "At least one image is required" }
+
+        val preferredMultimodal = dashScopePrefersMultimodalEdit(params.model.modelId)
+        val first = runCatching {
+            submitDashScopeEdit(root, providerSetting, params, key, imageDataUris, preferredMultimodal)
+        }
+        val failure = first.exceptionOrNull()
+        if (failure == null) return first.getOrThrow()
+        // Never swallow coroutine cancellation as a provider failure.
+        if (failure is CancellationException) throw failure
+
+        // A `url error` rejection means the model and the endpoint disagree about the body shape.
+        // Retry once on the other endpoint so a model we did not enumerate still works.
+        if (failure is DashScopeSubmitRejected && failure.endpointMismatch) {
+            return submitDashScopeEdit(root, providerSetting, params, key, imageDataUris, !preferredMultimodal)
+        }
+        throw failure
+    }
+
+    /**
+     * Runs one DashScope image-edit request against the shape selected by [multimodal] (sync
+     * messages body carrying the images) or its opposite (legacy `description_edit` async task),
+     * and returns the downloaded images.
+     */
+    private suspend fun submitDashScopeEdit(
+        root: String,
+        providerSetting: ProviderSetting.OpenAI,
+        params: ImageEditParams,
+        key: String,
+        imageDataUris: List<String>,
+        multimodal: Boolean,
+    ): List<ImageGenerationItem> {
+        val (path, body) = if (multimodal) {
+            DASHSCOPE_MULTIMODAL_GENERATION_PATH to buildDashScopeMultimodalEditRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                imageDataUris = imageDataUris,
+                numOfImages = params.numOfImages,
+            )
+        } else {
+            DASHSCOPE_IMAGE_EDIT_SYNTHESIS_PATH to buildDashScopeEditRequestBody(
+                model = params.model,
+                prompt = params.prompt,
+                baseImageUri = imageDataUris.first(),
+                numOfImages = params.numOfImages,
+            )
+        }
+        val submitBody = body.mergeCustomBody(params.customBody)
+
+        val submitRequest = Request.Builder()
+            .url("$root$path")
+            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .addHeader("Authorization", "Bearer $key")
+            .addHeader("Content-Type", "application/json")
+            .apply { if (!multimodal) addHeader("X-DashScope-Async", "enable") }
+            .post(json.encodeToString(submitBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val submitResponse = client.newCall(submitRequest).await()
+        val submitText = submitResponse.body?.string().orEmpty()
+        if (!submitResponse.isSuccessful) {
+            throw DashScopeSubmitRejected(
+                message = "Failed to submit image edit: ${submitResponse.code} $submitText",
+                endpointMismatch = isDashScopeEndpointModelMismatch(submitText),
+            )
+        }
+
+        // Multimodal: the synchronous response already carries the edited images.
+        if (multimodal) {
+            val urls = parseDashScopeMultimodalImageUrls(submitText)
+            if (urls.isEmpty()) {
+                error("DashScope returned no edited images for ${params.model.modelId}: $submitText")
+            }
+            return urls.map { downloadImageAsBase64(it) }
+        }
+
+        // Legacy: the edit is an async task, polled exactly like text-to-image.
+        val taskId = parseDashScopeTaskId(submitText)
+            ?: error("No task_id in DashScope edit response: $submitText")
+        return pollDashScopeImageTask(root, key, taskId)
     }
 
     private suspend fun parseImageResponse(bodyStr: String): List<ImageGenerationItem> {

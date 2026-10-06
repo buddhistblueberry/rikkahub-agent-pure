@@ -9,6 +9,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.ImageAspectRatio
 import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.ai.ui.StreamChunk
+import me.rerere.ai.ui.VideoGenerationItem
 import me.rerere.ai.ui.UIMessage
 import kotlin.uuid.Uuid
 
@@ -50,6 +51,19 @@ interface Provider<T : ProviderSetting> {
         params: ImageEditParams,
     ): Flow<ImageGenerationItem> {
         error("Image edit is not supported")
+    }
+
+    /**
+     * Text-to-video. Not every provider has a video model, so the default refuses loudly rather
+     * than silently doing nothing — the tool layer turns the failure into a structured envelope.
+     * Providers that do (currently the OpenAI-compatible one, for DashScope Wan and Volcengine
+     * Seedance) override it.
+     */
+    suspend fun generateVideo(
+        providerSetting: ProviderSetting,
+        params: VideoGenerationParams,
+    ): Flow<VideoGenerationItem> {
+        error("Video generation is not supported")
     }
 }
 
@@ -99,6 +113,37 @@ data class ImageEditParams(
     val numOfImages: Int = 1,
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
     val partialImages: Int = 2,
+    val customHeaders: List<CustomHeader> = emptyList(),
+    val customBody: List<CustomBody> = emptyList(),
+)
+
+@Serializable
+data class VideoGenerationParams(
+    val model: Model,
+    val prompt: String,
+    /**
+     * Wan and Seedance are landscape-shaped by default; the tool's own default is landscape too,
+     * so a careless call does not silently produce a portrait clip.
+     */
+    val aspectRatio: ImageAspectRatio = ImageAspectRatio.LANDSCAPE,
+    /**
+     * Requested clip length in seconds. `null` leaves the choice to the model/vendor (Wan's fixed
+     * 5 s, Seedance's own default). Not every video model accepts a configurable duration — see the
+     * per-provider request builders for the clamping.
+     */
+    val durationSeconds: Int? = null,
+    /**
+     * How many clips to produce. Neither wired vendor takes an `n` for video, so a count > 1 is
+     * emulated with **sequential** calls (each of which can take minutes) — see the provider.
+     */
+    val numOfVideos: Int = 1,
+    /**
+     * Local file paths used as the **first frame** (image-to-video). Empty means plain
+     * text-to-video. Only the first entry is used: the DashScope first-frame endpoint takes a
+     * single `img_url`, and Seedance's `first_frame` role is likewise one image. It is read and
+     * inlined as a data URI, exactly like `ImageEditParams.images`.
+     */
+    val sourceImages: List<String> = emptyList(),
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
 )

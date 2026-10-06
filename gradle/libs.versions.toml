@@ -84,6 +84,8 @@ genaiPrompt = "1.0.0-beta2"
 # getTokenCount/getBenchmarkInfo/cancelProcess all present) and a working GPU path.
 litertlm = "0.13.1"
 snakeyaml = "2.6"
+# Vico — Compose-native charts, used by the statistics page's daily usage chart.
+vico = "3.3.1"
 
 [libraries]
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
@@ -198,6 +200,7 @@ sqlite-android = { module = "com.github.rikkahub:sqlite-android", version.ref = 
 termux-terminal-view = { module = "com.termux.termux-app:terminal-view", version.ref = "termux" }
 guava-listenablefuture = { module = "com.google.guava:listenablefuture", version = "9999.0-empty-to-avoid-conflict-with-guava" }
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+vico-compose-m3 = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "kotlinxCoroutinesPlayServices" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
 androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }

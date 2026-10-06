@@ -50,6 +50,16 @@ class RikkaAccessibilityService : AccessibilityService() {
     var lastWindowEventUptime: Long = 0L
         private set
 
+    /**
+     * Class name of the most recent window-state change — in practice the activity the user is
+     * on. Screen automation uses it as a *structural* screen key for the app playbook
+     * (see [me.rerere.rikkahub.data.ai.AutomationRecorder]); unlike a window title it can never
+     * be a contact or message name, so it is safe to persist.
+     */
+    @Volatile
+    var lastWindowClassName: String? = null
+        private set
+
     // Serialises overlapping gesture-dispatch callers (the OS rejects overlapping
     // dispatchGesture calls). Mutex.withLock releases correctly when a waiter is
     // cancelled mid-wait, which the previous ticket counter did not.
@@ -89,6 +99,7 @@ class RikkaAccessibilityService : AccessibilityService() {
         // present. The dispatcher itself de-dupes (skips no-op transitions) and dispatches
         // off-thread, so this stays fast on the AccessibilityService dispatcher.
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.className?.toString()?.takeIf { it.isNotBlank() }?.let { lastWindowClassName = it }
             val pkg = event.packageName?.toString()
             if (!pkg.isNullOrBlank()) {
                 me.rerere.rikkahub.workflow.trigger.AppForegroundDispatcher.onForegroundChange(pkg)

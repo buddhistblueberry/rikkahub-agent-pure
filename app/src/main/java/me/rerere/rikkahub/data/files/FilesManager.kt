@@ -22,6 +22,7 @@ import me.rerere.rikkahub.data.db.entity.ManagedFileEntity
 import me.rerere.rikkahub.data.repository.FilesRepository
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.exportImageFile
+import me.rerere.rikkahub.utils.exportVideoToGallery
 import me.rerere.rikkahub.utils.getActivity
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -272,6 +273,45 @@ class FilesManager(
         file.parentFile?.mkdirs()
         file.writeBytes(byteArray)
         return file
+    }
+
+    fun getVideosDir(): File {
+        val dir = context.filesDir.resolve(FileFolders.VIDEOS)
+        if (!dir.exists()) {
+            dir.mkdirs()
+        }
+        return dir
+    }
+
+    /**
+     * Writes a generated video's bytes to [filePath]. [base64Data] is either raw base64 or a
+     * `data:video/...;base64,` URI; unlike images the prefix check accepts any `data:` type, since a
+     * vendor may label the clip `video/mp4`, `video/quicktime` or something else entirely.
+     */
+    @OptIn(ExperimentalEncodingApi::class)
+    fun createVideoFileFromBase64(base64Data: String, filePath: String): File {
+        val data = if (base64Data.startsWith("data:")) {
+            base64Data.substringAfter("base64,")
+        } else {
+            base64Data
+        }
+
+        val byteArray = Base64.decode(data.toByteArray())
+        val file = File(filePath)
+        file.parentFile?.mkdirs()
+        file.writeBytes(byteArray)
+        return file
+    }
+
+    /** Saves a generated video into the system gallery. Video sibling of [saveMessageImage]. */
+    suspend fun saveMessageVideo(activityContext: Context, video: String) = withContext(Dispatchers.IO) {
+        val activity = requireNotNull(activityContext.getActivity()) { "Activity not found" }
+        val file = when {
+            video.startsWith("file:") -> video.toUri().toFile()
+            video.startsWith("/") -> File(video)
+            else -> error("Unsupported video source: $video")
+        }
+        activityContext.exportVideoToGallery(activity, file)
     }
 
     fun listImageFiles(): List<File> {
@@ -525,6 +565,7 @@ object FileFolders {
     const val FONTS = "fonts"
     const val TOOL_OUTPUTS = "tool_outputs"
     const val IMAGES = "images"
+    const val VIDEOS = "videos"
 }
 
 suspend fun FilesManager.saveUploadFromUri(

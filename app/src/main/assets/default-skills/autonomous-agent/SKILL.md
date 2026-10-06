@@ -110,28 +110,29 @@ Two halves, and both are automatic enough that you should never re-derive an app
   `app_playbook_missing`, that app has no note yet. If you are driving an app you launched
   earlier in the session and no playbook appeared, `memory_read` its file before you start
   tapping — it is cheaper than a wrong guess.
-- **Write side (your job).** When you finish a screen-automation task, `memory_write` the
-  playbook before you reply. This is the whole loop: one short note now, far fewer steps next
-  time.
+- **Write side (mostly the host's).** After any turn that actually drove an app, the host appends
+  a delimited block to that app's playbook — how it was entered, which selectors resolved, which
+  missed (`<!-- auto:begin -->` … `<!-- auto:end -->`). You never have to reproduce that, and you
+  must not edit inside those markers: the host rewrites the block wholesale on the next turn.
+- **What is left for you: the *why*.** When a run taught you something the raw observations do
+  not capture — a dialog that always steals a tap, a faster route, a screen that needs a wait —
+  add a short prose note with `memory_write`. Skip it when there is nothing to add: a missing
+  note costs nothing now that the host keeps the mechanics.
 
-Write it the moment the task ends — the trace is still fresh and will be gone after compaction.
-Merge into the existing note (read it first if unsure); keep it terse and factual, and skip the
-write entirely when the run taught you nothing non-obvious.
-
-Template — keep it short, not an essay:
+Your prose note — keep it tiny; the host's block carries the mechanics:
 
 ```
 # <App name> (<package>)
-- Entry points: <how to reach the screen you needed; deep links / activities that worked>
-- Reliable selectors: <the view_id / text / content_description that actually resolved>
+- Route: <the way to the screen you needed; deep links / activities that worked>
 - Traps: <dialogs that steal a tap, splash screens, permission prompts, dead ends>
 - Timing: <what needed a wait, and roughly how long>
 - Last verified: <YYYY-MM-DD>
 ```
 
 Rules: never write secrets, tokens, credentials or personal data into a playbook; base it only
-on what you actually observed (not what you assume the app does); and keep it to one screen or
-two of text — it rides on every later `launch_app` for that package.
+on what you actually observed (not what you assume the app does); leave the `<!-- auto -->` block
+alone; and keep your own prose to one screen or two of text — it rides on every later
+`launch_app` for that package.
 
 ## Self-Improvement: Learning Logs
 

@@ -35,6 +35,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  * (misleadingly worded) message `url error, please check url！` — see
  * [isDashScopeEndpointModelMismatch].
  *
+ * Editing (`qwen-image-edit*`, the `qwen-image-2.x` / `3.x` line, `wan2.6-image`) rides the **same**
+ * two shapes with the source image inlined into the request: the modern family edits on
+ * [DASHSCOPE_MULTIMODAL_GENERATION_PATH] by adding `{image}` parts next to the `{text}` one, while
+ * the legacy `wanx*imageedit` family uses its own async task endpoint,
+ * [DASHSCOPE_IMAGE_EDIT_SYNTHESIS_PATH], with `input.function` / `input.base_image_url`. See
+ * [buildDashScopeMultimodalEditRequestBody] and [buildDashScopeEditRequestBody].
+ *
  * Everything that can be decided without a socket lives here (root derivation, size mapping,
  * request bodies, response parsing) so a bare-JVM unit test can pin it, mirroring the split
  * used for the OpenRouter Images API in [OpenRouterRequestBuilder].
@@ -202,6 +209,122 @@ fun buildDashScopeMultimodalImageRequestBody(
     }
 }
 
+/**
+ * `POST {root}/api/v1/services/aigc/image2image/image-synthesis` (with `X-DashScope-Async: enable`)
+ * — the legacy Wanx image-**edit** task API (`wanx2.1-imageedit` and friends).
+ *
+ * It is the edit counterpart of [DASHSCOPE_IMAGE_SYNTHESIS_PATH]: the source image is passed as
+ * `input.base_image_url` (a public URL or a `data:{mime};base64,...` URI) together with a
+ * *fixed* `input.function` naming the editing task, rather than as a messages part.
+ */
+const val DASHSCOPE_IMAGE_EDIT_SYNTHESIS_PATH = "/api/v1/services/aigc/image2image/image-synthesis"
+
+/**
+ * The `input.function` the legacy edit API is called with: instruction-based whole-image editing
+ * ("make the sky a sunset"), the closest analogue of the prompt-driven multimodal edit. The other
+ * function values (`remove_watermark`, `expand`, `colorization`, ...) are task-specific and take
+ * extra parameters, so they are deliberately not guessed here — a caller that wants one can pass
+ * it through the model's custom body.
+ */
+const val DASHSCOPE_IMAGE_EDIT_FUNCTION = "description_edit"
+
+/**
+ * True when [modelId] is served by the **multimodal** edit endpoint (the sync messages body) —
+ * i.e. the modern Qwen-Image edit family plus the 2.x / 3.x generation line, which edits too:
+ *
+ *  - `qwen-image-edit`, `qwen-image-edit-plus`, `qwen-image-edit-max`
+ *  - `qwen-image-2.x` / `qwen-image-3.x`
+ *  - `wan2.6-image` (editing mode) and the `wan2.5-i2i` preview
+ *
+ * Matched by prefix, so a future `qwen-image-edit-*` keeps working. Everything else is assumed to
+ * be the legacy async family and is retried on the other endpoint when the provider rejects it (see
+ * [isDashScopeEndpointModelMismatch]).
+ */
+fun dashScopeUsesMultimodalEditEndpoint(modelId: String): Boolean {
+    val id = modelId.trim().lowercase()
+    return id.startsWith("qwen-image-edit") ||
+        dashScopeUsesMultimodalEndpoint(id) ||
+        id.startsWith("wan2.6-image") ||
+        id.startsWith("wan2.5-i2i")
+}
+
+/**
+ * True when [modelId] is the legacy async edit family — `wanx2.1-imageedit` and its successors —
+ * which takes `input.function` / `input.base_image_url` on
+ * [DASHSCOPE_IMAGE_EDIT_SYNTHESIS_PATH] instead of a messages body.
+ */
+fun dashScopeUsesLegacyEditEndpoint(modelId: String): Boolean {
+    val id = modelId.trim().lowercase()
+    return id.startsWith("wanx") && "imageedit" in id
+}
+
+/**
+ * Which edit endpoint to try **first** for [modelId]: `true` for the sync multimodal body, `false`
+ * for the legacy async task API. The legacy family is the only one that must not be sent the
+ * messages shape, so it is the only case that flips the default; every other id starts on the
+ * multimodal endpoint and falls back on a rejection.
+ */
+fun dashScopePrefersMultimodalEdit(modelId: String): Boolean =
+    !dashScopeUsesLegacyEditEndpoint(modelId)
+
+/**
+ * The `multimodal-generation` **edit** body: one user message whose `content` is the source
+ * image(s) first and the instruction text last —
+ * `{ model, input:{messages:[{role:"user",content:[{image}...,{text}]}]}, parameters:{n} }`.
+ *
+ * `imageDataUris` are `data:{mime};base64,...` URIs, which DashScope accepts wherever it accepts a
+ * public image URL. `size` is deliberately **not** sent: the edit endpoint only takes a couple of
+ * fixed square sizes (768*768 / 2048*2048) and its natural output follows the source image's
+ * aspect, so pinning a size would either be rejected or crop the edit. A caller that wants one can
+ * still override it through the model's custom body, which is merged last.
+ */
+fun buildDashScopeMultimodalEditRequestBody(
+    model: Model,
+    prompt: String,
+    imageDataUris: List<String>,
+    numOfImages: Int,
+): JsonObject = buildJsonObject {
+    put("model", model.modelId)
+    putJsonObject("input") {
+        putJsonArray("messages") {
+            addJsonObject {
+                put("role", "user")
+                putJsonArray("content") {
+                    imageDataUris.forEach { uri -> addJsonObject { put("image", uri) } }
+                    addJsonObject { put("text", prompt) }
+                }
+            }
+        }
+    }
+    putJsonObject("parameters") {
+        put("n", numOfImages)
+    }
+}
+
+/**
+ * The legacy async **edit** submit body:
+ * `{ model, input:{function, prompt, base_image_url}, parameters:{n} }`.
+ *
+ * The legacy API takes exactly one source image (a second one would be a `mask_image_url`, a
+ * different feature), so [baseImageUri] is the first of the caller's images.
+ */
+fun buildDashScopeEditRequestBody(
+    model: Model,
+    prompt: String,
+    baseImageUri: String,
+    numOfImages: Int,
+): JsonObject = buildJsonObject {
+    put("model", model.modelId)
+    putJsonObject("input") {
+        put("function", DASHSCOPE_IMAGE_EDIT_FUNCTION)
+        put("prompt", prompt)
+        put("base_image_url", baseImageUri)
+    }
+    putJsonObject("parameters") {
+        put("n", numOfImages)
+    }
+}
+
 /** `output.task_id` of the submit response, or `null` when absent/unparseable. */
 fun parseDashScopeTaskId(body: String): String? = dashScopeOutput(body)
     ?.get("task_id")
@@ -246,6 +369,6 @@ fun parseDashScopeMultimodalImageUrls(body: String): List<String> = dashScopeOut
     .orEmpty()
 
 /** `output` of a DashScope envelope, or `null` for any malformed body (never throws). */
-private fun dashScopeOutput(body: String): JsonObject? = runCatching {
+internal fun dashScopeOutput(body: String): JsonObject? = runCatching {
     json.parseToJsonElement(body).jsonObject["output"]?.jsonObject
 }.getOrNull()

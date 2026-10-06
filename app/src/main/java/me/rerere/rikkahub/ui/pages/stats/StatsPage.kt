@@ -32,6 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +85,7 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
     val assistantNames by vm.assistantNames.collectAsStateWithLifecycle()
     val orchestrationTrees by vm.orchestrationTrees.collectAsStateWithLifecycle()
     val conversationTitles by vm.conversationTitles.collectAsStateWithLifecycle()
+    val range by vm.range.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -114,9 +116,21 @@ fun StatsPage(vm: StatsVM = koinViewModel()) {
                 contentPadding = padding + PaddingValues(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                item {
+                    StatsRangeSelector(
+                        selected = range,
+                        onSelect = vm::setRange,
+                    )
+                }
                 ledgerStats?.let { ledger ->
                     item {
                         DailyUsageChartCard(
+                            byDay = ledger.byDay,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                    item {
+                        StatsCallsCard(
                             byDay = ledger.byDay,
                             modifier = Modifier.padding(horizontal = 8.dp),
                         )
@@ -173,7 +187,7 @@ private fun DailyUsageChartCard(
     byDay: List<UsageStatBucket>,
     modifier: Modifier = Modifier,
 ) {
-    val days = byDay.take(DAILY_CHART_DAYS).reversed()
+    val days = byDay.reversed()
 
     Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
         Column(
@@ -207,8 +221,6 @@ private fun DailyUsageChartCard(
                 val totalTokens = days.sumOf { it.totalTokens }
                 val totalCalls = days.sumOf { it.callCount }
                 val busiest = days.maxByOrNull { it.totalTokens }
-                val maxTokens = (busiest?.totalTokens ?: 0L).coerceAtLeast(1L)
-                val peakCalls = days.maxOf { it.callCount }.coerceAtLeast(1)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -238,94 +250,13 @@ private fun DailyUsageChartCard(
 
                 val inputColor = MaterialTheme.colorScheme.primary
                 val outputColor = MaterialTheme.colorScheme.tertiary
-                val lineColor = MaterialTheme.colorScheme.secondary
 
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(96.dp),
-                ) {
-                    val slot = size.width / days.size
-                    val barWidth = (slot * 0.62f).coerceAtLeast(1f)
-                    val gap = (slot - barWidth) / 2f
-                    // D10b - a soft guide behind the busiest day, so the eye lands on the peak
-                    // before it has to read a number off the axis.
-                    val busiestIndex = days.indexOfFirst { it == busiest }
-                    if (busiestIndex >= 0) {
-                        drawRoundRect(
-                            color = lineColor.copy(alpha = 0.10f),
-                            topLeft = Offset(busiestIndex * slot + gap * 0.25f, 0f),
-                            size = Size(barWidth * 1.5f, size.height),
-                            cornerRadius = CornerRadius(6.dp.toPx()),
-                        )
-                    }
-                    days.forEachIndexed { index, day ->
-                        val x = index * slot + gap
-                        val inputHeight = size.height * (day.inputTokens.toFloat() / maxTokens.toFloat())
-                        val outputHeight = size.height * (day.outputTokens.toFloat() / maxTokens.toFloat())
-                        if (outputHeight > 0f) {
-                            drawRect(
-                                color = outputColor,
-                                topLeft = Offset(x, size.height - outputHeight),
-                                size = Size(barWidth, outputHeight),
-                            )
-                        }
-                        if (inputHeight > 0f) {
-                            drawRect(
-                                color = inputColor,
-                                topLeft = Offset(x, size.height - outputHeight - inputHeight),
-                                size = Size(barWidth, inputHeight),
-                            )
-                        }
-                    }
-                }
-
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(40.dp),
-                ) {
-                    if (days.size >= 2) {
-                        val slot = size.width / days.size
-                        val path = Path()
-                        days.forEachIndexed { index, day ->
-                            val x = index * slot + slot / 2f
-                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
-                            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                        }
-                        drawPath(path = path, color = lineColor, style = Stroke(width = 2.dp.toPx()))
-                        days.forEachIndexed { index, day ->
-                            val x = index * slot + slot / 2f
-                            val y = size.height * (1f - day.callCount.toFloat() / peakCalls.toFloat())
-                            drawCircle(color = lineColor, radius = 2.dp.toPx(), center = Offset(x, y))
-                        }
-                    }
-                }
-
-                // D10b - a handful of date ticks rather than only the two ends, so a bar in the
-                // middle of the window can be placed on the calendar without counting slots.
-                val tickIndices = remember(days.size) {
-                    val tickCount = minOf(5, days.size)
-                    if (tickCount <= 1) {
-                        listOf(0)
-                    } else {
-                        (0 until tickCount)
-                            .map { i -> i * (days.size - 1) / (tickCount - 1) }
-                            .distinct()
-                    }
-                }
-                Row(
+                StatsDailyChart(
+                    days = days,
+                    inputColor = inputColor,
+                    outputColor = outputColor,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    tickIndices.forEach { index ->
-                        Text(
-                            text = days[index].key.takeLast(5),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -333,8 +264,82 @@ private fun DailyUsageChartCard(
                 ) {
                     LegendDot(color = inputColor, label = stringResource(R.string.stats_page_input_tokens))
                     LegendDot(color = outputColor, label = stringResource(R.string.stats_page_output_tokens))
-                    LegendDot(color = lineColor, label = stringResource(R.string.stats_page_daily_calls_legend))
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsRangeSelector(
+    selected: StatsRange,
+    onSelect: (StatsRange) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatsRange.entries.forEach { range ->
+            FilterChip(
+                selected = range == selected,
+                onClick = { onSelect(range) },
+                label = { Text(stringResource(R.string.stats_page_daily_window, range.days)) },
+            )
+        }
+    }
+}
+
+/**
+ * The call-count trend as its own card, mirroring the "API requests" card on the DeepSeek
+ * dashboard: a big total on top, an area line beneath it.
+ */
+@Composable
+private fun StatsCallsCard(
+    byDay: List<UsageStatBucket>,
+    modifier: Modifier = Modifier,
+) {
+    val days = remember(byDay) { byDay.reversed() }
+    Card(modifier = modifier.fillMaxWidth(), colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.stats_page_calls_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.stats_page_daily_window, days.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (days.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.stats_page_ledger_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Text(
+                    text = formatCount(days.sumOf { it.callCount }.toLong()),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                StatsCallsChart(
+                    days = days,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
@@ -778,9 +783,10 @@ private fun OrchestrationChildRow(node: OrchestrationNode) {
 }
 
 /**
- * The four rankings of the ledger window. [StatsOverview]'s token cards read the same ledger grand
- * total since D1; only its conversation / message / launch counts still come from the message and
- * settings stores, so no number here is ever added to a differently-windowed one.
+ * The rankings of the ledger window, headed by a totals card. [StatsOverview]'s token cards read
+ * the same ledger grand total since D1; only its conversation / message / launch counts still come
+ * from the message and settings stores, so no number here is ever added to a differently-windowed
+ * one.
  */
 @Composable
 private fun LedgerStatsSection(
@@ -808,6 +814,7 @@ private fun LedgerStatsSection(
                 )
             }
         } else {
+            LedgerSummaryCard(view = view, modifier = Modifier.fillMaxWidth())
             LedgerBucketCard(
                 title = stringResource(R.string.stats_page_ledger_by_day),
                 buckets = view.byDay,
@@ -822,6 +829,19 @@ private fun LedgerStatsSection(
                 buckets = UsagePurposeGroups.merge(view.byPurpose),
                 view = view,
                 labelOf = { key -> stringResource(usageGroupLabelRes(key)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            LedgerBucketCard(
+                title = stringResource(R.string.stats_page_ledger_by_provider),
+                buckets = view.byProvider,
+                view = view,
+                labelOf = { key ->
+                    if (key == UsageStatsFactory.UNKNOWN_KEY) {
+                        stringResource(R.string.stats_page_ledger_unknown)
+                    } else {
+                        key
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             LedgerBucketCard(
@@ -851,6 +871,83 @@ private fun LedgerStatsSection(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/**
+ * The window's headline figures, in one card above the rankings: how many calls, how many tokens,
+ * and what they cost. The rankings below answer *where* the spend went; this answers *how much*,
+ * which otherwise had to be rebuilt by adding up the ranked rows by hand. Every figure is the same
+ * grand total the rankings are a share of, so the card can never disagree with them.
+ *
+ * The price follows the ledger's long-standing rule (see [ledgerCostText]): a provider-reported
+ * cost is shown bare, a table-computed one gets a `~`, and a window nobody could price simply
+ * leaves the cell out instead of claiming "$0".
+ */
+@Composable
+private fun LedgerSummaryCard(view: LedgerStatsView, modifier: Modifier = Modifier) {
+    val total = view.total
+    val cost = ledgerCostText(total.providerCostUsd, total.costMicros)
+
+    Card(modifier = modifier, colors = CustomColors.cardColorsOnSurfaceContainer) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.stats_page_ledger_summary_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DailyMetric(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.stats_page_ledger_summary_calls),
+                    value = formatCount(total.callCount.toLong()),
+                )
+                DailyMetric(
+                    modifier = Modifier.weight(1f),
+                    label = stringResource(R.string.stats_page_ledger_summary_tokens),
+                    value = formatTokens(total.totalTokens),
+                )
+                if (cost != null) {
+                    DailyMetric(
+                        modifier = Modifier.weight(1f),
+                        label = stringResource(R.string.stats_page_ledger_summary_cost),
+                        value = cost,
+                    )
+                }
+            }
+            // The two rates are shown on their own line, and only when they are knowable: a
+            // cache rate with no reporter and a throughput with no measured latency both stay
+            // off rather than reading as a real zero (the bucket rule, applied to the total).
+            val cacheRate = total.cacheHitRate
+            val rate = total.tokensPerSecond
+            if (cacheRate != null || rate != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (cacheRate != null) {
+                        Text(
+                            text = stringResource(R.string.stats_page_ledger_cache_hit, cacheRate),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (rate != null) {
+                        Text(
+                            text = stringResource(R.string.stats_page_ledger_tok_per_sec, formatRate(rate)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }
