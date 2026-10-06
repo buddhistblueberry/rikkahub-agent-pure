@@ -68,6 +68,7 @@ import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Search01
+import me.rerere.hugeicons.stroke.Video01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.TransactionHistory
@@ -370,6 +371,14 @@ fun ChatDrawerContent(
                             onClick = {
                                 showMenuPopup = false
                                 navController.navigate(Screen.ImageGen)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.chat_page_menu_video_generation)) },
+                            leadingIcon = { Icon(HugeIcons.Video01, null) },
+                            onClick = {
+                                showMenuPopup = false
+                                navController.navigate(Screen.VideoGen)
                             }
                         )
                     }
