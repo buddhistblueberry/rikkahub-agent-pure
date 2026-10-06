@@ -14,6 +14,14 @@ interface GenMediaDAO {
     @Query("SELECT * FROM genmediaentity ORDER BY create_at DESC")
     suspend fun getAllMedia(): List<GenMediaEntity>
 
+    /** Paged rows of one media [type] (`image_generation` / `image_edit` / `video_generation`). */
+    @Query("SELECT * FROM genmediaentity WHERE type = :type ORDER BY create_at DESC")
+    fun getByType(type: String): PagingSource<Int, GenMediaEntity>
+
+    /** Every row of one media [type], for the orphan purge. */
+    @Query("SELECT * FROM genmediaentity WHERE type = :type ORDER BY create_at DESC")
+    suspend fun getAllByType(type: String): List<GenMediaEntity>
+
     @Insert
     suspend fun insert(media: GenMediaEntity)
 
