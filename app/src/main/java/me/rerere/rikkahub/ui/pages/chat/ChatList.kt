@@ -9,7 +9,7 @@ import me.rerere.hugeicons.stroke.ArrowUpDouble
 import me.rerere.hugeicons.stroke.CursorPointer01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.rikkahub.data.usage.TurnUsageView
+import me.rerere.rikkahub.data.usage.TurnFooter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -137,7 +137,7 @@ fun ChatList(
     onRerunTool: (suspend (toolCallId: String) -> me.rerere.rikkahub.service.ChatService.RerunToolResult)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
-    turnUsages: Map<String, TurnUsageView> = emptyMap(),
+    turnFooters: Map<String, TurnFooter> = emptyMap(),
 ) {
     AnimatedContent(
         targetState = previewMode,
@@ -175,7 +175,7 @@ fun ChatList(
                 onClickSuggestion = onClickSuggestion,
                 onTranslate = onTranslate,
                 onClearTranslation = onClearTranslation,
-                turnUsages = turnUsages,
+                turnFooters = turnFooters,
                 animatedVisibilityScope = this@AnimatedContent,
                 onToolApproval = onToolApproval,
                 onToolAnswer = onToolAnswer,
@@ -213,7 +213,7 @@ private fun ChatListNormal(
     onRerunTool: (suspend (toolCallId: String) -> me.rerere.rikkahub.service.ChatService.RerunToolResult)? = null,
     onToggleFavorite: ((MessageNode) -> Unit)? = null,
     onConversationSystemPromptChange: ((String?) -> Unit)? = null,
-    turnUsages: Map<String, TurnUsageView> = emptyMap(),
+    turnFooters: Map<String, TurnFooter> = emptyMap(),
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -346,7 +346,7 @@ private fun ChatListNormal(
                         ChatMessage(
                             node = node,
                             displayMessage = group.displayMessage,
-                            turnUsage = turnUsages[group.displayMessage.id.toString()],
+                            turnFooter = turnFooters[group.displayMessage.id.toString()],
                             model = node.currentMessage.modelId?.let(modelById::get),
                             assistant = assistant,
                             loading = loading && node.id == lastMessageNodeId,

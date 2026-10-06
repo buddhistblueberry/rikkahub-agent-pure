@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.usage
 
+import me.rerere.ai.core.MessageRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -259,5 +260,90 @@ class UsageTurnViewTest {
 
         assertTrue(UsageTurnViewFactory.map(windows, emptyList()).isEmpty())
         assertNull(UsageTurnViewFactory.turnUsageFor(emptyList(), windows[0].second))
+    }
+
+    // ---- D6 footers ----------------------------------------------------------------------
+
+    @Test
+    fun `a footer spans the user message that opened the turn to the reply's finish`() {
+        val nodes = listOf(
+            TurnNode("u1", MessageRole.USER, createdAtMs = 1_000L, finishedAtMs = null),
+            TurnNode("a1", MessageRole.ASSISTANT, createdAtMs = 1_200L, finishedAtMs = 6_000L),
+        )
+        val records = listOf(row("m1", 1_500L, input = 10, output = 4))
+
+        val footer = UsageTurnViewFactory.footersFor(nodes, records).getValue("a1")
+
+        assertEquals(1_000L, footer.startedAtMs)
+        assertEquals(6_000L, footer.finishedAtMs)
+        assertFalse(footer.running)
+        assertEquals(10L, footer.usage!!.inputTokens)
+    }
+
+    @Test
+    fun `a finished turn is not stretched by the next user message`() {
+        val nodes = listOf(
+            TurnNode("u1", MessageRole.USER, 1_000L, null),
+            TurnNode("a1", MessageRole.ASSISTANT, 1_200L, 6_000L),
+            TurnNode("u2", MessageRole.USER, 90_000L, null),
+        )
+        val records = listOf(row("m1", 1_500L))
+
+        val footer = UsageTurnViewFactory.footersFor(nodes, records).getValue("a1")
+
+        // 6s, not the ~89s that ending at the next node would have produced.
+        assertEquals(6_000L, footer.finishedAtMs)
+    }
+
+    @Test
+    fun `the running turn gets a footer before its first row lands`() {
+        val nodes = listOf(
+            TurnNode("u1", MessageRole.USER, 1_000L, null),
+            TurnNode("a1", MessageRole.ASSISTANT, 1_200L, null),
+        )
+
+        val footer = UsageTurnViewFactory
+            .footersFor(nodes, emptyList(), liveMessageId = "a1")
+            .getValue("a1")
+
+        assertTrue(footer.running)
+        assertNull(footer.usage)
+        assertNull(footer.finishedAtMs)
+        assertEquals(1_000L, footer.startedAtMs)
+    }
+
+    @Test
+    fun `a running turn keeps the rows that have already landed`() {
+        val nodes = listOf(
+            TurnNode("u1", MessageRole.USER, 1_000L, null),
+            TurnNode("a1", MessageRole.ASSISTANT, 1_200L, 9_000L),
+        )
+        val records = listOf(row("m1", 1_500L, input = 10, output = 1))
+
+        val footer = UsageTurnViewFactory
+            .footersFor(nodes, records, liveMessageId = "a1")
+            .getValue("a1")
+
+        // Still running ignores the stale finish stamped by the last completed call.
+        assertTrue(footer.running)
+        assertNull(footer.finishedAtMs)
+        assertEquals(1, footer.usage!!.callCount)
+    }
+
+    @Test
+    fun `a node with no rows that is not running gets no footer`() {
+        val nodes = listOf(
+            TurnNode("u1", MessageRole.USER, 1_000L, null),
+            TurnNode("a1", MessageRole.ASSISTANT, 1_200L, 6_000L),
+        )
+
+        assertTrue(UsageTurnViewFactory.footersFor(nodes, emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `user nodes never get a footer`() {
+        val nodes = listOf(TurnNode("u1", MessageRole.USER, 1_000L, 2_000L))
+
+        assertTrue(UsageTurnViewFactory.footersFor(nodes, emptyList(), liveMessageId = "u1").isEmpty())
     }
 }

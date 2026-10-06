@@ -79,7 +79,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.data.usage.TurnUsageView
+import me.rerere.rikkahub.data.usage.TurnFooter
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
@@ -130,7 +130,7 @@ fun ChatMessage(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String, scope: me.rerere.rikkahub.service.ChatService.ApprovalScope, toolName: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
     onRerunTool: (suspend (toolCallId: String) -> me.rerere.rikkahub.service.ChatService.RerunToolResult)? = null,
-    turnUsage: TurnUsageView? = null,
+    turnFooter: TurnFooter? = null,
 ) {
     // node.selectIndex can be stale (e.g. after a branch/message was removed) or the
     // node can be empty; degrade to the last message, or render nothing, instead of
@@ -234,7 +234,7 @@ fun ChatMessage(
         )
 
         ProvideTextStyle(textStyle) {
-            ChatMessageNerdLine(message = message, turnUsage = turnUsage)
+            ChatMessageNerdLine(message = message, turnFooter = turnFooter)
         }
 
     }
