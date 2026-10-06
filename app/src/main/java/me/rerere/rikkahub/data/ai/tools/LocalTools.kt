@@ -258,6 +258,7 @@ private val TOP_TOOL_EXAMPLES: Map<String, String> = mapOf(
     "generate_image" to "generate_image(prompt=\"a red panda on a bamboo branch, watercolor\")",
     // P2-33b video generation tool
     "generate_video" to "generate_video(prompt=\"a drone shot flying over a misty mountain lake at sunrise\")",
+
     "get_battery_status" to "get_battery_status()",
     "get_audio_info" to "get_audio_info()",
     "get_telephony_info" to "get_telephony_info()",

@@ -262,3 +262,58 @@ fun Context.exportImageFile(
         outputStream?.close()
     }
 }
+
+/**
+ * Saves a generated video into the system gallery (Movies). The video sibling of
+ * [exportImageFile]: MediaStore on Android 10+, a direct write + media-scan broadcast below that.
+ */
+fun Context.exportVideoToGallery(
+    activity: Activity,
+    file: File,
+    fileName: String = "RikkaHub_${System.currentTimeMillis()}.mp4"
+) {
+    // 检查存储权限（Android 9及以下需要）
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                1
+            )
+            return
+        }
+    }
+
+    var outputStream: OutputStream? = null
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
+            }
+            val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+                ?: error("MediaStore returned no URI for $fileName")
+            outputStream = contentResolver.openOutputStream(uri)
+                ?: error("Could not open output stream for $fileName")
+            file.inputStream().copyTo(outputStream)
+        } else {
+            val moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+            val video = File(moviesDir, fileName)
+            file.copyTo(video, overwrite = true)
+
+            @Suppress("DEPRECATION")  // MediaStore is the modern path; this still works for gallery refresh
+            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+            mediaScanIntent.data = Uri.fromFile(video)
+            sendBroadcast(mediaScanIntent)
+        }
+        Log.i(TAG, "Video file saved successfully: $fileName")
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to save video file", e)
+        throw e
+    } finally {
+        outputStream?.close()
+    }
+}

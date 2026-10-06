@@ -115,4 +115,42 @@ class DashScopeVideoRequestTest {
     fun synthesis_path_is_the_native_video_endpoint() {
         assertEquals("/api/v1/services/aigc/video-generation/video-synthesis", DASHSCOPE_VIDEO_SYNTHESIS_PATH)
     }
+
+    // ---- image-to-video (first frame) ----
+
+    @Test
+    fun image_to_video_body_carries_img_url_and_omits_size() {
+        val json = buildDashScopeImageToVideoRequestBody(
+            model = Model(modelId = "wan2.2-i2v-plus"),
+            prompt = "a cat walks",
+            firstFrameUrl = "data:image/png;base64,AAAA",
+            durationSeconds = 10,
+        ).jsonObject
+
+        assertEquals("wan2.2-i2v-plus", json["model"]!!.jsonPrimitive.content)
+        assertEquals("a cat walks", json["input"]!!.jsonObject["prompt"]!!.jsonPrimitive.content)
+        assertEquals("data:image/png;base64,AAAA", json["input"]!!.jsonObject["img_url"]!!.jsonPrimitive.content)
+        // wan2.2 i2v is fixed at 5 s, so there is nothing to send - not even an empty parameters.
+        assertFalse(json.containsKey("parameters"))
+    }
+
+    @Test
+    fun image_to_video_keeps_a_duration_the_model_accepts() {
+        val params = buildDashScopeImageToVideoRequestBody(
+            model = Model(modelId = "wan2.6-i2v"),
+            prompt = "p",
+            firstFrameUrl = "https://x/y.png",
+            durationSeconds = 9,
+        ).jsonObject["parameters"]!!.jsonObject
+
+        assertEquals(9, params["duration"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun image2video_path_is_the_native_first_frame_endpoint() {
+        assertEquals(
+            "/api/v1/services/aigc/image2video/video-synthesis",
+            DASHSCOPE_IMAGE2VIDEO_SYNTHESIS_PATH,
+        )
+    }
 }

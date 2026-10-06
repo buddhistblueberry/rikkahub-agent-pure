@@ -4,7 +4,9 @@ import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -35,9 +37,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * video page will use — save the result into the gallery the way the page will, and return a
  * `UIMessagePart.Video` so the clip renders inline in the chat, plus a JSON envelope for the model.
  *
- * Unlike images there is **no** `edit_image` counterpart: the wired vendors expose text-to-video
- * only, and a half-wired image-to-video path would be worse than none. Also unlike images there is
- * no `count` — Wan and Seedance both return exactly one clip per task.
+ * Unlike images there is no separate `edit_image` counterpart — image-to-video is a **mode** of this
+ * one tool: pass `images` (a first frame) to animate a picture instead of generating from text
+ * alone. `count` runs N sequential jobs, since neither vendor takes an `n` for video.
  *
  * The pure decisions live in [VideoGenerationLogic]; this file is only the device-touching shell.
  */
@@ -65,7 +67,8 @@ fun generateVideoTool(
         "model (DashScope Wan or Volcengine Seedance). Takes one to several minutes; the result " +
         "is saved to the gallery and shown inline in the chat. Use this when the user asks for a " +
         "video or animation. Describe subject, action, camera movement, style and lighting in " +
-        "`prompt`; it is passed verbatim to the video model.",
+        "`prompt`. To animate an existing image, pass its local path in `images` " +
+        "(image-to-video).",
     parameters = { videoToolSchema() },
     execute = { input ->
         val args = input.jsonObject
@@ -78,10 +81,35 @@ fun generateVideoTool(
         val aspectRatio = parseVideoAspectRatio(args["aspect_ratio"]?.jsonPrimitive?.contentOrNull)
             ?: return@Tool listOf(UIMessagePart.Text(invalidVideoAspectRatioEnvelope(args)))
 
+        // Optional first frame(s) for image-to-video. Same expansion + safety path `edit_image`
+        // uses, since these are user-supplied local files.
+        val rawPaths = (args["images"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+        val sourcePaths = ArrayList<String>(rawPaths.size)
+        for (raw in rawPaths) {
+            val path = AgentWorkspace.expand(raw.removePrefix("file://"))
+            PathSafetyGuard.check(path)?.let { violation ->
+                return@Tool listOf(UIMessagePart.Text(fmErrEnvelope(violation.code, violation.detail)))
+            }
+            if (!File(path).isFile) {
+                return@Tool listOf(
+                    UIMessagePart.Text(
+                        buildVideoGenErrorEnvelope("image_not_found", "First-frame image not found: $raw")
+                    )
+                )
+            }
+            sourcePaths.add(path)
+        }
+
         runVideoTool(
             prompt = prompt,
             aspectRatio = aspectRatio,
             durationSeconds = clampVideoDuration(args["duration_seconds"]?.jsonPrimitive?.intOrNull),
+            count = clampVideoCount(args["count"]?.jsonPrimitive?.intOrNull),
+            sourcePaths = sourcePaths,
             requestedModel = args["model"]?.jsonPrimitive?.contentOrNull,
             settingsStore = settingsStore,
             providerManager = providerManager,
@@ -124,6 +152,23 @@ private fun videoToolSchema(): InputSchema = InputSchema.Obj(
                     "models are fixed at 5 s and ignore this.",
             )
         })
+        put("images", buildJsonObject {
+            put("type", "array")
+            put("items", buildJsonObject { put("type", "string") })
+            put(
+                "description",
+                "Optional local image path(s) to animate (image-to-video). Only the first is used " +
+                    "as the first frame. Omit for text-to-video.",
+            )
+        })
+        put("count", buildJsonObject {
+            put("type", "integer")
+            put(
+                "description",
+                "How many clips to produce, 1-$MAX_VIDEO_GEN_COUNT. Defaults to 1. Each clip is a " +
+                    "separate, multi-minute job.",
+            )
+        })
         put("model", buildJsonObject {
             put("type", "string")
             put(
@@ -145,6 +190,8 @@ private suspend fun runVideoTool(
     prompt: String,
     aspectRatio: ImageAspectRatio,
     durationSeconds: Int?,
+    count: Int,
+    sourcePaths: List<String>,
     requestedModel: String?,
     settingsStore: SettingsStore,
     providerManager: ProviderManager,
@@ -191,6 +238,8 @@ private suspend fun runVideoTool(
             prompt = prompt,
             aspectRatio = aspectRatio,
             durationSeconds = durationSeconds,
+            numOfVideos = count,
+            sourceImages = sourcePaths,
             customHeaders = model.customHeaders,
             customBody = model.customBodies,
         ),
@@ -230,7 +279,14 @@ private suspend fun runVideoTool(
         saved.forEach { info -> add(UIMessagePart.Video(url = "file://${info.path}")) }
         add(
             UIMessagePart.Text(
-                buildVideoGenEnvelope(TOOL_GENERATE_VIDEO, prompt, model.displayName, saved, modelCanSeeVideos)
+                buildVideoGenEnvelope(
+                    TOOL_GENERATE_VIDEO,
+                    prompt,
+                    model.displayName,
+                    saved,
+                    modelCanSeeVideos,
+                    firstFrame = sourcePaths.firstOrNull(),
+                )
             )
         )
     }

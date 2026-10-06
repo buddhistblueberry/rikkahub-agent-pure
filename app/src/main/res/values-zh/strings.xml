@@ -425,6 +425,13 @@
   <string name="videogen_page_model_selection_desc">用于生成的视频模型。请先配置 DashScope（万相）或火山方舟（Seedance）provider。</string>
   <string name="videogen_page_duration">时长</string>
   <string name="videogen_page_duration_desc">期望的视频时长（秒，2–15）。部分模型固定为 5 秒并忽略此项。</string>
+  <string name="videogen_page_count">生成数量</string>
+  <string name="videogen_page_count_desc">一次生成几个视频（1–4）。每个视频都是独立且耗时的任务。</string>
+  <string name="videogen_page_first_frame">首帧（图生视频）</string>
+  <string name="videogen_page_remove_first_frame">移除首帧</string>
+  <string name="videogen_page_save">保存到相册</string>
+  <string name="videogen_page_save_success">已保存到相册</string>
+  <string name="videogen_page_save_failed">保存失败：%1$s</string>
   <string name="videogen_page_aspect_ratio">画幅</string>
   <string name="videogen_page_aspect_ratio_desc">生成视频的宽高比。</string>
   <string name="videogen_page_aspect_ratio_landscape">横屏</string>

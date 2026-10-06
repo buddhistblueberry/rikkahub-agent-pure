@@ -6,6 +6,8 @@ import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -73,11 +76,15 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import coil3.compose.AsyncImage
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.ui.ImageAspectRatio
+import me.rerere.common.android.appTempFolder
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
@@ -87,13 +94,19 @@ import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Video01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.files.FileUtils
+import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.uuid.Uuid
 
 /**
  * The standalone video-generation page — the "raw entry point" sibling of `ImageGenPage`.
@@ -208,6 +221,8 @@ private fun VideoGenScreen(vm: VideoGenVM) {
     val settings by vm.settingsStore.settingsFlow.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    val context = LocalContext.current
+    val filesManager: FilesManager = koinInject()
     var showSettingsSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(error) {
@@ -252,9 +267,36 @@ private fun VideoGenScreen(vm: VideoGenVM) {
                             maxLines = 3,
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val context = LocalContext.current
                             TextButton(onClick = { openVideoExternally(context, video.filePath) }) {
                                 Text(stringResource(R.string.videogen_page_open))
+                            }
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        if (!File(video.filePath).exists()) {
+                                            toaster.show(
+                                                  message = context.getString(R.string.videogen_page_video_missing),
+                                                  type = ToastType.Error,
+                                            )
+                                            return@launch
+                                        }
+                                        try {
+                                            filesManager.saveMessageVideo(context, "file://${video.filePath}")
+                                            toaster.show(
+                                                  message = context.getString(R.string.videogen_page_save_success),
+                                                  type = ToastType.Success,
+                                            )
+                                        } catch (e: Exception) {
+                                            if (e is CancellationException) throw e
+                                            toaster.show(
+                                                  message = context.getString(R.string.videogen_page_save_failed, e.message),
+                                                  type = ToastType.Error,
+                                            )
+                                        }
+                                    }
+                                },
+                            ) {
+                                Text(stringResource(R.string.videogen_page_save))
                             }
                             TextButton(onClick = { vm.deleteVideo(video) }) {
                                 Text(stringResource(R.string.videogen_page_delete))
@@ -308,11 +350,67 @@ private fun InputBar(
     onShowSettings: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val referenceImage by vm.referenceImage.collectAsStateWithLifecycle()
+
+    // Picking a first frame turns the call into image-to-video. The image is re-encoded to PNG in
+    // the app temp dir (exactly like the image page) so the data URI handed to the vendor is honest
+    // about its format.
+    val firstFrameLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val path = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val bitmap = ImageUtils.loadOptimizedBitmap(context, uri, maxSize = 2048)
+                            ?: error("Failed to decode image")
+                        val pngBytes = FileUtils.compressBitmapToPng(bitmap)
+                        bitmap.recycle()
+                        val file = File(context.appTempFolder, "videogen_ref_${Uuid.random()}.png")
+                        file.writeBytes(pngBytes)
+                        file.absolutePath
+                    }.getOrNull()
+                }
+                if (path != null) vm.setReferenceImage(path)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        val frame = referenceImage
+        if (frame != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                AsyncImage(
+                    model = File(frame),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+                Text(
+                    text = stringResource(R.string.videogen_page_first_frame),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { vm.setReferenceImage(null) }) {
+                    Icon(
+                        imageVector = HugeIcons.Cancel01,
+                        contentDescription = stringResource(R.string.videogen_page_remove_first_frame),
+                    )
+                }
+            }
+        }
+
         OutlinedTextField(
             value = prompt,
             onValueChange = vm::updatePrompt,
@@ -345,6 +443,13 @@ private fun InputBar(
 
             IconButton(onClick = onShowSettings) {
                 Icon(HugeIcons.Tools, null)
+            }
+
+            IconButton(onClick = { firstFrameLauncher.launch("image/*") }) {
+                Icon(
+                    imageVector = HugeIcons.Add01,
+                    contentDescription = stringResource(R.string.accessibility_add_reference_image),
+                )
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -390,6 +495,7 @@ private fun VideoSettingsBottomSheet(
 ) {
     val aspectRatio by vm.aspectRatio.collectAsStateWithLifecycle()
     val durationSeconds by vm.durationSeconds.collectAsStateWithLifecycle()
+    val numberOfVideos by vm.numberOfVideos.collectAsStateWithLifecycle()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -432,6 +538,17 @@ private fun VideoSettingsBottomSheet(
                 OutlinedNumberInput(
                     value = durationSeconds,
                     onValueChange = vm::updateDurationSeconds,
+                    modifier = Modifier.width(120.dp),
+                )
+            }
+
+            FormItem(
+                label = { Text(stringResource(R.string.videogen_page_count)) },
+                description = { Text(stringResource(R.string.videogen_page_count_desc)) },
+            ) {
+                OutlinedNumberInput(
+                    value = numberOfVideos,
+                    onValueChange = vm::updateNumberOfVideos,
                     modifier = Modifier.width(120.dp),
                 )
             }
@@ -485,6 +602,7 @@ private fun VideoGalleryScreen(vm: VideoGenVM) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    val filesManager: FilesManager = koinInject()
     var selected by remember { mutableStateOf(setOf<GeneratedVideo>()) }
     var detail by remember { mutableStateOf<GeneratedVideo?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -569,6 +687,34 @@ private fun VideoGalleryScreen(vm: VideoGenVM) {
                 ) {
                     TextButton(onClick = { openVideoExternally(context, video.filePath) }) {
                         Text(stringResource(R.string.videogen_page_open))
+                    }
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                if (!File(video.filePath).exists()) {
+                                    toaster.show(
+                                          message = context.getString(R.string.videogen_page_video_missing),
+                                          type = ToastType.Error,
+                                    )
+                                    return@launch
+                                }
+                                try {
+                                    filesManager.saveMessageVideo(context, "file://${video.filePath}")
+                                    toaster.show(
+                                          message = context.getString(R.string.videogen_page_save_success),
+                                          type = ToastType.Success,
+                                    )
+                                } catch (e: Exception) {
+                                    if (e is CancellationException) throw e
+                                    toaster.show(
+                                          message = context.getString(R.string.videogen_page_save_failed, e.message),
+                                          type = ToastType.Error,
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.videogen_page_save))
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     TextButton(

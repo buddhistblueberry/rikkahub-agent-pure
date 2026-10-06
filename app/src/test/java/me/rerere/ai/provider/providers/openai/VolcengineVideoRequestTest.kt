@@ -127,4 +127,35 @@ class VolcengineVideoRequestTest {
         assertEquals("/contents/generations/tasks", VOLCENGINE_CREATE_VIDEO_TASK_PATH)
         assertEquals("/contents/generations/tasks/cgt-1", volcengineVideoTaskPath("cgt-1"))
     }
+
+    // ---- image-to-video (first frame) ----
+
+    @Test
+    fun a_first_frame_adds_an_image_url_content_part() {
+        val content = buildVolcengineVideoRequestBody(
+            model = Model(modelId = "doubao-seedance-1-5-pro"),
+            prompt = "a cat walks",
+            aspectRatio = ImageAspectRatio.LANDSCAPE,
+            durationSeconds = 5,
+            firstFrameUrl = "data:image/png;base64,AAAA",
+        ).jsonObject["content"]!!.jsonArray
+
+        assertEquals(2, content.size)
+        val frame = content[1].jsonObject
+        assertEquals("image_url", frame["type"]!!.jsonPrimitive.content)
+        assertEquals("first_frame", frame["role"]!!.jsonPrimitive.content)
+        assertEquals("data:image/png;base64,AAAA", frame["image_url"]!!.jsonObject["url"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun without_a_first_frame_content_holds_only_text() {
+        val content = buildVolcengineVideoRequestBody(
+            model = Model(modelId = "doubao-seedance-1-5-pro"),
+            prompt = "a cat walks",
+            aspectRatio = ImageAspectRatio.LANDSCAPE,
+            durationSeconds = 5,
+        ).jsonObject["content"]!!.jsonArray
+
+        assertEquals(1, content.size)
+    }
 }
