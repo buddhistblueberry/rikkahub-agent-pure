@@ -12,7 +12,7 @@ import org.junit.Test
  * Coverage for [buildContextBudgetReminder] / [injectContextReminder].
  *
  * Contract: a `<context_reminder>` is produced only once the estimated request context reaches
- * the configured threshold (percent by default, or an explicit token budget), and it is injected
+ * the assistant's configured reminder percentage (of the model context window), and it is injected
  * as a synthetic user message immediately before the LAST user message.
  *
  * Estimator facts relied on here (ContextBudgetPlanner): an ASCII string costs `ceil(len / 3)`
@@ -27,18 +27,18 @@ class ContextBudgetReminderTransformerTest {
     private val bigMessage = "a".repeat(3000)
 
     @Test
-    fun `below threshold returns null`() {
+    fun `below the reminder percentage returns null`() {
         val messages = listOf(UIMessage.user("short"))
-        assertNull(buildContextBudgetReminder(messages, contextLength = 100_000, thresholdPercent = 80))
+        assertNull(buildContextBudgetReminder(messages, contextLength = 100_000, reminderPercent = 70))
     }
 
     @Test
-    fun `at or above percent threshold returns a reminder`() {
-        // contextLength 1000, 80% => trigger 800; estimate 1008 >= 800.
+    fun `at or above the reminder percentage returns a reminder`() {
+        // contextLength 1000, 70% => trigger 700; estimate 1008 >= 700.
         val reminder = buildContextBudgetReminder(
             messages = listOf(UIMessage.user(bigMessage)),
             contextLength = 1000,
-            thresholdPercent = 80,
+            reminderPercent = 70,
         )
         assertNotNull(reminder)
         assertTrue(reminder!!.contains("<context_reminder>"))
@@ -46,26 +46,12 @@ class ContextBudgetReminderTransformerTest {
     }
 
     @Test
-    fun `token mode uses the explicit token budget`() {
+    fun `a higher reminder percentage defers the reminder`() {
         val messages = listOf(UIMessage.user(bigMessage))
-        // 2K tokens => trigger 2000 > estimate 1008 => no reminder.
-        assertNull(
-            buildContextBudgetReminder(
-                messages = messages,
-                contextLength = 100_000,
-                thresholdPercent = 80,
-                thresholdTokensK = 2,
-            )
-        )
-        // 1K tokens => trigger 1000 <= estimate 1008 => reminder.
-        assertNotNull(
-            buildContextBudgetReminder(
-                messages = messages,
-                contextLength = 100_000,
-                thresholdPercent = 80,
-                thresholdTokensK = 1,
-            )
-        )
+        // contextLength 3000, 70% => 2100 > estimate 1008 => still below the threshold.
+        assertNull(buildContextBudgetReminder(messages, contextLength = 3000, reminderPercent = 70))
+        // ... but 30% => 900 <= 1008 => fires.
+        assertNotNull(buildContextBudgetReminder(messages, contextLength = 3000, reminderPercent = 30))
     }
 
     @Test

@@ -2281,6 +2281,9 @@
   <string name="assistant_page_advanced_section_desc">協定級 / 實驗性開關，預設全部關閉。請確認理解其對模型工具面的影響後再開啟。</string>
   <string name="assistant_page_compact_context">模型自壓縮上下文</string>
   <string name="assistant_page_compact_context_desc">新增一個 compact_context 工具，讓模型在判斷上下文過長時自行摘要先前的回合。它使用與手動壓縮相同的摘要器，縮短後的上下文從下一回合生效。預設關閉。</string>
+  <string name="assistant_page_context_reminder_threshold">上下文提醒閾值</string>
+  <string name="assistant_page_context_reminder_threshold_desc">當估算上下文達到模型視窗的這個比例時，注入 &lt;context_reminder&gt;，讓模型趕在自動壓縮觸發之前自行決定是否需要壓縮。建議低於自動壓縮閾值，否則會被客戶端的強制壓縮搶先。</string>
+  <string name="assistant_page_context_reminder_threshold_value">%1$d%%</string>
   <string name="assistant_page_tool_surface_mode">漸進式 MCP 工具目錄</string>
   <string name="assistant_page_tool_surface_mode_desc">用 tool_search / tool_open 一對工具替換每次請求裡的 MCP 工具，因此只傳送模型實際開啟的那些 schema。可減少首輪工具 token，但工具清單會在回合間變化，可能損失提示快取命中。本地工具不會被編入目錄。預設關閉。</string>
   <string name="assistant_page_subagent_context_refs">子智慧體上下文引用</string>

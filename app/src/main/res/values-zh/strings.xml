@@ -2422,6 +2422,9 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_advanced_section_desc">协议级 / 实验性开关，默认全部关闭。请确认理解其对模型工具面的影响后再开启。</string>
   <string name="assistant_page_compact_context">模型自压缩上下文</string>
   <string name="assistant_page_compact_context_desc">增加一个 compact_context 工具，让模型在判断上下文过长时自行摘要此前的回合。它使用与手动压缩相同的摘要器，缩短后的上下文从下一回合生效。默认关闭。</string>
+  <string name="assistant_page_context_reminder_threshold">上下文提醒阈值</string>
+  <string name="assistant_page_context_reminder_threshold_desc">当估算上下文达到模型窗口的这个比例时，注入 &lt;context_reminder&gt;，让模型赶在自动压缩触发之前自行决定是否需要压缩。建议低于自动压缩阈值，否则会被客户端的强制压缩抢先。</string>
+  <string name="assistant_page_context_reminder_threshold_value">%1$d%%</string>
   <string name="assistant_page_tool_surface_mode">渐进式 MCP 工具目录</string>
   <string name="assistant_page_tool_surface_mode_desc">用 tool_search / tool_open 一对工具替换每次请求里的 MCP 工具，因此只发送模型实际打开的那些 schema。可减少首轮工具 token，但工具列表会在回合间变化，可能损失提示缓存命中。本地工具不会被编入目录。默认关闭。</string>
   <string name="assistant_page_subagent_context_refs">子智能体上下文引用</string>
