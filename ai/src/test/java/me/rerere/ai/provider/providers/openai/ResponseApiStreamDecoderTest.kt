@@ -57,8 +57,18 @@ class ResponseApiStreamDecoderTest {
         ))
 
         assertTrue(result.completed)
+        // `input_tokens_details.cached_tokens` is present, so the P2-11b provenance flag is set:
+        // "reported a cache hit" and "does not report cache fields at all" must stay
+        // distinguishable. This expectation predates that field — it was never wrong at runtime,
+        // only never executed (this module's tests were not wired into CI).
         assertEquals(
-            TokenUsage(promptTokens = 10, completionTokens = 20, cachedTokens = 4, totalTokens = 30),
+            TokenUsage(
+                promptTokens = 10,
+                completionTokens = 20,
+                cachedTokens = 4,
+                totalTokens = 30,
+                cachedTokensReported = true,
+            ),
             (result.chunks[0] as StreamChunk.Usage).usage,
         )
         assertEquals(
