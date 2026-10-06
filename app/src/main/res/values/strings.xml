@@ -469,7 +469,6 @@
   <string name="videogen_page_delete_videos_failed">Deleted: %1$d. Failed: %2$d. Please try again.</string>
   <string name="videogen_page_deleting">Deleting\u2026</string>
   <string name="videogen_page_selected_count">Selected: %1$d</string>
-  <string name="videogen_page_select_video">Select video</string>
   <string name="language_english">🇺🇸 English</string>
   <string name="language_french">🇫🇷 Français</string>
   <string name="language_german">🇩🇪 Deutsch</string>

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,7 +82,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Image03
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.Video01
@@ -649,6 +649,11 @@ private fun VideoGalleryScreen(vm: VideoGenVM) {
     }
 }
 
+/**
+ * A gallery tile. Deliberately **no** [VideoPlayer] here: a two-column grid would otherwise build
+ * one `VideoView` per cell, and the clip is only worth decoding once the user taps it (the detail
+ * sheet plays it). The tile is a dark placeholder with a video glyph plus the prompt.
+ */
 @Composable
 private fun VideoCard(
     video: GeneratedVideo,
@@ -666,7 +671,28 @@ private fun VideoCard(
         Box(modifier = Modifier.fillMaxSize()) {
             val exists = remember(video.filePath) { File(video.filePath).exists() }
             if (exists) {
-                VideoPlayer(filePath = video.filePath, modifier = Modifier.fillMaxSize())
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HugeIcons.Video01,
+                        contentDescription = stringResource(R.string.videogen_page_open),
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = video.prompt,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp),
+                )
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -682,20 +708,9 @@ private fun VideoCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.TopEnd,
-                ) {
-                    Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) {
-                        Icon(
-                            imageVector = HugeIcons.Delete01,
-                            contentDescription = stringResource(R.string.videogen_page_select_video),
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .size(16.dp),
-                        )
-                    }
-                }
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                )
             }
         }
     }

@@ -444,7 +444,6 @@
   <string name="videogen_page_delete_videos_failed">已删除：%1$d。失败：%2$d。请重试。</string>
   <string name="videogen_page_deleting">删除中…</string>
   <string name="videogen_page_selected_count">已选择：%1$d</string>
-  <string name="videogen_page_select_video">选择视频</string>
   <string name="language_english">🇺🇸 English</string>
   <string name="language_french">🇫🇷 Français</string>
   <string name="language_german">🇩🇪 Deutsch</string>
