@@ -68,6 +68,40 @@ sealed class ASRProviderSetting {
         }
     }
 
+    /**
+     * 阿里云百炼「实时语音识别」WebSocket 协议 (Qwen-Audio-3.x-ASR-Flash-Streaming)。
+     *
+     * 与基于 OpenAI-Realtime 兼容协议的 [DashScope] 不同, 该接入走百炼自定义协议:
+     * JSON 指令 (run-task / continue-task / finish-task) + 裸 PCM 二进制音频帧,
+     * 端点固定为 `.../api-ws/v1/inference`。适配 qwen-audio-3.1-asr-flash-streaming。
+     *
+     * 文档: https://help.aliyun.com/zh/model-studio/fun-asr-realtime-websocket-api
+     */
+    @Serializable
+    @SerialName("dashscope_streaming")
+    data class DashScopeStreaming(
+        override val id: Uuid = Uuid.random(),
+        override val name: String = "DashScope Streaming ASR",
+        val apiKey: String = "",
+        val websocketUrl: String = "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+        val model: String = "qwen-audio-3.1-asr-flash-streaming",
+        // zh / en / ... ; 留空时不下发 language_hints, 服务端自动识别
+        val language: String = "",
+        val sampleRate: Int = 16000,
+        // 仅 qwen-audio-3.1-asr-flash-streaming 支持: true 保留方言, false 转写为普通话
+        val keepDialect: Boolean = false,
+    ) : ASRProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+        ): ASRProviderSetting {
+            return this.copy(
+                id = id,
+                name = name,
+            )
+        }
+    }
+
     @Serializable
     @SerialName("volcengine")
     data class Volcengine(
@@ -179,6 +213,7 @@ sealed class ASRProviderSetting {
             listOf(
                 OpenAIRealtime::class,
                 DashScope::class,
+                DashScopeStreaming::class,
                 Volcengine::class,
                 MiMo::class,
                 Step::class,

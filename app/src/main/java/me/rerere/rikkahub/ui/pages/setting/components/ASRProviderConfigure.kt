@@ -37,6 +37,7 @@ fun ASRProviderConfigure(
                     is ASRProviderSetting.Volcengine -> "Volcengine"
                     is ASRProviderSetting.MiMo -> "MiMo"
                     is ASRProviderSetting.Step -> "Step"
+                    is ASRProviderSetting.DashScopeStreaming -> "DashScope Streaming"
                 },
                 onValueChange = {},
                 readOnly = true,
@@ -62,6 +63,7 @@ fun ASRProviderConfigure(
             is ASRProviderSetting.Volcengine -> VolcengineASRConfiguration(setting, onValueChange)
             is ASRProviderSetting.MiMo -> MiMoASRConfiguration(setting, onValueChange)
             is ASRProviderSetting.Step -> StepASRConfiguration(setting, onValueChange)
+            is ASRProviderSetting.DashScopeStreaming -> DashScopeStreamingASRConfiguration(setting, onValueChange)
         }
     }
 }
@@ -541,6 +543,86 @@ private fun StepASRConfiguration(
             },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("热词1, 热词2, 热词3") }
+        )
+    }
+}
+
+@Composable
+private fun DashScopeStreamingASRConfiguration(
+    setting: ASRProviderSetting.DashScopeStreaming,
+    onValueChange: (ASRProviderSetting) -> Unit
+) {
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_configure_api_key)) },
+        description = { Text("阿里云百炼 API Key (sk-...)，需已开通 qwen-audio-3.x-asr-flash-streaming 服务。") }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { onValueChange(setting.copy(apiKey = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("sk-...") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_configure_websocket_url)) },
+        description = { Text("百炼实时语音识别 WebSocket 端点 (…/api-ws/v1/inference)。") }
+    ) {
+        OutlinedTextField(
+            value = setting.websocketUrl,
+            onValueChange = { onValueChange(setting.copy(websocketUrl = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("wss://dashscope.aliyuncs.com/api-ws/v1/inference") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_configure_model)) },
+        description = { Text(stringResource(R.string.setting_asr_configure_model_desc)) }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { onValueChange(setting.copy(model = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("qwen-audio-3.1-asr-flash-streaming") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_configure_language)) },
+        description = { Text(stringResource(R.string.setting_asr_configure_language_iso_desc)) }
+    ) {
+        OutlinedTextField(
+            value = setting.language,
+            onValueChange = { onValueChange(setting.copy(language = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("zh") }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_configure_sample_rate)) },
+        description = { Text(stringResource(R.string.setting_asr_configure_step_sample_rate_desc)) }
+    ) {
+        OutlinedNumberInput(
+            value = setting.sampleRate,
+            onValueChange = { value ->
+                if (value in 8000..48000) {
+                    onValueChange(setting.copy(sampleRate = value))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = "Sample Rate"
+        )
+    }
+
+    FormItem(
+        label = { Text("保留方言") },
+        description = { Text("仅 qwen-audio-3.1-asr-flash-streaming 支持：开启后保留方言表达，否则转写为普通话。") }
+    ) {
+        androidx.compose.material3.Switch(
+            checked = setting.keepDialect,
+            onCheckedChange = { onValueChange(setting.copy(keepDialect = it)) }
         )
     }
 }

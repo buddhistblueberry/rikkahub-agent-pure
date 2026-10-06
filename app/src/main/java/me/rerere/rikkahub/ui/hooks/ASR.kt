@@ -16,6 +16,7 @@ import me.rerere.asr.ASRController
 import me.rerere.asr.ASRProviderSetting
 import me.rerere.asr.ASRState
 import me.rerere.asr.providers.DashScopeASRController
+import me.rerere.asr.providers.DashScopeStreamingASRController
 import me.rerere.asr.providers.MiMoASRController
 import me.rerere.asr.providers.OpenAIRealtimeASRController
 import me.rerere.asr.providers.StepASRController
@@ -129,6 +130,11 @@ private class CustomAsrStateImpl(
             is ASRProviderSetting.Step -> {
                 if (provider.apiKey.isBlank()) return null
                 StepASRController(context, httpClient, provider)
+            }
+
+            is ASRProviderSetting.DashScopeStreaming -> {
+                if (provider.apiKey.isBlank()) return null
+                DashScopeStreamingASRController(context, httpClient, provider)
             }
         }
     }
