@@ -105,6 +105,7 @@ import me.rerere.rikkahub.data.ai.tools.shouldUseExternalWebSearch
 import me.rerere.rikkahub.data.preferences.isWorkspaceToolName
 import me.rerere.rikkahub.data.files.SkillManager
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
+import me.rerere.rikkahub.data.ai.transformers.ContextBudgetReminderTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
 import me.rerere.rikkahub.data.ai.transformers.PlaceholderTransformer
@@ -1867,6 +1868,8 @@ class ChatService(
                     addAll(inputTransformers)
                     add(templateTransformer)
                     add(workspaceReminderTransformer)
+                    // 放在最后: 估算的是已注入模板 / workspace 引导之后的最终请求上下文
+                    add(ContextBudgetReminderTransformer)
                 },
                 outputTransformers = outputTransformers,
                 tools = buildList {
