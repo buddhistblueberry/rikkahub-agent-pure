@@ -214,6 +214,9 @@ sealed class LocalToolOption {
     // P2-33 image generation tools
     @Serializable @SerialName("image_generation")     data object ImageGeneration     : LocalToolOption()
     @Serializable @SerialName("video_generation")     data object VideoGeneration     : LocalToolOption()
+
+    // P2-37 model-roster tools (model_list / model_add / model_update / model_delete)
+    @Serializable @SerialName("model_control")        data object ModelControl        : LocalToolOption()
 }
 
 /**
@@ -1161,6 +1164,15 @@ class LocalTools(
                     modelCanSeeVideos = invocationContext.modelCanSeeVideos,
                 )
             )
+        }
+        if (options.contains(LocalToolOption.ModelControl)) {
+            // P2-37 — the model roster. The read side is free (settings → text); the three
+            // writes are gated by ToolApprovalDefaults (ALWAYS_ASK) and refused outright in a
+            // headless run via HeadlessToolApprovalPolicy.MODEL_WRITE_TOOL_NAMES.
+            tools.add(me.rerere.rikkahub.data.ai.model.modelListTool(settingsStore))
+            tools.add(me.rerere.rikkahub.data.ai.model.modelAddTool(settingsStore, agentRunRepository))
+            tools.add(me.rerere.rikkahub.data.ai.model.modelUpdateTool(settingsStore, agentRunRepository))
+            tools.add(me.rerere.rikkahub.data.ai.model.modelDeleteTool(settingsStore, agentRunRepository))
         }
         // Centralised opt-in to needsApproval. Tool factories themselves don't have to know
         // whether their op is destructive — ToolApprovalDefaults is the single source of

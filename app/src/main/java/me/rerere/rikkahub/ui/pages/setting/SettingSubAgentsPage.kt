@@ -637,6 +637,7 @@ private fun localToolTitle(option: LocalToolOption): String = stringResource(
         LocalToolOption.ExternalAutomation -> R.string.assistant_page_local_tools_external_automation_title
         LocalToolOption.Reliability -> R.string.assistant_page_local_tools_reliability_title
         LocalToolOption.SubAgents -> R.string.assistant_page_local_tools_sub_agents_title
+        LocalToolOption.ModelControl -> R.string.assistant_page_local_tools_model_control_title
         LocalToolOption.CostGuards -> R.string.assistant_page_local_tools_cost_guards_title
         LocalToolOption.Workflows -> R.string.assistant_page_local_tools_workflows_title
         LocalToolOption.SkillImport -> R.string.assistant_page_local_tools_skill_import_title

@@ -173,6 +173,14 @@ object ToolApprovalDefaults {
         "subagent_update",
         "subagent_delete",
 
+        // P2-37 — the model-roster WRITE tools (`model_*`). Approval-required for the same
+        // reason as the expert writes above: the roster is what every assistant's model
+        // picker and every later generation resolves against, so the user reviews an add,
+        // rename or delete before it lands. model_list stays read-only and has no entry here.
+        "model_add",
+        "model_update",
+        "model_delete",
+
         // Workflows (Phase 12) — every mutator goes through the existing approval flow
         // with a human-readable summary rendered by WorkflowApprovalRenderer. workflow_run
         // fires immediately on approve, with HARDLINE still applied to every action.

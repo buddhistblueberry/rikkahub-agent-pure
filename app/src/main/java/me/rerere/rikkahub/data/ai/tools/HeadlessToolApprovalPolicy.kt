@@ -119,6 +119,23 @@ object HeadlessToolApprovalPolicy {
     )
 
     /**
+     * P2-37 — the model-roster WRITE tools (`model_add` / `model_update` / `model_delete`).
+     * Not a privacy surface: they are here for the same reason as [EXPERT_WRITE_TOOL_NAMES] —
+     * the model roster is what every assistant's picker and every later generation resolves
+     * against, and there is nobody present to approve an add, rename or delete in an
+     * unattended run. In an ordinary conversation each call still prompts (all three are in
+     * [ToolApprovalDefaults.ALWAYS_ASK]), so nothing is subtracted from an attended run.
+     *
+     * `model_list` is read-only and deliberately absent, so a schedule can still *see* the
+     * roster.
+     */
+    val MODEL_WRITE_TOOL_NAMES: Set<String> = setOf(
+        "model_add",
+        "model_update",
+        "model_delete",
+    )
+
+    /**
      * D5 - the install tools. A sub-agent MAY install, but the installed artifact lands
      * **disabled** and the user enables it from the UI. Refusing the install outright was
      * over-defensive: the risk is the artifact being *live*, not the bytes reaching disk.
@@ -143,11 +160,11 @@ object HeadlessToolApprovalPolicy {
     /**
      * Every tool this policy refuses in a headless run: the per-call-confirmation set
      * ([PER_CALL_CONFIRM_TOOL_NAMES]), [PRIVACY_SENSITIVE_TOOL_NAMES],
-     * [PRIVATE_DATA_TOOL_NAMES] and [EXPERT_WRITE_TOOL_NAMES].
+     * [PRIVATE_DATA_TOOL_NAMES], [EXPERT_WRITE_TOOL_NAMES] and [MODEL_WRITE_TOOL_NAMES].
      */
     val REFUSED_TOOL_NAMES: Set<String> =
         PER_CALL_CONFIRM_TOOL_NAMES + PRIVACY_SENSITIVE_TOOL_NAMES +
-            PRIVATE_DATA_TOOL_NAMES + EXPERT_WRITE_TOOL_NAMES
+            PRIVATE_DATA_TOOL_NAMES + EXPERT_WRITE_TOOL_NAMES + MODEL_WRITE_TOOL_NAMES
 
     /**
      * Why [toolName] must not run in a headless conversation, or null when it may.
@@ -182,6 +199,11 @@ object HeadlessToolApprovalPolicy {
                     "subagent_dispatch resolves. This conversation has no approval channel, so " +
                     "the user cannot review the change. Ask the user to create or edit experts " +
                     "from the settings screen, or run the dispatch without one."
+            name in MODEL_WRITE_TOOL_NAMES ->
+                "$name rewrites the model roster that every assistant's model picker and every " +
+                    "later generation resolves against. This conversation has no approval " +
+                    "channel, so the user cannot review the change. Ask the user to add, edit or " +
+                    "remove models from the settings screen."
             else -> null
         }
     }
