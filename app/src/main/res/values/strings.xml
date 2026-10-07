@@ -452,7 +452,7 @@
   <string name="videogen_page_generating_hint">Generating\u2026 this usually takes one to several minutes.</string>
   <string name="videogen_page_settings_title">Video Generation Settings</string>
   <string name="videogen_page_model_selection">Model</string>
-  <string name="videogen_page_model_selection_desc">Video model used for generation. Configure a DashScope (Wan) or Volcengine Ark (Seedance) provider first.</string>
+  <string name="videogen_page_model_selection_desc">Video model used for generation. Configure a DashScope (Wan), Volcengine Ark (Seedance), MiniMax (Hailuo), Zhipu (CogVideoX) or SiliconFlow provider first.</string>
   <string name="videogen_page_duration">Duration</string>
   <string name="videogen_page_duration_desc">Requested clip length in seconds (2\u201315). Some models are fixed at 5 s and ignore this.</string>
   <string name="videogen_page_count">Number of videos</string>
@@ -1437,7 +1437,7 @@
   <string name="assistant_page_local_tools_image_generation_title">Image generation</string>
   <string name="assistant_page_local_tools_image_generation_desc">Let the assistant generate or edit images from a prompt; results appear in the chat and in the gallery.</string>
   <string name="assistant_page_local_tools_video_generation_title">Video generation</string>
-  <string name="assistant_page_local_tools_video_generation_desc">Let the assistant generate short videos from a prompt (DashScope Wan or Volcengine Seedance); takes a few minutes and results appear in the chat and in the gallery.</string>
+  <string name="assistant_page_local_tools_video_generation_desc">Let the assistant generate short videos from a prompt (DashScope Wan, Volcengine Seedance, MiniMax Hailuo, Zhipu CogVideoX or SiliconFlow); takes a few minutes and results appear in the chat and in the gallery.</string>
   <string name="assistant_page_local_tools_camera_photo_desc">Open the system camera so the user can take a photo and return its file path.</string>
   <string name="assistant_page_local_tools_mic_recorder_title">Mic recorder</string>
   <string name="assistant_page_local_tools_mic_recorder_desc">Record audio from the microphone for a bounded duration to a local file.</string>

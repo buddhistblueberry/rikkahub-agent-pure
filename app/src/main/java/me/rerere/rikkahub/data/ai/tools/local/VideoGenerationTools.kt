@@ -64,7 +64,8 @@ fun generateVideoTool(
 ): Tool = Tool(
     name = TOOL_GENERATE_VIDEO,
     description = "Generate a short video from a text prompt using the app's configured video " +
-        "model (DashScope Wan or Volcengine Seedance). Takes one to several minutes; the result " +
+        "model (DashScope Wan, Volcengine Seedance, MiniMax Hailuo, Zhipu CogVideoX or " +
+        "SiliconFlow). Takes one to several minutes; the result " +
         "is saved to the gallery and shown inline in the chat. Use this when the user asks for a " +
         "video or animation. Describe subject, action, camera movement, style and lighting in " +
         "`prompt`. To animate an existing image, pass its local path in `images` " +
@@ -213,7 +214,8 @@ private suspend fun runVideoTool(
             UIMessagePart.Text(
                 buildVideoGenErrorEnvelope(
                     "no_video_model",
-                    "No usable video model. Configure one (DashScope Wan or Volcengine Seedance) " +
+                    "No usable video model. Configure one (DashScope Wan, Volcengine Seedance, " +
+                        "MiniMax Hailuo, Zhipu CogVideoX or SiliconFlow) " +
                         "and select it, or pass `model`.",
                 )
             )
