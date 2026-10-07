@@ -993,17 +993,20 @@ class OpenAIProvider(
                 intervalMs = MINIMAX_VIDEO_POLL_INTERVAL_MS,
                 pollRequest = { authorizedJsonRequest("$root${minimaxH3QueryPath(taskId)}", key).get().build() },
             ) { pollText ->
-                when (parseMiniMaxH3TaskStatus(pollText)?.lowercase()) {
-                    "succeeded" -> VideoTaskPoll.Done(
+                val status = parseMiniMaxH3TaskStatus(pollText)
+                when (videoTaskState(status)) {
+                    VideoTaskState.SUCCEEDED -> VideoTaskPoll.Done(
                         parseMiniMaxH3VideoUrl(pollText)
                             ?: error("MiniMax task $taskId succeeded with no content.url: $pollText"),
                     )
 
-                    "failed", "cancelled", "canceled" ->
-                        VideoTaskPoll.Failed(parseMiniMaxH3ErrorMessage(pollText))
+                    VideoTaskState.FAILED, VideoTaskState.CANCELLED, VideoTaskState.EXPIRED ->
+                        VideoTaskPoll.Failed(
+                            parseMiniMaxH3ErrorMessage(pollText) ?: videoTaskFailurePhrase(status),
+                        )
 
                     // queued / running - keep polling.
-                    else -> VideoTaskPoll.Pending
+                    VideoTaskState.RUNNING, VideoTaskState.UNKNOWN -> VideoTaskPoll.Pending(status)
                 }
             }
         } else {
@@ -1013,8 +1016,9 @@ class OpenAIProvider(
                 intervalMs = MINIMAX_VIDEO_POLL_INTERVAL_MS,
                 pollRequest = { authorizedJsonRequest(minimaxVideoQueryUrl(root, taskId), key).get().build() },
             ) { pollText ->
-                when (parseMiniMaxTaskStatus(pollText)?.lowercase()) {
-                    "success" -> {
+                val status = parseMiniMaxTaskStatus(pollText)
+                when (videoTaskState(status)) {
+                    VideoTaskState.SUCCEEDED -> {
                         // A second call is unavoidable here: `query` only hands back a file_id.
                         val fileId = parseMiniMaxFileId(pollText)
                             ?: error("MiniMax task $taskId succeeded with no file_id: $pollText")
@@ -1030,10 +1034,13 @@ class OpenAIProvider(
                         )
                     }
 
-                    "fail" -> VideoTaskPoll.Failed(parseMiniMaxBaseRespMessage(pollText))
+                    VideoTaskState.FAILED, VideoTaskState.CANCELLED, VideoTaskState.EXPIRED ->
+                        VideoTaskPoll.Failed(
+                            parseMiniMaxBaseRespMessage(pollText) ?: videoTaskFailurePhrase(status),
+                        )
 
                     // Preparing / Queueing / Processing - keep polling.
-                    else -> VideoTaskPoll.Pending
+                    VideoTaskState.RUNNING, VideoTaskState.UNKNOWN -> VideoTaskPoll.Pending(status)
                 }
             }
         }
@@ -1077,16 +1084,20 @@ class OpenAIProvider(
             intervalMs = ZHIPU_VIDEO_POLL_INTERVAL_MS,
             pollRequest = { authorizedJsonRequest("$root${zhipuAsyncResultPath(taskId)}", key).get().build() },
         ) { pollText ->
-            when (parseZhipuTaskStatus(pollText)?.lowercase()) {
-                "success", "succeed" -> VideoTaskPoll.Done(
+            val status = parseZhipuTaskStatus(pollText)
+            when (videoTaskState(status)) {
+                VideoTaskState.SUCCEEDED -> VideoTaskPoll.Done(
                     parseZhipuVideoUrl(pollText)
                         ?: error("Zhipu task $taskId succeeded with no video_result: $pollText"),
                 )
 
-                "fail", "failed" -> VideoTaskPoll.Failed(parseZhipuErrorMessage(pollText))
+                VideoTaskState.FAILED, VideoTaskState.CANCELLED, VideoTaskState.EXPIRED ->
+                    VideoTaskPoll.Failed(
+                        parseZhipuErrorMessage(pollText) ?: videoTaskFailurePhrase(status),
+                    )
 
                 // PROCESSING - keep polling.
-                else -> VideoTaskPoll.Pending
+                VideoTaskState.RUNNING, VideoTaskState.UNKNOWN -> VideoTaskPoll.Pending(status)
             }
         }
         return listOf(downloadVideoAsBase64(videoUrl))
@@ -1134,16 +1145,20 @@ class OpenAIProvider(
                     .build()
             },
         ) { pollText ->
-            when (parseSiliconFlowStatus(pollText)?.lowercase()) {
-                "succeed" -> VideoTaskPoll.Done(
+            val status = parseSiliconFlowStatus(pollText)
+            when (videoTaskState(status)) {
+                VideoTaskState.SUCCEEDED -> VideoTaskPoll.Done(
                     parseSiliconFlowVideoUrl(pollText)
                         ?: error("SiliconFlow request $requestId succeeded with no video URL: $pollText"),
                 )
 
-                "failed" -> VideoTaskPoll.Failed(parseSiliconFlowErrorMessage(pollText))
+                VideoTaskState.FAILED, VideoTaskState.CANCELLED, VideoTaskState.EXPIRED ->
+                    VideoTaskPoll.Failed(
+                        parseSiliconFlowErrorMessage(pollText) ?: videoTaskFailurePhrase(status),
+                    )
 
                 // InQueue / InProgress - keep polling.
-                else -> VideoTaskPoll.Pending
+                VideoTaskState.RUNNING, VideoTaskState.UNKNOWN -> VideoTaskPoll.Pending(status)
             }
         }
         return listOf(downloadVideoAsBase64(videoUrl))
@@ -1161,16 +1176,19 @@ class OpenAIProvider(
         pollRequest: () -> Request,
         onPoll: suspend (String) -> VideoTaskPoll,
     ): String {
+        var lastStatus: String? = null
         repeat(attempts) {
             delay(intervalMs)
             val text = executeText(pollRequest(), "poll $label")
             when (val poll = onPoll(text)) {
                 is VideoTaskPoll.Done -> return poll.videoUrl
                 is VideoTaskPoll.Failed -> error("$label did not succeed: ${poll.message ?: text}")
-                VideoTaskPoll.Pending -> Unit
+                is VideoTaskPoll.Pending -> lastStatus = poll.status
             }
         }
-        error("$label timed out after $attempts polls")
+        // Name the last status we saw: an unmapped word would otherwise cost another 9-10 minutes
+        // to diagnose as a bare timeout.
+        error("$label timed out after $attempts polls (last status: ${lastStatus ?: "not reported"})")
     }
 
     /** One poll's verdict for [awaitVideoTask]. */
@@ -1181,8 +1199,11 @@ class OpenAIProvider(
         /** The task failed / expired / was cancelled; [message] is the vendor's explanation. */
         data class Failed(val message: String?) : VideoTaskPoll
 
-        /** The task is still queued or running — keep polling. */
-        object Pending : VideoTaskPoll
+        /**
+         * The task is still queued or running — keep polling. [status] is the raw word just seen,
+         * so a timeout can report what the vendor kept saying.
+         */
+        data class Pending(val status: String?) : VideoTaskPoll
     }
 
     /** Runs [request] and returns its body, turning a non-2xx answer into a labelled error. */
