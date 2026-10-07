@@ -58,6 +58,9 @@ vendor                submit → poll → (expiring) download URL
   Zhipu and SiliconFlow document their image field as "URL **or** base64", so the prefix is
   stripped (`inlineImagePayload`).
 - **All result URLs expire** (Ark 24 h, SiliconFlow ~1 h), hence the immediate download.
+- **Status words go through one vocabulary** (`VideoTaskStatus.kt`): the terminal half
+  (failed / cancelled / expired) is vendor-agnostic, so a word nobody has seen before keeps
+  polling instead of silently ending a job — and a poll timeout reports the last status it saw.
 
 ## What the retired `videogen` module sketched
 
@@ -65,7 +68,7 @@ An earlier, unreferenced module (`me.rerere.videogen`, inherited from the upstre
 much wider capability model. It was deleted, but the design thinking was kept:
 
 **Kept (now reflected in this codebase):** the layer boundary above ("protocol only; the caller
-downloads and persists"), the explicit terminal-state vocabulary for task status, the
+downloads and persists"), the explicit terminal-state vocabulary for task status (`VideoTaskStatus.kt`), the
 "extra parameters escape hatch" idea (our `customBody` / `customHeaders`), and this capability
 matrix itself.
 
