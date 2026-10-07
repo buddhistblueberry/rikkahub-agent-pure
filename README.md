@@ -12,17 +12,17 @@
   <img src="https://img.shields.io/badge/tests-2290%2B%20green-brightgreen?style=flat-square" alt="2,290+ tests" />
 </p>
 
-**RikkaHub Agent · Pure** is a hardening fork of [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) — the on-device Android agent built on [RikkaHub](https://github.com/rikkahub/rikkahub). It keeps the *entire* upstream surface and adds one layer that answers a single question:
+**RikkaHub Agent · Pure** is an independent, hardened continuation of the on-device Android agent from [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) (itself built on [RikkaHub](https://github.com/rikkahub/rikkahub)). It keeps the *entire* upstream surface and adds one layer that answers a single question:
 
 > **Can this run for hours without blowing up the context — or the bill?**
 
-<a href="#why-another-fork">Why this fork</a> · <a href="#the-seven-additions">What's added</a> · <a href="#what-you-can-do-with-it">What it can do</a> · <a href="#screens">Screens</a> · <a href="#getting-started">Get started</a> · <a href="#documentation">Docs</a> · <a href="#中文说明">简体中文</a>
+<a href="#why-this-project">Why this project</a> · <a href="#the-seven-additions">What's added</a> · <a href="#what-you-can-do-with-it">What it can do</a> · <a href="#screens">Screens</a> · <a href="#getting-started">Get started</a> · <a href="#documentation">Docs</a> · <a href="#中文说明">简体中文</a>
 
 </div>
 
 ---
 
-## Why another fork
+## Why this project
 
 ```
 rikkahub/rikkahub                     the original native Android LLM chat client
@@ -34,6 +34,8 @@ rikkahub/rikkahub                     the original native Android LLM chat clien
 Upstream's agent layer was built feature-first: the goal was to *add capabilities*, not to make a long unattended run survive its own output. Six things got in the way — every tool schema injected every turn; compaction that only fires on a token threshold; one `logcat` dump able to flood the context; sub-agents receiving only a bare `task` string; tokens counted but never attributed; and headless paths (cron, workflows) that auto-approved everything.
 
 Pure removes nothing. It keeps the whole upstream surface and makes a long run **survivable, observable and capped**.
+
+> **Note** — since 2026-10-07 this repository is **standalone**: it is no longer a GitHub fork and no longer auto-syncs from upstream.
 
 ## The seven additions
 
@@ -168,18 +170,23 @@ cd rikkahub-agent-pure
 
 | Doc | What's in it |
 |---|---|
-| [docs/PURE-FEATURES.md](docs/PURE-FEATURES.md) | **What the fork adds** — every addition, its tools and switches, and where to find them. 中文对照在文末 |
-| [docs/PURE-DESIGN.md](docs/PURE-DESIGN.md) | **Design notes** — why another fork, the rules it holds to, the three execution strengths, non-goals |
+| [docs/PURE-FEATURES.md](docs/PURE-FEATURES.md) | **What Pure adds** — every addition, its tools and switches, and where to find them. 中文对照在文末 |
+| [docs/PURE-DESIGN.md](docs/PURE-DESIGN.md) | **Design notes** — why a separate project, the rules it holds to, the three execution strengths, non-goals |
 | [docs/engineering/PHASE2.md](docs/engineering/PHASE2.md) | Engineering log, per change (中文) |
 | [docs/engineering/ACCEPT-FIX.md](docs/engineering/ACCEPT-FIX.md) | Acceptance-fix batch record (中文) |
 | [docs/engineering/QA-PHASE2.md](docs/engineering/QA-PHASE2.md) | On-device QA findings (中文) |
-| [upstream README](https://github.com/ExTV/rikkahub-agent#features) | The full upstream feature tour this fork builds on |
+| [upstream README](https://github.com/ExTV/rikkahub-agent#features) | The full upstream feature tour this project builds on |
+
+## Community
+
+- **QQ group**: `1030362371` — install help, usage questions and feature requests (Chinese).
+- **Issues**: [open one](https://github.com/wuyhong715/rikkahub-agent-pure/issues) for bugs and feature requests.
 
 ## Credits
 
 | Project | Role |
 |---|---|
-| [RikkaHub](https://github.com/rikkahub/rikkahub) | The upstream chat client this ultimately forks |
+| [RikkaHub](https://github.com/rikkahub/rikkahub) | The upstream chat client this project is built on |
 | [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent) | The direct upstream — the agent layer this builds on |
 | [cron-utils](https://github.com/jmrozanec/cron-utils) | Cron parser for the scheduler |
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | On-device speech-to-text via Termux |
@@ -187,7 +194,7 @@ cd rikkahub-agent-pure
 | [JSch (mwiede fork)](https://github.com/mwiede/jsch) | Native SSH client |
 | [FlorisBoard](https://github.com/florisboard/florisboard) | Base for the companion [agent-keyboard](https://github.com/ExTV/agent-keyboard) |
 
-This fork is unaffiliated with the upstream RikkaHub or ExTV maintainers. All credit for the underlying chat client, provider abstraction and UI design goes to them.
+This project is unaffiliated with the upstream RikkaHub or ExTV maintainers. All credit for the underlying chat client, provider abstraction and UI design goes to them.
 
 ## License
 
@@ -199,13 +206,15 @@ GNU AGPL-3.0, inherited from upstream. See [LICENSE](LICENSE).
 
 <img src="docs/img/hero.png" width="100%" alt="RikkaHub Agent · Pure" />
 
-**RikkaHub Agent · Pure** —— 基于 [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent)（其上游为 [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)）的强化 fork，**面向长时间无人值守的 agent 运行**。它完整保留上游功能，只加一层，回答一个问题：*能不能跑几个小时，而不炸上下文、不炸钱包？*
+**RikkaHub Agent · Pure** —— [ExTV/rikkahub-agent](https://github.com/ExTV/rikkahub-agent)（其上游为 [rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)）的**独立强化延续**（2026-10-07 起已脱离 fork 网络），**面向长时间无人值守的 agent 运行**。它完整保留上游功能，只加一层，回答一个问题：*能不能跑几个小时，而不炸上下文、不炸钱包？*
 
-### 为什么再 fork
+### 为什么做这个项目
 
 上游的 agent 层是"功能优先"建起来的——目标是**加能力**，而不是让一次长跑能扛住自己的输出。六个拦路虎：每轮都注入所有已启用工具的 schema；压缩只在 token 阈值上触发；一个 `logcat` 转储就能灌爆上下文；子 agent 只拿到一个光秃秃的 `task` 字符串；token 有计数却从不归属；无头路径（cron、工作流）会自动批准一切。
 
 Pure 不删任何功能，只让长跑变得**可存活、可观察、可封顶**。
+
+> **说明**：自 2026-10-07 起本仓库已脱离 fork 网络、成为独立仓库，不再自动同步上游。
 
 ### 多了什么（全部默认关）
 
@@ -270,7 +279,12 @@ cd rikkahub-agent-pure
 
 ### 设计思路
 
-为什么要再 fork、七条自我约束、三种执行强度、以及刻意不做的事：见 **[docs/PURE-DESIGN.md](docs/PURE-DESIGN.md)**。
+为什么要做这个项目、七条自我约束、三种执行强度、以及刻意不做的事：见 **[docs/PURE-DESIGN.md](docs/PURE-DESIGN.md)**。
+
+### 社区
+
+- **QQ 群**：`1030362371` —— 安装、使用、功能建议都在这儿。
+- **反馈**：欢迎直接开 [Issue](https://github.com/wuyhong715/rikkahub-agent-pure/issues)。
 
 ### 许可
 
