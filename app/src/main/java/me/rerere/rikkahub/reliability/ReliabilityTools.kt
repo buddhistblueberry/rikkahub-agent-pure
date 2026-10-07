@@ -22,7 +22,10 @@ import me.rerere.ai.ui.UIMessagePart
  *     ZIP and returns its path. The user / assistant can then attach it to an email,
  *     telegram_send_document, or share via intent.
  *
- * Both are gated by the per-assistant `Reliability` Local Tools toggle.
+ * Gating: `check_app_updates` is built-in and always registered — it backs the app's own
+ * update path (see [me.rerere.rikkahub.data.ai.tools.LocalTools.HIDDEN_TOOL_NAMES]) and is
+ * deliberately absent from both the group toggles and the per-tool overrides. Only
+ * `generate_bug_report` is gated by the per-assistant `Reliability` Local Tools toggle.
  */
 
 fun checkAppUpdatesTool(checker: GitHubReleaseChecker): Tool = Tool(
