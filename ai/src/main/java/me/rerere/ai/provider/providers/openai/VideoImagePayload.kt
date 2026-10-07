@@ -10,8 +10,10 @@ package me.rerere.ai.provider.providers.openai
  * their image field as「图片 URL 或 Base64 编码」— the *bare* base64 payload, with no `data:`
  * prefix — so the prefix is stripped here. Anything that is not a data URI is passed through
  * untouched, which keeps a public URL working for every vendor.
+ *
+ * Public (like the other helpers in this package) so the app module's test source set can pin it.
  */
-internal fun inlineImagePayload(dataUriOrUrl: String): String =
+fun inlineImagePayload(dataUriOrUrl: String): String =
     if (dataUriOrUrl.startsWith(DATA_URI_PREFIX, ignoreCase = true)) {
         dataUriOrUrl.substringAfter(',', missingDelimiterValue = dataUriOrUrl)
     } else {
