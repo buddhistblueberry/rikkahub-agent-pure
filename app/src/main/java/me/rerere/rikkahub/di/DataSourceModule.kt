@@ -191,6 +191,16 @@ val dataSourceModule = module {
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
+            // This one client carries EVERY conversation, cron job, workflow and sub-agent. OkHttp
+            // caps concurrent requests PER HOST at 5 by default, and a streamed reply holds its
+            // slot for the whole turn (tens of seconds to minutes). With several chats - or one
+            // chat that fanned out to several sub-agents - streaming to the same provider host at
+            // once, request #6 onwards sat in OkHttp's queue having sent ZERO bytes: the UI showed
+            // "thinking..." indefinitely, nothing appeared in logcat, and it read exactly like a
+            // hang (see the multi-agent concurrency reports). Raise both ceilings so the bound is
+            // the provider's own limit - which answers 429 promptly and visibly - instead of our
+            // transport queue.
+            .dispatcher(HttpConcurrency.dispatcher())
             .addInterceptor { chain ->
                 val networkSetting = settingsStore.settingsFlow.value.networkSetting
                 val currentProxySetting = Triple(
