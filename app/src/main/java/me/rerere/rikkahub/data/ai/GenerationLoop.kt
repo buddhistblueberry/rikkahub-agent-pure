@@ -233,11 +233,11 @@ private suspend fun watchStreamIdle(
             null -> Unit
             StreamIdleNotice.Clear -> processingStatus.value = null
             is StreamIdleNotice.Waiting -> processingStatus.value = context.getString(
-                R.string.chat_stream_waiting_first_output,
+                me.rerere.rikkahub.R.string.chat_stream_waiting_first_output,
                 notice.idleMs / 1000,
             )
             is StreamIdleNotice.Stalled -> processingStatus.value = context.getString(
-                R.string.chat_stream_stalled,
+                me.rerere.rikkahub.R.string.chat_stream_stalled,
                 notice.idleMs / 1000,
             )
         }
