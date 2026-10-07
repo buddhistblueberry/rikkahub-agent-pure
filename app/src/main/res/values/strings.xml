@@ -2819,4 +2819,23 @@
   <string name="setting_ssh_page_error_port_invalid">Port must be 1-65535</string>
   <string name="setting_ssh_page_error_user_blank">Enter a user</string>
   <string name="setting_ssh_page_error_credential_missing">Provide a password or a private key</string>
+
+  <!-- Getting started (first-run guide) -->
+  <string name="getting_started_title">Getting started</string>
+  <string name="getting_started_intro_title">Before your first chat</string>
+  <string name="getting_started_intro_desc">The app ships with nothing configured: no model, tools off, no permissions. Do these four things and it becomes the agent you installed it for.</string>
+  <string name="getting_started_progress">Done %1$d of %2$d</string>
+  <string name="getting_started_step_model_title">Add a model</string>
+  <string name="getting_started_step_model_desc">Open a provider and paste an API key (OpenRouter, or any OpenAI-compatible endpoint). Without a model the chat cannot reply.</string>
+  <string name="getting_started_step_tools_title">Turn on tools</string>
+  <string name="getting_started_step_tools_desc">Tools are all off by default, so out of the box it behaves like a plain chat app. Pick the groups you want your assistant to use.</string>
+  <string name="getting_started_step_permissions_title">Grant permissions</string>
+  <string name="getting_started_step_permissions_desc">Accessibility lets the agent see and tap the screen; notification access lets it read notifications. Everything else can wait until a tool needs it.</string>
+  <string name="getting_started_step_workspace_title">Bind a workspace</string>
+  <string name="getting_started_step_workspace_desc">A workspace gives the agent a home for files and cold memory. Optional, but required for anything file-related.</string>
+  <string name="getting_started_go">Open</string>
+  <string name="getting_started_done">Done</string>
+  <string name="getting_started_finish">Start using</string>
+  <string name="getting_started_later">Later</string>
+
 </resources>

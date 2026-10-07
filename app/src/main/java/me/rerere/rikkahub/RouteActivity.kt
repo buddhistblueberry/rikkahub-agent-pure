@@ -96,6 +96,9 @@ import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillsPage
+import me.rerere.rikkahub.ui.pages.gettingstarted.GETTING_STARTED_SEEN_KEY
+import me.rerere.rikkahub.ui.pages.gettingstarted.GettingStartedPage
+import me.rerere.rikkahub.ui.pages.gettingstarted.hasConfiguredModel
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceFileEditorPage
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspacePage
@@ -301,6 +304,21 @@ class RouteActivity : ComponentActivity() {
             navStack = backStack
             while (pendingIntents.isNotEmpty()) {
                 handleIntent(pendingIntents.removeFirst())
+            }
+        }
+
+        // First-run guide. The stock app opens into an empty chat with no model, no tools and
+        // no permissions — the usual "installed it, now what?" dead end. If the user has not
+        // seen this guide and still has no usable model, push the checklist on top of the
+        // initial chat so the very first screen a new install sees explains what to do.
+        // Gated on `!settings.init` so we wait for the real settings, and on a single-entry
+        // Chat stack so we never hijack a share / deep-link launch.
+        val gettingStartedSeen = remember { readBooleanPreference(GETTING_STARTED_SEEN_KEY, false) }
+        LaunchedEffect(settings.init) {
+            if (!gettingStartedSeen && !settings.init && !settings.hasConfiguredModel() &&
+                backStack.size == 1 && backStack.firstOrNull() is Screen.Chat
+            ) {
+                backStack.add(Screen.GettingStarted)
             }
         }
 
@@ -561,6 +579,10 @@ class RouteActivity : ComponentActivity() {
 
                             entry<Screen.SettingDoctor> {
                                 me.rerere.rikkahub.ui.pages.setting.doctor.DoctorScreen()
+                            }
+
+                            entry<Screen.GettingStarted> {
+                                GettingStartedPage()
                             }
 
                             entry<Screen.SettingToolApprovals> {
@@ -844,6 +866,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingDoctor : Screen
+
+    @Serializable
+    data object GettingStarted : Screen
 
     @Serializable
     data object SettingToolApprovals : Screen
