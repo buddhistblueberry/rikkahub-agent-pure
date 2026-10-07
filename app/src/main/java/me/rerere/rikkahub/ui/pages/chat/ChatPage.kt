@@ -71,6 +71,7 @@ import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatAttachmentPickerActions
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.FilesPicker
 import me.rerere.rikkahub.ui.components.ai.SearchMode
@@ -385,6 +386,10 @@ private fun ChatPageContent(
                                 context.getString(R.string.chat_select_model_first),
                                 type = ToastType.Error,
                             )
+                            // Dead-end fix: instead of only refusing, take the user to the
+                            // first-run checklist so they can see everything that still needs
+                            // setting up — and land on the "add a model" step.
+                            navController.navigate(Screen.GettingStarted)
                             return@ChatInput
                         }
                         if (inputState.isEditing()) {

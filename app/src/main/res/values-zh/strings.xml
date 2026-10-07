@@ -2538,4 +2538,23 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_sub_agents_page_surface_restore">恢复</string>
   <string name="setting_sub_agents_page_surface_mode_inherit">继承</string>
   <string name="setting_sub_agents_page_surface_mode_own">自定义</string>
+
+  <!-- 快速上手（首次运行引导） -->
+  <string name="getting_started_title">快速上手</string>
+  <string name="getting_started_intro_title">开始聊天之前</string>
+  <string name="getting_started_intro_desc">App 装好后是「空」的：没有模型、工具全关、权限未给。做完下面四件事，它才会变成你想要的 Agent。</string>
+  <string name="getting_started_progress">已完成 %1$d/%2$d</string>
+  <string name="getting_started_step_model_title">添加模型</string>
+  <string name="getting_started_step_model_desc">进入「模型提供商」，选一个并填入 API Key（OpenRouter，或任何 OpenAI 兼容接口）。没有模型，对话发不出去。</string>
+  <string name="getting_started_step_tools_title">开启工具</string>
+  <string name="getting_started_step_tools_desc">工具默认全部关闭，不开就只是一个普通聊天 App。按需要勾选你想让助手使用的工具分组。</string>
+  <string name="getting_started_step_permissions_title">授予权限</string>
+  <string name="getting_started_step_permissions_desc">无障碍让 Agent 能看/点屏幕；通知访问让它读通知。其他权限等工具真正用到时再给。</string>
+  <string name="getting_started_step_workspace_title">绑定工作区</string>
+  <string name="getting_started_step_workspace_desc">工作区给 Agent 一个读写文件和存放冷记忆的地方。可选；涉及文件的功能需要它。</string>
+  <string name="getting_started_go">去设置</string>
+  <string name="getting_started_done">已完成</string>
+  <string name="getting_started_finish">开始使用</string>
+  <string name="getting_started_later">稍后再说</string>
+
 </resources>
