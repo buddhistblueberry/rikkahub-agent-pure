@@ -1321,7 +1321,9 @@ private fun AssistantLocalToolContent(
         // factory so they can never drift from the surface the model actually receives.
         val localToolFactory = koinInject<LocalTools>()
         val liveToolNames = remember(assistant.localTools) {
-            localToolFactory.getTools(assistant.localTools).map { it.name }
+            localToolFactory.getTools(assistant.localTools)
+                .map { it.name }
+                .filterNot { it in LocalTools.HIDDEN_TOOL_NAMES }
         }
         if (liveToolNames.isNotEmpty()) {
             Text(

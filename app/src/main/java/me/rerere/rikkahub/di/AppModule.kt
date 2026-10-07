@@ -228,6 +228,8 @@ val appModule = module {
         UpdateChecker(
             client = get(),
             appScope = get(),
+            // No self-hosted UPDATE_API_URL in this fork — the card reads GitHub Releases.
+            githubReleases = get(),
         )
     }
 

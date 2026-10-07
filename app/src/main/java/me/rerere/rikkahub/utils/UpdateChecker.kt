@@ -19,6 +19,7 @@ import me.rerere.common.http.await
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.reliability.GitHubReleaseChecker
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -27,6 +28,10 @@ class UpdateChecker(
     appScope: AppScope,
     private val apiUrl: String = BuildConfig.UPDATE_API_URL,
     private val currentVersionName: String = BuildConfig.VERSION_NAME,
+    // Fallback source used when no self-hosted [apiUrl] is configured — this fork feeds the
+    // card straight off GitHub Releases. Null keeps the pre-existing "report current version"
+    // behaviour (card stays hidden); tests construct it that way.
+    private val githubReleases: GitHubReleaseChecker? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -38,45 +43,47 @@ class UpdateChecker(
 
     private fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
-        if (apiUrl.isBlank()) {
-            emit(
-                UiState.Success(
-                    UpdateInfo(
-                        version = currentVersionName,
-                        publishedAt = "",
-                        changelog = "",
-                        downloads = emptyList()
-                    )
-                )
-            )
-            return@flow
-        }
-        emit(
-            UiState.Success(
-                data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(apiUrl)
-                            .get()
-                            .addHeader(
-                                "User-Agent",
-                                "RikkaHub $currentVersionName #${BuildConfig.VERSION_CODE}"
-                            )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        json.decodeFromString<UpdateInfo>(response.body.string())
-                    } else {
-                        throw Exception("Failed to fetch update info")
-                    }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
-                }
-            )
-        )
+        emit(UiState.Success(data = fetchUpdateInfo()))
     }.catch {
         emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * Preferred source is a self-hosted endpoint speaking upstream's [UpdateInfo] contract
+     * (`BuildConfig.UPDATE_API_URL`). This fork ships that field blank, so we fall back to
+     * GitHub Releases — where the APKs are actually published — and synthesise the same
+     * shape (see [GitHubReleaseChecker.fetchUpdateInfo]). With neither available we report
+     * the installed version, which keeps the card hidden.
+     */
+    private suspend fun fetchUpdateInfo(): UpdateInfo {
+        if (apiUrl.isNotBlank()) {
+            val response = client.newCall(
+                Request.Builder()
+                    .url(apiUrl)
+                    .get()
+                    .addHeader(
+                        "User-Agent",
+                        "RikkaHub $currentVersionName #${BuildConfig.VERSION_CODE}"
+                    )
+                    .build()
+            ).await()
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch update info")
+            }
+            return try {
+                json.decodeFromString<UpdateInfo>(response.body.string())
+            } catch (e: Exception) {
+                throw Exception("Failed to fetch update info", e)
+            }
+        }
+        githubReleases?.let { return it.fetchUpdateInfo() }
+        return UpdateInfo(
+            version = currentVersionName,
+            publishedAt = "",
+            changelog = "",
+            downloads = emptyList()
+        )
+    }
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         runCatching {

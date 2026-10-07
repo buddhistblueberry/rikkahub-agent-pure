@@ -975,8 +975,11 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.automation.externalAutomationAddTrustedPackageTool(externalAutomationConfig))
             tools.add(me.rerere.rikkahub.automation.externalAutomationRemoveTrustedPackageTool(externalAutomationConfig))
         }
+        // Built-in update check: always on, never a user toggle and never listed in the
+        // per-tool overrides (see [HIDDEN_TOOL_NAMES]) — it backs the app's own update
+        // path, not an optional capability. The Reliability group keeps only bug reports.
+        tools.add(me.rerere.rikkahub.reliability.checkAppUpdatesTool(gitHubReleaseChecker))
         if (options.contains(LocalToolOption.Reliability)) {
-            tools.add(me.rerere.rikkahub.reliability.checkAppUpdatesTool(gitHubReleaseChecker))
             tools.add(me.rerere.rikkahub.reliability.generateBugReportTool(context, bugReportBuilder))
         }
         if (options.contains(LocalToolOption.SubAgents)) {
@@ -1190,5 +1193,14 @@ class LocalTools(
             }
             addHumanErrorEnvelopes(appendTopToolExample(withApproval))
         }
+    }
+
+    companion object {
+        /**
+         * Tools that are always registered but deliberately withheld from the per-assistant
+         * individual-tool list: they implement built-in app behaviour (app updates) rather
+         * than a capability the user opts into, so there is nothing for them to toggle.
+         */
+        val HIDDEN_TOOL_NAMES: Set<String> = setOf("check_app_updates")
     }
 }
