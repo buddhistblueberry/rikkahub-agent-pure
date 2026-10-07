@@ -715,11 +715,13 @@ class OpenAIProvider(
     }
 
     /**
-     * Text-to-video for the OpenAI-compatible provider. Only two families are wired, both driven
-     * on their vendor's **native** async task API (see [DashScopeVideoRequest] /
-     * [VolcengineVideoRequest]) rather than the OpenAI surface: DashScope Wan and Volcengine
-     * Seedance. Any other base URL refuses with a clear message — the tool layer turns the failure
-     * into a structured envelope instead of an opaque `tool_failed`.
+     * Text-to-video for the OpenAI-compatible provider. Five families are wired, all driven on
+     * their vendor's **native** async task API rather than the OpenAI surface: DashScope Wan
+     * ([DashScopeVideoRequest]), Volcengine Ark / BytePlus Seedance ([VolcengineVideoRequest]),
+     * MiniMax Hailuo ([MiniMaxVideoRequest]), Zhipu CogVideoX ([ZhipuVideoRequest]) and
+     * SiliconFlow ([SiliconFlowVideoRequest]). The base URL's host picks the family; any other host
+     * refuses with a clear message, and the tool layer turns that failure into a structured
+     * envelope instead of an opaque `tool_failed`.
      */
     override suspend fun generateVideo(
         providerSetting: ProviderSetting,
@@ -755,10 +757,19 @@ class OpenAIProvider(
         isVolcengineArkBaseUrl(providerSetting.baseUrl) ->
             generateVideoViaVolcengine(providerSetting, params, key)
 
+        isMiniMaxBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaMiniMax(providerSetting, params, key)
+
+        isZhipuBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaZhipu(providerSetting, params, key)
+
+        isSiliconFlowBaseUrl(providerSetting.baseUrl) ->
+            generateVideoViaSiliconFlow(providerSetting, params, key)
+
         else -> error(
             "Video generation is not supported for this provider yet " +
-                "(${providerSetting.baseUrl}). Configure a DashScope (Wan) or " +
-                "Volcengine Ark (Seedance) provider.",
+                "(${providerSetting.baseUrl}). Configure a DashScope (Wan), Volcengine Ark " +
+                "(Seedance), MiniMax (Hailuo), Zhipu (CogVideoX) or SiliconFlow provider.",
         )
     }
 
@@ -924,6 +935,271 @@ class OpenAIProvider(
         }
         error("Volcengine video task $taskId timed out after $VOLCENGINE_VIDEO_POLL_ATTEMPTS polls")
     }
+
+    /**
+     * MiniMax Hailuo text-to-video / image-to-video: create a task, poll it, then download the
+     * clip. The model id picks between two API generations — see [minimaxUsesH3Dialect]: the
+     * classic flat `v1` flow (create → query → `files/retrieve`) and the `v2` multimodal-`content[]`
+     * H3 flow (create → query, whose answer already carries the download URL).
+     */
+    private suspend fun generateVideoViaMiniMax(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val root = minimaxNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a MiniMax base URL: ${providerSetting.baseUrl}")
+
+        val firstFrame = firstFrameDataUri(params)
+        val usesH3 = minimaxUsesH3Dialect(params.model.modelId)
+        val createBody = (
+            if (usesH3) {
+                buildMiniMaxH3VideoRequestBody(
+                    model = params.model,
+                    prompt = params.prompt,
+                    aspectRatio = params.aspectRatio,
+                    durationSeconds = params.durationSeconds,
+                    firstFrameUrl = firstFrame,
+                )
+            } else {
+                buildMiniMaxVideoRequestBody(
+                    model = params.model,
+                    prompt = params.prompt,
+                    durationSeconds = params.durationSeconds,
+                    firstFrameUrl = firstFrame,
+                )
+            }
+            ).mergeCustomBody(params.customBody)
+
+        val createText = executeText(
+            request = authorizedJsonRequest(
+                url = "$root${if (usesH3) MINIMAX_H3_VIDEO_GENERATION_PATH else MINIMAX_VIDEO_GENERATION_PATH}",
+                key = key,
+            ).headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(json.encodeToString(createBody).toRequestBody("application/json".toMediaType()))
+                .build(),
+            label = "create MiniMax video task",
+        )
+        // MiniMax reports a rejected task inside `base_resp` with HTTP 200 — catch it here or the
+        // task id would look legitimate.
+        parseMiniMaxBaseRespMessage(createText)?.let { error("MiniMax rejected the video task: $it") }
+        val taskId = parseMiniMaxTaskId(createText)
+            ?: error("No task_id in MiniMax video response: $createText")
+
+        val videoUrl = if (usesH3) {
+            awaitVideoTask(
+                label = "MiniMax video task $taskId",
+                attempts = MINIMAX_VIDEO_POLL_ATTEMPTS,
+                intervalMs = MINIMAX_VIDEO_POLL_INTERVAL_MS,
+                pollRequest = { authorizedJsonRequest("$root${minimaxH3QueryPath(taskId)}", key).get().build() },
+            ) { pollText ->
+                when (parseMiniMaxH3TaskStatus(pollText)?.lowercase()) {
+                    "succeeded" -> VideoTaskPoll.Done(
+                        parseMiniMaxH3VideoUrl(pollText)
+                            ?: error("MiniMax task $taskId succeeded with no content.url: $pollText"),
+                    )
+
+                    "failed", "cancelled", "canceled" ->
+                        VideoTaskPoll.Failed(parseMiniMaxH3ErrorMessage(pollText))
+
+                    // queued / running - keep polling.
+                    else -> VideoTaskPoll.Pending
+                }
+            }
+        } else {
+            awaitVideoTask(
+                label = "MiniMax video task $taskId",
+                attempts = MINIMAX_VIDEO_POLL_ATTEMPTS,
+                intervalMs = MINIMAX_VIDEO_POLL_INTERVAL_MS,
+                pollRequest = { authorizedJsonRequest(minimaxVideoQueryUrl(root, taskId), key).get().build() },
+            ) { pollText ->
+                when (parseMiniMaxTaskStatus(pollText)?.lowercase()) {
+                    "success" -> {
+                        // A second call is unavoidable here: `query` only hands back a file_id.
+                        val fileId = parseMiniMaxFileId(pollText)
+                            ?: error("MiniMax task $taskId succeeded with no file_id: $pollText")
+                        val fileText = executeText(
+                            request = authorizedJsonRequest(minimaxFileRetrieveUrl(root, fileId), key)
+                                .get()
+                                .build(),
+                            label = "retrieve MiniMax file $fileId",
+                        )
+                        VideoTaskPoll.Done(
+                            parseMiniMaxDownloadUrl(fileText)
+                                ?: error("MiniMax file $fileId has no download.url: $fileText"),
+                        )
+                    }
+
+                    "fail" -> VideoTaskPoll.Failed(parseMiniMaxBaseRespMessage(pollText))
+
+                    // Preparing / Queueing / Processing - keep polling.
+                    else -> VideoTaskPoll.Pending
+                }
+            }
+        }
+        return listOf(downloadVideoAsBase64(videoUrl))
+    }
+
+    /**
+     * Zhipu (CogVideoX / 清影) text-to-video / image-to-video: submit a `videos/generations` task and
+     * poll `async-result/{id}` until `task_status == SUCCESS`. See [ZhipuVideoRequest].
+     */
+    private suspend fun generateVideoViaZhipu(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val root = zhipuNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a Zhipu base URL: ${providerSetting.baseUrl}")
+
+        // Zhipu documents the image field as a URL *or* bare base64, so the data: prefix is dropped.
+        val createBody = buildZhipuVideoRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            durationSeconds = params.durationSeconds,
+            firstFrameImage = firstFrameDataUri(params)?.let(::inlineImagePayload),
+        ).mergeCustomBody(params.customBody)
+
+        val createText = executeText(
+            request = authorizedJsonRequest("$root$ZHIPU_VIDEO_GENERATION_PATH", key)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(json.encodeToString(createBody).toRequestBody("application/json".toMediaType()))
+                .build(),
+            label = "create Zhipu video task",
+        )
+        val taskId = parseZhipuTaskId(createText)
+            ?: error("No id in Zhipu video response: $createText")
+
+        val videoUrl = awaitVideoTask(
+            label = "Zhipu video task $taskId",
+            attempts = ZHIPU_VIDEO_POLL_ATTEMPTS,
+            intervalMs = ZHIPU_VIDEO_POLL_INTERVAL_MS,
+            pollRequest = { authorizedJsonRequest("$root${zhipuAsyncResultPath(taskId)}", key).get().build() },
+        ) { pollText ->
+            when (parseZhipuTaskStatus(pollText)?.lowercase()) {
+                "success", "succeed" -> VideoTaskPoll.Done(
+                    parseZhipuVideoUrl(pollText)
+                        ?: error("Zhipu task $taskId succeeded with no video_result: $pollText"),
+                )
+
+                "fail", "failed" -> VideoTaskPoll.Failed(parseZhipuErrorMessage(pollText))
+
+                // PROCESSING - keep polling.
+                else -> VideoTaskPoll.Pending
+            }
+        }
+        return listOf(downloadVideoAsBase64(videoUrl))
+    }
+
+    /**
+     * SiliconFlow text-to-video / image-to-video: `video/submit` hands back a `requestId`, which
+     * `video/status` is polled with (a POST, unlike every other vendor here) until `Succeed`. See
+     * [SiliconFlowVideoRequest].
+     */
+    private suspend fun generateVideoViaSiliconFlow(
+        providerSetting: ProviderSetting.OpenAI,
+        params: VideoGenerationParams,
+        key: String,
+    ): List<VideoGenerationItem> {
+        val root = siliconFlowNativeRoot(providerSetting.baseUrl)
+            ?: error("Not a SiliconFlow base URL: ${providerSetting.baseUrl}")
+
+        // SiliconFlow documents the image field as a URL *or* bare base64, so the data: prefix is dropped.
+        val createBody = buildSiliconFlowVideoRequestBody(
+            model = params.model,
+            prompt = params.prompt,
+            aspectRatio = params.aspectRatio,
+            firstFrameImage = firstFrameDataUri(params)?.let(::inlineImagePayload),
+        ).mergeCustomBody(params.customBody)
+
+        val createText = executeText(
+            request = authorizedJsonRequest("$root$SILICONFLOW_VIDEO_SUBMIT_PATH", key)
+                .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+                .post(json.encodeToString(createBody).toRequestBody("application/json".toMediaType()))
+                .build(),
+            label = "submit SiliconFlow video task",
+        )
+        val requestId = parseSiliconFlowRequestId(createText)
+            ?: error("No requestId in SiliconFlow video response: $createText")
+        val statusBody = buildSiliconFlowStatusRequestBody(requestId)
+
+        val videoUrl = awaitVideoTask(
+            label = "SiliconFlow video request $requestId",
+            attempts = SILICONFLOW_VIDEO_POLL_ATTEMPTS,
+            intervalMs = SILICONFLOW_VIDEO_POLL_INTERVAL_MS,
+            pollRequest = {
+                authorizedJsonRequest("$root$SILICONFLOW_VIDEO_STATUS_PATH", key)
+                    .post(json.encodeToString(statusBody).toRequestBody("application/json".toMediaType()))
+                    .build()
+            },
+        ) { pollText ->
+            when (parseSiliconFlowStatus(pollText)?.lowercase()) {
+                "succeed" -> VideoTaskPoll.Done(
+                    parseSiliconFlowVideoUrl(pollText)
+                        ?: error("SiliconFlow request $requestId succeeded with no video URL: $pollText"),
+                )
+
+                "failed" -> VideoTaskPoll.Failed(parseSiliconFlowErrorMessage(pollText))
+
+                // InQueue / InProgress - keep polling.
+                else -> VideoTaskPoll.Pending
+            }
+        }
+        return listOf(downloadVideoAsBase64(videoUrl))
+    }
+
+    /**
+     * Polls an async video task until it reaches a terminal state, returning the finished clip's
+     * URL. [onPoll] classifies one poll body and may itself perform IO — MiniMax's classic API needs
+     * a second call to turn a `file_id` into a download URL.
+     */
+    private suspend fun awaitVideoTask(
+        label: String,
+        attempts: Int,
+        intervalMs: Long,
+        pollRequest: () -> Request,
+        onPoll: suspend (String) -> VideoTaskPoll,
+    ): String {
+        repeat(attempts) {
+            delay(intervalMs)
+            val text = executeText(pollRequest(), "poll $label")
+            when (val poll = onPoll(text)) {
+                is VideoTaskPoll.Done -> return poll.videoUrl
+                is VideoTaskPoll.Failed -> error("$label did not succeed: ${poll.message ?: text}")
+                VideoTaskPoll.Pending -> Unit
+            }
+        }
+        error("$label timed out after $attempts polls")
+    }
+
+    /** One poll's verdict for [awaitVideoTask]. */
+    private sealed interface VideoTaskPoll {
+        /** The task finished; [videoUrl] is the still-fresh download URL. */
+        data class Done(val videoUrl: String) : VideoTaskPoll
+
+        /** The task failed / expired / was cancelled; [message] is the vendor's explanation. */
+        data class Failed(val message: String?) : VideoTaskPoll
+
+        /** The task is still queued or running — keep polling. */
+        object Pending : VideoTaskPoll
+    }
+
+    /** Runs [request] and returns its body, turning a non-2xx answer into a labelled error. */
+    private suspend fun executeText(request: Request, label: String): String {
+        val response = client.newCall(request).await()
+        val text = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            error("Failed to $label: ${response.code} $text")
+        }
+        return text
+    }
+
+    /** A bearer-authenticated JSON `Request.Builder` for the native video APIs above. */
+    private fun authorizedJsonRequest(url: String, key: String): Request.Builder = Request.Builder()
+        .url(url)
+        .addHeader("Authorization", "Bearer $key")
+        .addHeader("Content-Type", "application/json")
 
     /**
      * Downloads a finished clip and hands it back base64-encoded, mirroring

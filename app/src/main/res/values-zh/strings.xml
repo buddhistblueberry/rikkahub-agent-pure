@@ -424,7 +424,7 @@
   <string name="videogen_page_generating_hint">生成中…通常需要一到数分钟。</string>
   <string name="videogen_page_settings_title">视频生成设置</string>
   <string name="videogen_page_model_selection">模型</string>
-  <string name="videogen_page_model_selection_desc">用于生成的视频模型。请先配置 DashScope（万相）或火山方舟（Seedance）provider。</string>
+  <string name="videogen_page_model_selection_desc">用于生成的视频模型。请先配置 DashScope（万相）、火山方舟（Seedance）、MiniMax（海螺）、智谱（CogVideoX）或硅基流动 provider。</string>
   <string name="videogen_page_duration">时长</string>
   <string name="videogen_page_duration_desc">期望的视频时长（秒，2–15）。部分模型固定为 5 秒并忽略此项。</string>
   <string name="videogen_page_count">生成数量</string>
@@ -1273,7 +1273,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_image_generation_title">图片生成</string>
   <string name="assistant_page_local_tools_image_generation_desc">让助手按提示词生成或编辑图片，结果会显示在聊天中并存入图片库。</string>
   <string name="assistant_page_local_tools_video_generation_title">视频生成</string>
-  <string name="assistant_page_local_tools_video_generation_desc">让助手按提示词生成短视频（万相 / 火山 Seedance），耗时数分钟，结果会显示在聊天中并存入媒体库。</string>
+  <string name="assistant_page_local_tools_video_generation_desc">让助手按提示词生成短视频（万相 / 火山 Seedance / MiniMax 海螺 / 智谱 CogVideoX / 硅基流动），耗时数分钟，结果会显示在聊天中并存入媒体库。</string>
   <string name="assistant_page_local_tools_contacts_desc">搜索或列出设备联系人（姓名、电话号码、邮箱）。</string>
   <string name="assistant_page_local_tools_contacts_title">联系人</string>
   <string name="assistant_page_local_tools_cost_guards_desc">让助手对照每个助手的软/硬上限检查其累计 token 用量并自我限流。只读 — 与流式管道的自动停止集成将在后续版本中提供。</string>
