@@ -4,8 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.provider.Settings
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import me.rerere.rikkahub.service.RikkaAccessibilityService
 
 /**
@@ -15,6 +13,19 @@ import me.rerere.rikkahub.service.RikkaAccessibilityService
  * gets the same recovery hint.
  */
 object AccessibilityServiceHandle {
+
+    /**
+     * Application context, set once from `RikkaHubApp.onCreate`. Only used so the
+     * service-not-active envelope can tell "the user never enabled it" apart from "the system
+     * dropped it in the background" — the tool factories have no Context of their own.
+     */
+    @Volatile
+    private var appContext: Context? = null
+
+    /** Called once from Application.onCreate. Idempotent. */
+    fun attach(ctx: Context) {
+        appContext = ctx.applicationContext
+    }
 
     /** True iff our component is listed in Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES. */
     fun isEnabledInSettings(ctx: Context): Boolean {
@@ -42,8 +53,14 @@ object AccessibilityServiceHandle {
         return block(svc)
     }
 
-    fun notActiveEnvelope(): JsonObject = buildJsonObject {
-        put("error", "AccessibilityService not active")
-        put("recovery", "Enable RikkaHub in Settings → Accessibility → Installed Apps")
+    /**
+     * The envelope a tool returns when the service is not live. When we can read the system
+     * setting, an entry that is present means the service was almost certainly recycled
+     * (the ROM killed the app), which needs a different recovery hint than "never enabled".
+     */
+    fun notActiveEnvelope(): JsonObject {
+        val ctx = appContext
+        val enabledInSettings = ctx != null && isEnabledInSettings(ctx)
+        return A11yNotActive.envelope(enabledInSettings)
     }
 }
