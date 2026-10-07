@@ -88,6 +88,11 @@ is in [`docs/engineering/PHASE2.md`](engineering/PHASE2.md).
   through the parent, until a real chained requirement shows up.
 - **Media forwarding is scoped.** Images are not forwarded into sub-agents, and the media
   work deliberately left the Responses API, Claude and Google paths untouched.
+- **Video generation stays a thin protocol layer.** The retired `videogen` module sketched a
+  much wider capability model (last frame, reference image/video/audio, document and web-page
+  input, callback URLs, seed/watermark/audio knobs, usage accounting). Those stay
+  unimplemented until a real call for them shows up — see
+  [VIDEO-GENERATION.md](VIDEO-GENERATION.md).
 - **No daily spend cap (yet).** The per-orchestration ceiling shipped; a calendar-day cap
   was deferred.
 
