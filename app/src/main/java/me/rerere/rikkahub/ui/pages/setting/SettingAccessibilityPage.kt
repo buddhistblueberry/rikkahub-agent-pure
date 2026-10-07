@@ -41,6 +41,8 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.AccessibilityServiceHandle
 import me.rerere.rikkahub.data.ai.tools.local.PermissionHelper
+import me.rerere.rikkahub.data.permissions.KeepAliveVendor
+import me.rerere.rikkahub.data.permissions.keepAliveVendorOf
 import me.rerere.rikkahub.service.ActionLogEntry
 import me.rerere.rikkahub.service.RikkaAccessibilityService
 import me.rerere.rikkahub.shizuku.ACCESSIBILITY_REPAIR_TIMEOUT_MS
@@ -78,6 +80,10 @@ fun SettingAccessibilityPage() {
         mutableStateOf(AccessibilityServiceHandle.isEnabledInSettings(context))
     }
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    // OEM power-management state; re-read on resume because the user grants it on a system page.
+    var ignoresBatteryOpt by remember {
+        mutableStateOf(PermissionHelper.ignoresBatteryOptimizations(context))
+    }
 
     // Pull StateFlows from the live service if present; otherwise show empty defaults.
     val idleRunningFlow = remember { MutableStateFlow(false) }
@@ -108,6 +114,7 @@ fun SettingAccessibilityPage() {
                 liveService = RikkaAccessibilityService.instance
                 enabledInSettings = AccessibilityServiceHandle.isEnabledInSettings(context)
                 overlayGranted = Settings.canDrawOverlays(context)
+                ignoresBatteryOpt = PermissionHelper.ignoresBatteryOptimizations(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -126,6 +133,24 @@ fun SettingAccessibilityPage() {
             }
             delay(1_000)
         }
+    }
+
+    // Vendor-specific wording for the keep-alive card (the menu path differs per ROM). Kept as
+    // a plain mapping so the vendor enum, not the composable, decides.
+    val keepAliveVendor = remember { keepAliveVendorOf(Build.MANUFACTURER, Build.BRAND) }
+    val keepAliveTitleRes = when (keepAliveVendor) {
+        KeepAliveVendor.VIVO -> R.string.setting_page_accessibility_keepalive_title_vivo
+        KeepAliveVendor.XIAOMI -> R.string.setting_page_accessibility_keepalive_title_xiaomi
+        KeepAliveVendor.HUAWEI -> R.string.setting_page_accessibility_keepalive_title_huawei
+        KeepAliveVendor.OPPO -> R.string.setting_page_accessibility_keepalive_title_oppo
+        KeepAliveVendor.GENERIC -> R.string.setting_page_accessibility_keepalive_title_generic
+    }
+    val keepAliveBodyRes = when (keepAliveVendor) {
+        KeepAliveVendor.VIVO -> R.string.setting_page_accessibility_keepalive_body_vivo
+        KeepAliveVendor.XIAOMI -> R.string.setting_page_accessibility_keepalive_body_xiaomi
+        KeepAliveVendor.HUAWEI -> R.string.setting_page_accessibility_keepalive_body_huawei
+        KeepAliveVendor.OPPO -> R.string.setting_page_accessibility_keepalive_body_oppo
+        KeepAliveVendor.GENERIC -> R.string.setting_page_accessibility_keepalive_body_generic
     }
 
     Scaffold(
@@ -267,6 +292,57 @@ fun SettingAccessibilityPage() {
                         },
                     )
                 }
+            }
+
+            // Keep-alive card: aggressive OEM power management kills the app, and the bound
+            // accessibility service silently disappears with it (tools then fail with "not
+            // active" while the system toggle still reads ON). No API can prevent this, so the
+            // best we can do is spell out the vendor's allow-list and offer the two shortcuts
+            // we do have: the battery-optimization prompt and the app-info page.
+            Text(
+                text = stringResource(R.string.setting_page_accessibility_keepalive_section),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp)
+            )
+            CardGroup {
+                item(
+                    headlineContent = {
+                        Text(stringResource(keepAliveTitleRes))
+                    },
+                    supportingContent = {
+                        Text(stringResource(keepAliveBodyRes))
+                    },
+                )
+                item(
+                    onClick = {
+                        context.startActivity(
+                            PermissionHelper.requestIgnoreBatteryOptimizationsIntent(context)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            if (ignoresBatteryOpt) {
+                                stringResource(R.string.setting_page_accessibility_keepalive_battery_ok)
+                            } else {
+                                stringResource(R.string.setting_page_accessibility_keepalive_battery_needed)
+                            }
+                        )
+                    },
+                )
+                item(
+                    onClick = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:${context.packageName}")
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
+                    headlineContent = {
+                        Text(stringResource(R.string.setting_page_accessibility_keepalive_open_app_info))
+                    },
+                )
             }
 
             // Activity overlay card

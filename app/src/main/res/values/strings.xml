@@ -1507,6 +1507,21 @@
   <string name="setting_page_accessibility_restricted_title">Switch greyed out? Allow restricted settings</string>
   <string name="setting_page_accessibility_restricted_help">Android 13 and later blocks this toggle for apps installed outside an app store. Open the app info page → ⋮ (top right) → Allow restricted settings, then come back and switch RikkaHub on. If that ⋮ entry is missing, tap the greyed switch once so the system offers it.</string>
   <string name="setting_page_accessibility_open_app_info">Open app info</string>
+  <!-- Background keep-alive: some OEM ROMs kill the app and the accessibility service goes with it. -->
+  <string name="setting_page_accessibility_keepalive_section">Keep alive in the background</string>
+  <string name="setting_page_accessibility_keepalive_title_generic">Getting revoked? Allow-list RikkaHub</string>
+  <string name="setting_page_accessibility_keepalive_body_generic">Some systems (Xiaomi/Huawei/OPPO and others) reap background apps, and the accessibility service is dropped with them — the tools then fail with \"service not running\" even though the switch reads ON. Allow RikkaHub to autostart, allow it background battery use, and lock it in the recents list.</string>
+  <string name="setting_page_accessibility_keepalive_title_vivo">Vivo/OriginOS: accessibility often gets revoked</string>
+  <string name="setting_page_accessibility_keepalive_body_vivo">OriginOS power saving frequently drops the accessibility service, so the tools intermittently report \"service not running\". Do all three: 1) Settings → Apps &amp; permissions → Permission manager → RikkaHub → Autostart; 2) Settings → Battery → Background power consumption → RikkaHub → Allow high background power; 3) in the recents screen, pull RikkaHub down (or tap its card) to lock it.</string>
+  <string name="setting_page_accessibility_keepalive_title_xiaomi">Xiaomi/HyperOS: accessibility often gets revoked</string>
+  <string name="setting_page_accessibility_keepalive_body_xiaomi">HyperOS power saving frequently drops the accessibility service, so the tools intermittently report \"service not running\". Do all three: 1) Settings → Apps → RikkaHub → Battery saver → No restrictions; 2) Settings → Apps → RikkaHub → Autostart; 3) in the recents screen, pull RikkaHub down (or tap its card) to lock it.</string>
+  <string name="setting_page_accessibility_keepalive_title_huawei">Huawei/HarmonyOS: accessibility often gets revoked</string>
+  <string name="setting_page_accessibility_keepalive_body_huawei">HarmonyOS power saving frequently drops the accessibility service, so the tools intermittently report \"service not running\". Do all three: 1) Settings → Apps → App launch → RikkaHub → turn off Auto-manage, then enable Autostart / Secondary launch / Run in background; 2) Settings → Battery → More battery settings → allow RikkaHub to keep running; 3) in the recents screen, pull RikkaHub down to lock it.</string>
+  <string name="setting_page_accessibility_keepalive_title_oppo">OPPO/ColorOS: accessibility often gets revoked</string>
+  <string name="setting_page_accessibility_keepalive_body_oppo">ColorOS power saving frequently drops the accessibility service, so the tools intermittently report \"service not running\". Do all three: 1) Settings → Apps → App management → RikkaHub → Battery usage → allow full background behaviour (+ allow autostart); 2) allow the app to start up automatically; 3) in the recents screen, tap the card menu → Lock.</string>
+  <string name="setting_page_accessibility_keepalive_battery_ok">Battery optimization: allow-listed</string>
+  <string name="setting_page_accessibility_keepalive_battery_needed">Battery optimization: not allow-listed — tap to fix</string>
+  <string name="setting_page_accessibility_keepalive_open_app_info">Open app info (set autostart)</string>
   <string name="setting_page_accessibility_diagnostics_section">Diagnostics</string>
   <string name="setting_page_accessibility_capture_diag">Capture diagnostic screenshot</string>
   <string name="setting_page_accessibility_capture_ok_toast">Screenshot saved: %1$s</string>
@@ -2837,5 +2852,8 @@
   <string name="getting_started_done">Done</string>
   <string name="getting_started_finish">Start using</string>
   <string name="getting_started_later">Later</string>
+  <string name="getting_started_keepalive_title">Don\'t let the system clean it up</string>
+  <string name="getting_started_keepalive_desc">On some systems (Vivo/Xiaomi/Huawei) background cleaning drops the accessibility service a while after you enable it, so the screen tools stop working. Do the keep-alive steps once in Accessibility settings.</string>
+  <string name="getting_started_keepalive_open">Open</string>
 
 </resources>

@@ -1539,6 +1539,21 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_page_accessibility_restricted_title">开关是灰色 / 打开后弹回？请放行「受限设置」</string>
   <string name="setting_page_accessibility_restricted_help">Android 13 及以后，会对非应用商店安装的应用禁用此开关。请打开本应用的「应用信息」页 → 右上角 ⋮ → 允许受限设置，然后返回这里重新打开 RikkaHub。若找不到「允许受限设置」这一项，先点一下灰色开关让它弹出系统提示，该项就会出现。</string>
   <string name="setting_page_accessibility_open_app_info">打开应用信息</string>
+  <!-- 后台保活：部分国产系统会杀进程，连带把无障碍服务摘掉。 -->
+  <string name="setting_page_accessibility_keepalive_section">后台保活</string>
+  <string name="setting_page_accessibility_keepalive_title_generic">被系统收回？把 RikkaHub 加入白名单</string>
+  <string name="setting_page_accessibility_keepalive_body_generic">部分系统（小米/华为/OPPO 等）会在后台清理应用，无障碍服务会随之被摘掉——表现是工具间歇报“服务未运行”，而系统开关看着仍然是开的。请允许 RikkaHub 自启动、允许后台运行，并在多任务界面把它锁定。</string>
+  <string name="setting_page_accessibility_keepalive_title_vivo">Vivo/OriginOS 常见：无障碍被系统收回</string>
+  <string name="setting_page_accessibility_keepalive_body_vivo">OriginOS 的省电策略常把无障碍服务摘掉，工具会间歇报“服务未运行”。请三步都做：① 设置 → 应用与权限 → 权限管理 → RikkaHub → 自启动；② 设置 → 电池 → 后台耗电管理 → RikkaHub → 允许后台高耗电；③ 在最近任务里下拉 RikkaHub（或点卡片）锁定。</string>
+  <string name="setting_page_accessibility_keepalive_title_xiaomi">小米/HyperOS 常见：无障碍被系统收回</string>
+  <string name="setting_page_accessibility_keepalive_body_xiaomi">HyperOS 的省电策略常把无障碍服务摘掉，工具会间歇报“服务未运行”。请三步都做：① 设置 → 应用设置 → 应用管理 → RikkaHub → 省电策略 → 无限制；② 设置 → 应用管理 → RikkaHub → 自启动；③ 在最近任务里下拉 RikkaHub（或点卡片）锁定。</string>
+  <string name="setting_page_accessibility_keepalive_title_huawei">华为/HarmonyOS 常见：无障碍被系统收回</string>
+  <string name="setting_page_accessibility_keepalive_body_huawei">HarmonyOS 的省电策略常把无障碍服务摘掉，工具会间歇报“服务未运行”。请三步都做：① 设置 → 应用 → 应用启动管理 → RikkaHub → 关闭“自动管理”，再手动打开自启动/关联启动/后台活动；② 设置 → 电池 → 更多电池设置 → 允许 RikkaHub 后台运行；③ 在最近任务里下拉 RikkaHub 锁定。</string>
+  <string name="setting_page_accessibility_keepalive_title_oppo">OPPO/ColorOS 常见：无障碍被系统收回</string>
+  <string name="setting_page_accessibility_keepalive_body_oppo">ColorOS 的省电策略常把无障碍服务摘掉，工具会间歇报“服务未运行”。请三步都做：① 设置 → 应用 → 应用管理 → RikkaHub → 耗电管理 → 允许完全后台行为（并允许自启动）；② 允许应用自启动/关联启动；③ 在最近任务卡片上点 ⋮ → 锁定。</string>
+  <string name="setting_page_accessibility_keepalive_battery_ok">电池优化：已加入白名单</string>
+  <string name="setting_page_accessibility_keepalive_battery_needed">电池优化：未加入白名单 - 点击修复</string>
+  <string name="setting_page_accessibility_keepalive_open_app_info">打开应用信息（设置自启动）</string>
   <string name="setting_page_accessibility_overlay_granted">在其他应用上层显示：已授予</string>
   <string name="setting_page_accessibility_overlay_help">智能体自动化操作时，在屏幕顶部显示一个小小的“智能体正在工作”标签，让你始终知道它何时在操控界面。可选，但推荐开启。</string>
   <string name="setting_page_accessibility_overlay_not_granted">在其他应用上层显示：未授予</string>
@@ -2556,5 +2571,8 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="getting_started_done">已完成</string>
   <string name="getting_started_finish">开始使用</string>
   <string name="getting_started_later">稍后再说</string>
+  <string name="getting_started_keepalive_title">别让系统把它“清后台”清掉</string>
+  <string name="getting_started_keepalive_desc">部分系统（Vivo/小米/华为）会在后台清理应用，无障碍服务开启后也可能被系统收回，屏幕工具随之失灵。到「无障碍」页做一次后台保活即可。</string>
+  <string name="getting_started_keepalive_open">去设置</string>
 
 </resources>

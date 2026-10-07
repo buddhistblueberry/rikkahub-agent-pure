@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.gettingstarted
 
 import androidx.compose.foundation.background
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,8 @@ import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.permissions.PermissionInventory
+import me.rerere.rikkahub.data.permissions.isAggressive
+import me.rerere.rikkahub.data.permissions.keepAliveVendorOf
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.hooks.writeBooleanPreference
@@ -98,6 +101,9 @@ fun GettingStartedPage() {
     val steps = evaluateGettingStartedSteps(settings, pendingServicePermissions)
     val doneCount = steps.count { it.value }
     val assistantId = settings.getCurrentAssistant().id.toString()
+    // Only aggressive OEM ROMs reap the accessibility service in the background; for everyone
+    // else the tip is noise, so gate it on the vendor.
+    val keepAliveVendor = keepAliveVendorOf(Build.MANUFACTURER, Build.BRAND)
 
     fun finish() {
         ctx.writeBooleanPreference(GETTING_STARTED_SEEN_KEY, true)
@@ -152,6 +158,12 @@ fun GettingStartedPage() {
                     done = steps[GettingStartedStep.Permissions] == true,
                     onAction = { nav.navigate(Screen.SettingPermissions) },
                 )
+            }
+
+            if (keepAliveVendor.isAggressive) {
+                item(key = "keepalive") {
+                    KeepAliveTip(onAction = { nav.navigate(Screen.SettingAccessibility) })
+                }
             }
 
             item(key = "step-workspace") {
@@ -282,6 +294,37 @@ private fun StepCard(
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Shown on the first-run guide for OEMs that reap background apps (Vivo/Xiaomi/Huawei/OPPO):
+ * the accessibility service they just enabled can be dropped by the system a few minutes
+ * later, which reads as a bug. Points them at the keep-alive steps before it happens.
+ */
+@Composable
+private fun KeepAliveTip(onAction: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(20.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            stringResource(R.string.getting_started_keepalive_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            stringResource(R.string.getting_started_keepalive_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(onClick = onAction, contentPadding = PaddingValues(0.dp)) {
+            Text(stringResource(R.string.getting_started_keepalive_open))
         }
     }
 }
