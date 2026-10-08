@@ -873,6 +873,7 @@ sealed interface Screen : NavKey {
     @Serializable
     data object SettingAccessibility : Screen
 
+    @Serializable
     data object SettingFloatingBall : Screen
 
     @Serializable
