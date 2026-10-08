@@ -19,7 +19,14 @@
 
 # Serialized settings and conversations are persisted as JSON, so keep the
 # members the generated serializers read and write.
--keep @kotlinx.serialization.Serializable class * {*;}
+#
+# `allowshrinking` is load-bearing. Without it this rule pins *every*
+# @Serializable class in the app, reachable or not — which is how the retired
+# `videogen` module's model layer survived up to 2026-10-08 (50 types / ~25 KB
+# of bytecode in the shipped dex, with no reference to it anywhere). A class
+# that is actually reachable still keeps every member exactly as before; only
+# ones R8 can prove unreachable are dropped. See docs/VIDEO-GENERATION.md.
+-keep,allowshrinking @kotlinx.serialization.Serializable class * {*;}
 
 # auth0/jackson: TypeReference subclasses rely on runtime generic signatures.
 # R8 strips Signature/InnerClasses/EnclosingMethod by default, and its class
