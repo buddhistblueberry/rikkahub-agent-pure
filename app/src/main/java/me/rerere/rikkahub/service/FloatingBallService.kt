@@ -24,6 +24,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.ui.graphics.toArgb
@@ -96,6 +98,21 @@ class FloatingBallService : Service(), KoinComponent {
         private const val FALLBACK_BALL_COLOR = 0xFF6750A4.toInt()
 
         private const val IDLE_ANIM_MS = 220L
+
+        /**
+         * The quick-chat panel unfolds out of the ball, so the ball must stay put for the first
+         * beat of that (the activity takes a moment to come up) and only then fold away — a
+         * little after the panel asks to be shown, so the two animations overlap rather than the
+         * ball vanishing into an empty screen.
+         */
+        private const val BALL_COLLAPSE_DELAY_MS = 120L
+
+        /** The ball folding away into the panel, and popping back out of it. */
+        private const val BALL_COLLAPSE_MS = 180L
+        private const val BALL_COLLAPSE_END_SCALE = 0.35f
+        private const val BALL_SPAWN_MS = 340L
+        private const val BALL_SPAWN_START_SCALE = 0.4f
+        private const val BALL_SPAWN_OVERSHOOT = 1.6f
 
         // Same SharedPreferences file/key the UI uses (see ui/hooks/ColorMode.kt). The ball watches
         // it so a light/dark switch re-tints the ball without restarting the service.
@@ -224,6 +241,9 @@ class FloatingBallService : Service(), KoinComponent {
         if (!panelOpen && ballView != null && !hidden) setHidden(true)
     }
 
+    /** Folds the ball away a beat after the panel starts unfolding (see [BALL_COLLAPSE_DELAY_MS]). */
+    private val collapseRunnable = Runnable { collapseBall() }
+
     override fun onCreate() {
         super.onCreate()
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -249,25 +269,40 @@ class FloatingBallService : Service(), KoinComponent {
                 if (ballView == null) {
                     stopSelf()
                 } else {
-                    // Out of the way entirely: the panel owns the screen while it is up.
+                    // The panel unfolds out of the ball, so hand the ball over a beat later: it
+                    // folds away as the panel grows, instead of blinking out first.
                     mainHandler.removeCallbacks(idleRunnable)
                     motionAnimator?.cancel()
-                    ballView?.visibility = View.INVISIBLE
+                    mainHandler.removeCallbacks(collapseRunnable)
+                    mainHandler.postDelayed(collapseRunnable, BALL_COLLAPSE_DELAY_MS)
                     syncWorking()
                 }
                 return START_NOT_STICKY
             }
 
             ACTION_PANEL_CLOSE -> {
+                // Only a panel that actually came up can hand the ball back: a close with no
+                // matching open (the activity was torn down before its first frame) must leave
+                // the ball exactly as it is.
+                val panelCameUp = panelOpen
                 panelOpen = false
                 if (ballView == null) {
                     stopSelf()
                 } else {
-                    ballView?.visibility = View.VISIBLE
-                    // A panel is only ever opened from an awake ball, but stay safe: if it was
-                    // tucked away, wake it, and either way restart the idle countdown.
-                    if (hidden) setHidden(false) else scheduleIdle()
-                    syncWorking()
+                    mainHandler.removeCallbacks(collapseRunnable)
+                    if (panelCameUp) {
+                        // The panel folded back into the spot the ball belongs to — pop it out.
+                        ballView?.visibility = View.VISIBLE
+                        if (hidden) {
+                            // A panel is only ever opened from an awake ball, but stay safe: a
+                            // tucked ball is woken (that animation owns position and opacity).
+                            setHidden(false)
+                        } else {
+                            spawnBall()
+                            scheduleIdle()
+                        }
+                        syncWorking()
+                    }
                 }
                 return START_NOT_STICKY
             }
@@ -401,6 +436,8 @@ class FloatingBallService : Service(), KoinComponent {
         // Clamp into range once the view exists — a saved position from another orientation, or
         // a first-run default near the bottom, could otherwise sit partly off-screen.
         mainHandler.post { snapToEdge(wm, container, params) }
+        // Born, not blinked into existence: the ball pops out wherever it belongs.
+        spawnBall()
     }
 
     private fun hideBall() {
@@ -416,8 +453,10 @@ class FloatingBallService : Service(), KoinComponent {
         loadedIconBitmap = null
         mainHandler.removeCallbacks(longPressRunnable)
         mainHandler.removeCallbacks(idleRunnable)
+        mainHandler.removeCallbacks(collapseRunnable)
         motionAnimator?.cancel()
         motionAnimator = null
+        view.animate().cancel()
         val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
         runCatching { wm.removeViewImmediate(view) }
             .onFailure { Log.w(TAG, "removeView failed", it) }
@@ -672,6 +711,8 @@ class FloatingBallService : Service(), KoinComponent {
         targetAlpha: Float,
     ) {
         motionAnimator?.cancel()
+        // A running spawn/collapse owns scale and alpha; the tuck/wake animation must take over.
+        view.animate().cancel()
         val startX = params.x.toFloat()
         val startAlpha = view.alpha
         motionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -684,6 +725,61 @@ class FloatingBallService : Service(), KoinComponent {
             }
             start()
         }
+    }
+
+    // ---- Spawn / collapse ----
+
+    /**
+     * Folds the ball away into the quick-chat panel: it shrinks and fades from where it sits, then
+     * goes invisible. Only stays hidden if the panel is still up by the time it finishes, so a
+     * panel dismissed mid-collapse never leaves the ball stranded.
+     */
+    private fun collapseBall() {
+        val view = ballView ?: return
+        if (panelOpen) {
+            // The panel is unfolding out of the ball — the ball becomes it.
+            view.animate().cancel()
+            view.animate()
+                .scaleX(BALL_COLLAPSE_END_SCALE)
+                .scaleY(BALL_COLLAPSE_END_SCALE)
+                .alpha(0f)
+                .setDuration(BALL_COLLAPSE_MS)
+                .setInterpolator(AccelerateInterpolator(1.6f))
+                .withEndAction {
+                    if (panelOpen && ballView === view) {
+                        view.visibility = View.INVISIBLE
+                        view.scaleX = 1f
+                        view.scaleY = 1f
+                    }
+                }
+                .start()
+        } else {
+            // The panel closed while we were waiting: nothing to fold into, just stay visible.
+            view.visibility = View.VISIBLE
+            view.scaleX = 1f
+            view.scaleY = 1f
+            view.alpha = 1f
+        }
+    }
+
+    /**
+     * Pops the ball back out of where the panel folded into — a springy overshoot, so the ball
+     * reads as re-forming rather than simply appearing. Also used the first time the ball is put
+     * on screen.
+     */
+    private fun spawnBall() {
+        val view = ballView ?: return
+        view.animate().cancel()
+        view.scaleX = BALL_SPAWN_START_SCALE
+        view.scaleY = BALL_SPAWN_START_SCALE
+        view.alpha = 0f
+        view.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(BALL_SPAWN_MS)
+            .setInterpolator(OvershootInterpolator(BALL_SPAWN_OVERSHOOT))
+            .start()
     }
 
     // ---- Foreground ----
