@@ -18,7 +18,6 @@ import me.rerere.rikkahub.data.ai.TranslationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.api.HuggingFaceAPI
 import me.rerere.rikkahub.data.api.RikkaHubAPI
-import me.rerere.rikkahub.data.api.SponsorAPI
 import me.rerere.rikkahub.data.codex.CodexAccountRepository
 import me.rerere.rikkahub.data.codex.CodexCredentialStore
 import me.rerere.rikkahub.data.codex.CodexOAuthManager
@@ -323,10 +322,6 @@ val dataSourceModule = module {
             client = get(named("gemini")),
             repository = get(),
         )
-    }
-
-    single {
-        SponsorAPI.create(get())
     }
 
     single {
