@@ -207,13 +207,15 @@ private fun UsageCallRow(call: UsageCallView) {
             text = stringResource(usagePurposeLabel(call.purpose)),
             modifier = Modifier.padding(end = 2.dp),
         )
-        Text(text = "${call.inputTokens.formatNumber()} → ${call.outputTokens.formatNumber()}")
+        Text(text = "${call.inputTokens.formatNumber()}→${call.outputTokens.formatNumber()}")
         if (call.cachedTokensReported && call.cachedTokens > 0) {
             Text(text = "(${call.cachedTokens.formatNumber()} hit)")
         }
-        turnCostText(call.providerCostUsd, call.costMicros)?.let { Text(text = it) }
+        // No per-call cost: the collapsed summary above already carries the turn total. With it,
+        // this row was the widest thing on a 384dp screen and its trailing `tok/s` wrapped onto a
+        // second line; dropping it (plus the arrow spacing and the `ms` suffix) keeps one line.
         call.latencyMs?.let { ms ->
-            Text(text = "${ms}ms")
+            Text(text = formatElapsed(ms))
             if (ms > 0) Text(text = "${(call.outputTokens * 1000.0 / ms).roundToInt()} tok/s")
         }
     }
