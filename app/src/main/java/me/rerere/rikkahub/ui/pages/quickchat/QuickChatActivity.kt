@@ -55,8 +55,6 @@ class QuickChatActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        // The ball steps aside while the panel owns the screen; it returns when we finish.
-        FloatingBallService.notifyPanel(this, open = true)
         readBallPosition(intent)
         if (intent?.getBooleanExtra(EXTRA_VOICE, false) == true) {
             voiceSignal.intValue = 1
@@ -67,7 +65,11 @@ class QuickChatActivity : ComponentActivity() {
                     startVoiceSignal = voiceSignal.intValue,
                     mirror = mirror.value,
                     ballCenterY = ballCenterY.intValue,
-                    onDismiss = { finish() },
+                    // Told from the panel's first frame, not from onCreate: the ball folds itself
+                    // away exactly as the panel unfolds, and stands the idle countdown down while
+                    // the panel owns the screen. It comes back when we finish.
+                    onUnfoldStart = { FloatingBallService.notifyPanel(this, open = true) },
+                    onClose = { finish() },
                 )
             }
         }

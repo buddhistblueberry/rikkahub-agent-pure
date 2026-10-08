@@ -5,8 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +53,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -94,6 +101,16 @@ private const val BALL_ANCHOR_FRACTION = 0.50f
  */
 private const val PANEL_MIN_HEIGHT_FRACTION = 0.75f
 
+/** How long the panel takes to unfold out of the ball / fold back into it. */
+private const val PANEL_OPEN_MS = 260
+private const val PANEL_CLOSE_MS = 200
+
+/**
+ * The panel scales up from this factor (towards 1) as it appears, with its transform origin pinned
+ * to the ball, so it reads as growing out of the ball. Closing plays the same thing backwards.
+ */
+private const val PANEL_SCALE_FROM = 0.86f
+
 /**
  * Reuse the conversation the user was last in; fall back to a fresh one on first use. The main
  * chat page writes `lastConversationId` (ChatVM) so this stays in sync with normal use.
@@ -110,13 +127,18 @@ private fun initialConversationId(context: Context): Uuid {
  *
  * Sending posts straight through [ChatService.sendMessage] — the same path as the in-app chat,
  * so approvals, cost guards and token accounting apply unchanged. The screen-action button sends
- * and immediately dismisses the panel so the agent can see and drive the app underneath; a plain
- * send keeps the panel open so the reply streams in view.
+ * and dismisses the panel (fold-back first, then finish) so the agent can see and drive the app
+ * underneath; a plain send keeps the panel open so the reply streams in view.
  *
  * The panel is not pinned to the bottom: it is placed so the ball that opened it lands at
  * [BALL_ANCHOR_FRACTION] of the panel's height, mirrored horizontally when the ball is on the
  * left so the controls sit under the user's thumb. When the ball is too low for the full panel to
  * fit, the message area gives up space (at most 25%) before the panel rests on the bottom edge.
+ *
+ * The panel unfolds out of the ball and folds back into it: it scales up around a transform origin
+ * pinned to the ball's own spot on its edge (so the animation reads as the ball becoming the
+ * panel), and every dismiss — tap outside, close button, back, opening the full chat, the
+ * screen-action shortcut — plays that fold first and only then calls [onClose] to finish.
  */
 @OptIn(ExperimentalUuidApi::class)
 @Composable
@@ -124,11 +146,39 @@ fun QuickChatPanel(
     startVoiceSignal: Int,
     mirror: Boolean,
     ballCenterY: Int,
-    onDismiss: () -> Unit,
+    onUnfoldStart: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 0 = folded away into the ball, 1 = fully unfolded. The panel grows out of the ball on the
+    // way in and folds back into it before the activity finishes, so the ball can pop back out of
+    // the same spot (FloatingBallService plays that half of the morph).
+    val unfold = remember { Animatable(0f) }
+    var closing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        // Only now is the panel really about to appear, so this is the moment the ball should be
+        // told to fold itself away — timing the hand-over from the activity's onCreate instead
+        // would have the ball vanish into an empty screen on a slow start.
+        onUnfoldStart()
+        unfold.animateTo(1f, tween(PANEL_OPEN_MS, easing = FastOutSlowInEasing))
+    }
+
+    /** Plays the fold-back, then finishes. Every dismiss path goes through here exactly once. */
+    fun requestClose(after: () -> Unit = {}) {
+        if (closing) return
+        closing = true
+        scope.launch {
+            unfold.animateTo(0f, tween(PANEL_CLOSE_MS, easing = FastOutLinearInEasing))
+            // Hand over only once we have folded away, so the switch is not stealing the show.
+            after()
+            onClose()
+        }
+    }
+    BackHandler { requestClose() }
+
     val chatService = koinInject<ChatService>()
     val settingsStore = koinInject<SettingsStore>()
 
@@ -189,7 +239,7 @@ fun QuickChatPanel(
         asrState.stop()
         chatService.sendMessage(conversationId, listOf(UIMessagePart.Text(trimmed)))
         input = ""
-        if (closeAfterSend) onDismiss()
+        if (closeAfterSend) requestClose()
     }
 
     // The interactive controls, split into individual buttons so mirroring is an explicit,
@@ -211,14 +261,15 @@ fun QuickChatPanel(
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("conversationId", conversationId.toString())
             }
-            context.startActivity(intent)
-            onDismiss()
+            // Fold away first: switching to the main task would otherwise cover the panel and
+            // the fold would never be seen.
+            requestClose { context.startActivity(intent) }
         }) {
             Icon(HugeIcons.ArrowRight01, stringResource(R.string.quick_chat_open_full))
         }
     }
     val closeButton: @Composable () -> Unit = {
-        IconButton(onClick = onDismiss) {
+        IconButton(onClick = { requestClose() }) {
             Icon(HugeIcons.Cancel01, stringResource(R.string.quick_chat_close))
         }
     }
@@ -278,6 +329,12 @@ fun QuickChatPanel(
         val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
         val topInset = (statusBarHeight - panelTop).coerceAtLeast(0.dp)
 
+        // Where the ball sits inside the panel, as a fraction of its height: the point the panel
+        // unfolds out of. Normally BALL_ANCHOR_FRACTION; a ball low enough to push the panel onto
+        // the bottom edge drags the origin down with it.
+        val ballAnchorY = ((ballY - panelTop) / panelHeight).coerceIn(0f, 1f)
+        val unfoldOrigin = TransformOrigin(if (mirror) 0f else 1f, ballAnchorY)
+
         // Tap anywhere off the panel to dismiss it; the app behind shows through the gap.
         Box(
             modifier = Modifier
@@ -285,7 +342,7 @@ fun QuickChatPanel(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { onDismiss() }
+                ) { requestClose() }
         )
 
         Surface(
@@ -294,6 +351,15 @@ fun QuickChatPanel(
                 .offset { IntOffset(0, with(density) { panelTop.roundToPx() }) }
                 .fillMaxWidth()
                 .height(panelHeight)
+                // Unfold out of the ball: scale up from the ball's own spot while fading in.
+                // Closing runs the same thing backwards (unfold animates back to 0).
+                .graphicsLayer {
+                    val scale = PANEL_SCALE_FROM + (1f - PANEL_SCALE_FROM) * unfold.value
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = unfoldOrigin
+                    alpha = unfold.value
+                }
                 // Swallow taps on the panel's own surface (padding, empty history) so they do
                 // not fall through to the dismiss layer behind it.
                 .clickable(
