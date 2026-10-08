@@ -2412,6 +2412,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="chat_message_turn_speed">生成速度</string>
   <string name="chat_message_turn_expand">展开逐次用量</string>
   <string name="chat_message_turn_collapse">收起逐次用量</string>
+  <string name="chat_message_turn_collapse_action">收起</string>
   <string name="chat_message_usage_purpose_main">主回合</string>
   <string name="chat_message_usage_purpose_tool_loop">工具续跑</string>
   <string name="chat_message_usage_purpose_compaction">上下文压缩</string>

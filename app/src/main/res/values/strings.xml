@@ -2749,6 +2749,7 @@
   <string name="chat_message_turn_speed">Generation speed</string>
   <string name="chat_message_turn_expand">Show per-call usage</string>
   <string name="chat_message_turn_collapse">Hide per-call usage</string>
+  <string name="chat_message_turn_collapse_action">Show less</string>
   <string name="chat_message_usage_purpose_main">main</string>
   <string name="chat_message_usage_purpose_tool_loop">tool loop</string>
   <string name="chat_message_usage_purpose_compaction">compaction</string>
