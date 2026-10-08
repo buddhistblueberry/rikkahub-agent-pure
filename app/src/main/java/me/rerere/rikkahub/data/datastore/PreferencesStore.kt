@@ -214,6 +214,12 @@ class SettingsStore(
         val SELECT_ASSISTANT = stringPreferencesKey("select_assistant")
         val ASSISTANTS = stringPreferencesKey("assistants")
         val ASSISTANT_TAGS = stringPreferencesKey("assistant_tags")
+        // 这两个字段此前只存在于 `Settings` 数据类里, 没有对应 key, 也就没进逐键读写管道:
+        // 值只活在 settingsFlow 的内存快照中, 本进程内看着生效, 重启/升级后又回到默认值
+        // (子智能体归档夹显示「不归入」; 默认技能播种标记归零). 由
+        // SettingsPersistenceCoverageTest 守住这条不变量。
+        val SUB_AGENT_ARCHIVE_FOLDERS = stringPreferencesKey("sub_agent_archive_folders")
+        val AUTO_ENABLED_DEFAULT_SKILLS = stringPreferencesKey("auto_enabled_default_skills")
 
         // 搜索
         val SEARCH_SERVICES = stringPreferencesKey("search_services")
@@ -327,6 +333,10 @@ class SettingsStore(
                 preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
                 preferences[SELECT_ASSISTANT] = settings.assistantId.toString()
                 preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(settings.assistantTags)
+                preferences[SUB_AGENT_ARCHIVE_FOLDERS] =
+                    JsonInstant.encodeToString(settings.subAgentArchiveFolders)
+                preferences[AUTO_ENABLED_DEFAULT_SKILLS] =
+                    JsonInstant.encodeToString(settings.autoEnabledDefaultSkills)
 
                 preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settings.searchServices)
                 preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settings.searchCommonOptions)
@@ -453,6 +463,18 @@ class SettingsStore(
                     Log.w(TAG, "Failed to decode assistants, using default", it)
                     emptyList()
                 },
+                subAgentArchiveFolders = preferences[SUB_AGENT_ARCHIVE_FOLDERS]?.let { raw ->
+                    runCatching { JsonInstant.decodeFromString<Map<String, String>>(raw) }.getOrElse {
+                        Log.w(TAG, "Failed to decode subAgentArchiveFolders, using empty", it)
+                        emptyMap()
+                    }
+                } ?: emptyMap(),
+                autoEnabledDefaultSkills = preferences[AUTO_ENABLED_DEFAULT_SKILLS]?.let { raw ->
+                    runCatching { JsonInstant.decodeFromString<Set<String>>(raw) }.getOrElse {
+                        Log.w(TAG, "Failed to decode autoEnabledDefaultSkills, using empty", it)
+                        emptySet()
+                    }
+                } ?: emptySet(),
                 dynamicColor = preferences[DYNAMIC_COLOR] != false,
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 customThemes = preferences[CUSTOM_THEMES]?.let { raw ->
