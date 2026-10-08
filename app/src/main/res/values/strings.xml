@@ -5,7 +5,7 @@
   <string name="about_page_system">System</string>
   <string name="about_page_title">About</string>
   <string name="about_page_version">Version</string>
-  <string name="about_page_website">Website</string>
+  <string name="about_page_website">Project</string>
   <string name="add">Add</string>
   <string name="app_name">RikkaHub Agent</string>
   <string name="asr_button_content_description">Speech Recognition</string>
@@ -353,11 +353,6 @@
   <string name="deep_thinking">Deep Thinking</string>
   <string name="deep_thinking_seconds">Thought for %1$.1f seconds</string>
   <string name="delete">Delete</string>
-  <string name="donate_page_afdian_desc">For 🇨🇳 users</string>
-  <string name="donate_page_donation_methods">Donation Methods</string>
-  <string name="donate_page_kofi_desc">For Global Users</string>
-  <string name="donate_page_sponsor_list">Sponsor List</string>
-  <string name="donate_page_title">Donate</string>
   <string name="edit">Edit</string>
   <string name="editing">Editing</string>
   <string name="emoji_picker_search_placeholder">Search emojis...</string>
@@ -943,8 +938,6 @@
   <string name="setting_page_preferences_network_auto_retry_desc">Retry model requests up to 3 times when network errors occur.</string>
   <string name="setting_page_documentation">Documentation</string>
   <string name="setting_page_documentation_desc">View app usage instructions and help documentation</string>
-  <string name="setting_page_donate">Donate</string>
-  <string name="setting_page_donate_desc">If you like it, sponsor the author\'s work</string>
   <string name="setting_page_dynamic_color">Dynamic Color</string>
   <string name="setting_page_dynamic_color_desc">Generate the app theme colors dynamically from your wallpaper</string>
   <string name="setting_page_extensions">Extensions</string>
@@ -975,11 +968,7 @@
   <string name="setting_page_search_web_fetch_tools_desc">Let the assistant fetch and read web page content directly. On by default; turn off to rely only on your configured search provider.</string>
   <string name="setting_page_share">Share</string>
   <string name="setting_page_share_desc">Share this app with friends</string>
-  <string name="setting_page_share_text">RikkaHub - Open Source Android AI Assistant\n\nWebsite: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">Donate</string>
-  <string name="setting_page_sponsor_alert_desc">You have launched the app over 100 times! If you enjoy using it, please consider supporting the developer.</string>
-  <string name="setting_page_sponsor_alert_dismiss">Not Now</string>
-  <string name="setting_page_sponsor_alert_title">Support the Developer</string>
+  <string name="setting_page_share_text">RikkaHub Agent · Pure - Open Source Android AI Assistant\n\nProject: https://github.com/wuyhong715/rikkahub-agent-pure/releases/latest</string>
   <string name="setting_page_theme_setting">Theme</string>
   <string name="setting_page_theme_setting_desc">Customize app color scheme</string>
   <string name="setting_theme_page_preset_themes">Preset Themes</string>

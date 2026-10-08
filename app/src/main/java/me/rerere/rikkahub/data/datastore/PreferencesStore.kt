@@ -263,9 +263,6 @@ class SettingsStore(
         // 统计
         val LAUNCH_COUNT = intPreferencesKey("launch_count")
 
-        // 赞助提醒
-        val SPONSOR_ALERT_DISMISSED_AT = intPreferencesKey("sponsor_alert_dismissed_at")
-
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings) {
             require(!settings.init) { "Cannot restore uninitialized settings" }
@@ -359,7 +356,6 @@ class SettingsStore(
                 preferences[AI_LOG_LEVEL] = settings.aiLogLevel.preferenceName
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
-                preferences[SPONSOR_ALERT_DISMISSED_AT] = settings.sponsorAlertDismissedAt
             }
         }
     }
@@ -548,7 +544,6 @@ class SettingsStore(
                     }
                 } ?: BackupReminderConfig(),
                 launchCount = preferences[LAUNCH_COUNT] ?: 0,
-                sponsorAlertDismissedAt = preferences[SPONSOR_ALERT_DISMISSED_AT] ?: 0,
             )
         }
         .map {
@@ -966,7 +961,6 @@ data class Settings(
     val aiLogLevel: AiLogLevel = AiLogLevel.INFO,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val launchCount: Int = 0,
-    val sponsorAlertDismissedAt: Int = 0,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储
