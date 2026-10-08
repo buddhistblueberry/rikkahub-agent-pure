@@ -37,7 +37,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.theme.CustomColors
@@ -158,10 +158,9 @@ private fun AssistantHeader(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        UIAvatar(
-            value = assistant.avatar,
+        AssistantAvatar(
+            assistant = assistant,
             name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-            onUpdate = null,
             modifier = Modifier
                 .size(100.dp)
                 .heroAnimation("assistant_${assistant.id}")

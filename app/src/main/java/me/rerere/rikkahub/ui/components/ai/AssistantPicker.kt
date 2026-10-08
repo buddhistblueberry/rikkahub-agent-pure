@@ -47,7 +47,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import kotlin.uuid.Uuid
@@ -79,9 +79,9 @@ fun AssistantPicker(
 
                 Spacer(Modifier.weight(1f))
 
-                UIAvatar(
+                AssistantAvatar(
+                    assistant = state.currentAssistant,
                     name = state.currentAssistant.name.ifEmpty { defaultAssistantName },
-                    value = state.currentAssistant.avatar,
                     onClick = onClickSetting
                 )
             }
@@ -224,9 +224,9 @@ private fun AssistantItem(
             )
         },
         leadingContent = {
-            UIAvatar(
+            AssistantAvatar(
+                assistant = assistant,
                 name = assistant.name.ifEmpty { defaultAssistantName },
-                value = assistant.avatar,
                 modifier = Modifier.size(32.dp)
             )
         },

@@ -250,6 +250,10 @@ class SettingsStore(
         val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
         val FLOATING_BALL_IDLE_SECONDS = intPreferencesKey("floating_ball_idle_seconds")
         val FLOATING_BALL_HIDDEN_ALPHA = intPreferencesKey("floating_ball_hidden_alpha")
+        // Empty string = follow the app theme; otherwise an ARGB int as text.
+        val FLOATING_BALL_COLOR = stringPreferencesKey("floating_ball_color")
+        // Absolute path to a user-picked ball image inside the app's files dir; empty = default glyph.
+        val FLOATING_BALL_ICON_PATH = stringPreferencesKey("floating_ball_icon_path")
 
         // AI logging
         val AI_LOG_LEVEL = stringPreferencesKey("ai_log_level")
@@ -357,6 +361,8 @@ class SettingsStore(
                 preferences[FLOATING_BALL_ENABLED] = settings.floatingBallEnabled
                 preferences[FLOATING_BALL_IDLE_SECONDS] = settings.floatingBallIdleSeconds.coerceIn(0, 60)
                 preferences[FLOATING_BALL_HIDDEN_ALPHA] = settings.floatingBallHiddenAlpha.coerceIn(10, 100)
+                preferences[FLOATING_BALL_COLOR] = settings.floatingBallColor?.toString() ?: ""
+                preferences[FLOATING_BALL_ICON_PATH] = settings.floatingBallIconPath
                 preferences[AI_LOG_LEVEL] = settings.aiLogLevel.preferenceName
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
@@ -542,6 +548,8 @@ class SettingsStore(
                 floatingBallEnabled = preferences[FLOATING_BALL_ENABLED] == true,
                 floatingBallIdleSeconds = preferences[FLOATING_BALL_IDLE_SECONDS] ?: 3,
                 floatingBallHiddenAlpha = preferences[FLOATING_BALL_HIDDEN_ALPHA] ?: 50,
+                floatingBallColor = preferences[FLOATING_BALL_COLOR]?.takeIf { it.isNotBlank() }?.toIntOrNull(),
+                floatingBallIconPath = preferences[FLOATING_BALL_ICON_PATH] ?: "",
                 aiLogLevel = AiLogLevel.fromPreference(preferences[AI_LOG_LEVEL]),
                 backupReminderConfig = preferences[BACKUP_REMINDER_CONFIG]?.let { raw ->
                     runCatching { JsonInstant.decodeFromString<BackupReminderConfig>(raw) }.getOrElse {
@@ -972,6 +980,16 @@ data class Settings(
     val floatingBallIdleSeconds: Int = 3,
     /** Opacity, in percent, that the tucked-away ball fades to so it stays unobtrusive. */
     val floatingBallHiddenAlpha: Int = 50,
+    /**
+     * ARGB colour of the ball's default (glyph) look. `null` follows the app theme's primary
+     * colour, so the ball re-tints itself whenever the theme / dynamic colour / dark mode changes.
+     */
+    val floatingBallColor: Int? = null,
+    /**
+     * Absolute path to a user-picked image shown as the whole ball (circular crop). Empty string
+     * keeps the built-in themed glyph.
+     */
+    val floatingBallIconPath: String = "",
     val aiLogLevel: AiLogLevel = AiLogLevel.INFO,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val launchCount: Int = 0,

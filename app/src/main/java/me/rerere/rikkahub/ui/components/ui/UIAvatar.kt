@@ -49,12 +49,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import me.rerere.common.android.appTempFolder
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Edit03
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ai.useCropLauncher
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
@@ -97,7 +100,12 @@ fun UIAvatar(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     onUpdate: ((Avatar) -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    /**
+     * Brand-icon name (usually a model's `modelId`) to draw *in place of* the procedural default
+     * when [value] is [Avatar.Dummy]. Null keeps the generated letter/gradient avatar.
+     */
+    modelIconName: String? = null,
 ) {
     val filesManager: FilesManager = koinInject()
     val context = LocalContext.current
@@ -184,10 +192,18 @@ fun UIAvatar(
                     }
 
                     is Avatar.Dummy -> {
-                        ProceduralAvatar(
-                            name = name,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        if (modelIconName != null) {
+                            AutoAIIconFill(
+                                name = modelIconName,
+                                modifier = Modifier.fillMaxSize(),
+                                loading = loading,
+                            )
+                        } else {
+                            ProceduralAvatar(
+                                name = name,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -338,6 +354,51 @@ fun UIAvatar(
             }
         )
     }
+}
+
+/**
+ * Avatar for an assistant. When the assistant carries no picture of its own (the default
+ * [Avatar.Dummy]) and a model can be resolved — its own chat model, or the global default — the
+ * model's brand icon stands in for it, so a fresh assistant looks like the model it runs on
+ * instead of a generated letter. A real picture/emoji avatar always wins.
+ */
+@Composable
+fun AssistantAvatar(
+    assistant: Assistant,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    onUpdate: ((Avatar) -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+    name: String = assistant.name,
+) {
+    val settingsStore: SettingsStore = koinInject()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val modelIconName = remember(
+        assistant.avatar,
+        assistant.chatModelId,
+        settings.chatModelId,
+        settings.providers,
+    ) {
+        if (assistant.avatar is Avatar.Dummy) {
+            val modelId = assistant.chatModelId ?: settings.chatModelId
+            settings.providers
+                .asSequence()
+                .flatMap { it.models.asSequence() }
+                .firstOrNull { it.id == modelId }
+                ?.modelId
+        } else {
+            null
+        }
+    }
+    UIAvatar(
+        name = name,
+        value = assistant.avatar,
+        modifier = modifier,
+        loading = loading,
+        onUpdate = onUpdate,
+        onClick = onClick,
+        modelIconName = modelIconName,
+    )
 }
 
 @Composable

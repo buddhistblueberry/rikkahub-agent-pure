@@ -55,7 +55,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.TagsInput
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.toFixed
@@ -132,8 +132,8 @@ internal fun AssistantBasicContent(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            UIAvatar(
-                value = assistant.avatar,
+            AssistantAvatar(
+                assistant = assistant,
                 name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
                 onUpdate = { avatar ->
                     onUpdate(
