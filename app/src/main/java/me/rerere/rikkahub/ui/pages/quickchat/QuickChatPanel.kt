@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,7 +23,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -84,8 +85,8 @@ private const val LAST_CONVERSATION_KEY = "lastConversationId"
 /** Full panel height, as a fraction of the available screen height. */
 private const val PANEL_HEIGHT_FRACTION = 0.62f
 
-/** The ball sits this far down the panel, so the panel mostly unfolds above the ball. */
-private const val BALL_ANCHOR_FRACTION = 0.75f
+/** The ball sits this far down the panel — half-way, so the panel unfolds evenly around it. */
+private const val BALL_ANCHOR_FRACTION = 0.50f
 
 /**
  * The panel shrinks its message list when a low ball would push it off the bottom, but never
@@ -271,6 +272,12 @@ fun QuickChatPanel(
             .coerceAtMost(maxHeight - panelHeight)
             .coerceAtLeast(0.dp)
 
+        // Reserve the status-bar height only when the panel's own top edge actually reaches up
+        // under it. Anchored to a lower ball the panel sits well clear of the status bar, and
+        // blindly applying the inset there left a dead band across the top of the panel.
+        val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+        val topInset = (statusBarHeight - panelTop).coerceAtLeast(0.dp)
+
         // Tap anywhere off the panel to dismiss it; the app behind shows through the gap.
         Box(
             modifier = Modifier
@@ -301,8 +308,12 @@ fun QuickChatPanel(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = topInset + 12.dp,
+                        bottom = 12.dp,
+                    ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
