@@ -248,6 +248,8 @@ class SettingsStore(
 
         // Floating ball (always-available quick chat)
         val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
+        val FLOATING_BALL_IDLE_SECONDS = intPreferencesKey("floating_ball_idle_seconds")
+        val FLOATING_BALL_HIDDEN_ALPHA = intPreferencesKey("floating_ball_hidden_alpha")
 
         // AI logging
         val AI_LOG_LEVEL = stringPreferencesKey("ai_log_level")
@@ -353,6 +355,8 @@ class SettingsStore(
                 preferences[WEB_SERVER_ACCESS_PASSWORD] = settings.webServerAccessPassword
                 preferences[WEB_SERVER_LOCALHOST_ONLY] = settings.webServerLocalhostOnly
                 preferences[FLOATING_BALL_ENABLED] = settings.floatingBallEnabled
+                preferences[FLOATING_BALL_IDLE_SECONDS] = settings.floatingBallIdleSeconds.coerceIn(0, 60)
+                preferences[FLOATING_BALL_HIDDEN_ALPHA] = settings.floatingBallHiddenAlpha.coerceIn(10, 100)
                 preferences[AI_LOG_LEVEL] = settings.aiLogLevel.preferenceName
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
@@ -536,6 +540,8 @@ class SettingsStore(
                 webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
                 webServerLocalhostOnly = preferences[WEB_SERVER_LOCALHOST_ONLY] == true,
                 floatingBallEnabled = preferences[FLOATING_BALL_ENABLED] == true,
+                floatingBallIdleSeconds = preferences[FLOATING_BALL_IDLE_SECONDS] ?: 3,
+                floatingBallHiddenAlpha = preferences[FLOATING_BALL_HIDDEN_ALPHA] ?: 50,
                 aiLogLevel = AiLogLevel.fromPreference(preferences[AI_LOG_LEVEL]),
                 backupReminderConfig = preferences[BACKUP_REMINDER_CONFIG]?.let { raw ->
                     runCatching { JsonInstant.decodeFromString<BackupReminderConfig>(raw) }.getOrElse {
@@ -958,6 +964,14 @@ data class Settings(
      * SYSTEM_ALERT_WINDOW and a persistent foreground service, so it stays strictly opt-in.
      */
     val floatingBallEnabled: Boolean = false,
+    /**
+     * Seconds the ball can stay untouched before it tucks itself into the screen edge (only half
+     * of it remains visible, dimmed). Touching it wakes it back up without opening the panel.
+     * `0` disables the auto-tuck.
+     */
+    val floatingBallIdleSeconds: Int = 3,
+    /** Opacity, in percent, that the tucked-away ball fades to so it stays unobtrusive. */
+    val floatingBallHiddenAlpha: Int = 50,
     val aiLogLevel: AiLogLevel = AiLogLevel.INFO,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val launchCount: Int = 0,
