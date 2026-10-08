@@ -18,6 +18,7 @@ import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -70,10 +71,10 @@ fun ChatMessageAssistantAvatar(
         ) {
             if (useAssistantAvatar) {
                 if (showIcon) {
-                    UIAvatar(
+                    AssistantAvatar(
+                        assistant = assistant,
                         name = assistant.name,
                         modifier = Modifier.size(28.dp),
-                        value = assistant.avatar,
                         loading = loading,
                     )
                 }

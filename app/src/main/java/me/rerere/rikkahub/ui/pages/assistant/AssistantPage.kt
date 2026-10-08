@@ -68,7 +68,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
@@ -412,9 +412,9 @@ private fun AssistantItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            UIAvatar(
+            AssistantAvatar(
+                assistant = assistant,
                 name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                value = assistant.avatar,
                 modifier = Modifier
                     .size(48.dp)
                     .heroAnimation("assistant_${assistant.id}")
@@ -505,9 +505,9 @@ private fun AssistantActionSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                UIAvatar(
+                AssistantAvatar(
+                    assistant = assistant,
                     name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                    value = assistant.avatar,
                     modifier = Modifier.size(40.dp)
                 )
                 Text(

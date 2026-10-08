@@ -3,16 +3,24 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -27,18 +35,29 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlin.math.roundToInt
+import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -46,23 +65,33 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * Settings for the always-available floating ball: master switch, the SYSTEM_ALERT_WINDOW grant
- * it depends on, and a short explanation of the gestures.
+ * it depends on, how it looks (colour + icon) and a short explanation of the gestures.
  */
 @Composable
 fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var showIdleDialog by remember { mutableStateOf(false) }
+    var showIconDialog by remember { mutableStateOf(false) }
+    var showColorDialog by remember { mutableStateOf(false) }
     // Draft so dragging the slider does not write DataStore on every frame; committed on release.
     var alphaDraft by remember(settings.floatingBallHiddenAlpha) {
         mutableStateOf(settings.floatingBallHiddenAlpha.toFloat())
     }
+    // Same idea for the colour picker: edited locally, committed when the dialog is confirmed.
+    var colorDraft by remember(showColorDialog) { mutableStateOf(settings.floatingBallColor) }
+
+    val themePrimary = MaterialTheme.colorScheme.primary
+    val ballColor = settings.floatingBallColor?.let { Color(it) } ?: themePrimary
 
     fun overlaySettingsIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -81,6 +110,26 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
             // Can't show anything without the grant: send the user straight to it. Returning to
             // this page re-checks and starts the ball (see the resume observer below).
             context.startActivity(overlaySettingsIntent())
+        }
+    }
+
+    // Copies the picked image next to the app's private files so the ball can render it later.
+    val iconPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val target = FloatingBallService.iconFile(context)
+            val copied = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("Cannot open $uri")
+                }.isSuccess
+            }
+            if (copied) {
+                vm.updateSettings { it.copy(floatingBallIconPath = target.absolutePath) }
+            }
         }
     }
 
@@ -156,6 +205,61 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
                                 TextButton(onClick = { context.startActivity(overlaySettingsIntent()) }) {
                                     Text(stringResource(R.string.setting_floating_ball_overlay_grant))
                                 }
+                            }
+                        },
+                    )
+                }
+            }
+
+            item {
+                CardGroup(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    item(
+                        onClick = { showIconDialog = true },
+                        leadingContent = {
+                            FloatingBallPreview(color = ballColor, iconPath = settings.floatingBallIconPath)
+                        },
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_floating_ball_icon_title))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_floating_ball_icon_desc))
+                        },
+                    )
+                    item(
+                        onClick = {
+                            colorDraft = settings.floatingBallColor
+                            showColorDialog = true
+                        },
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(ballColor)
+                            )
+                        },
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_floating_ball_color_title))
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(
+                                    if (settings.floatingBallColor == null) {
+                                        R.string.setting_floating_ball_color_follow_theme
+                                    } else {
+                                        R.string.setting_floating_ball_color_custom
+                                    }
+                                )
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(
+                                onClick = {
+                                    colorDraft = settings.floatingBallColor
+                                    showColorDialog = true
+                                }
+                            ) {
+                                Text(stringResource(R.string.setting_floating_ball_change))
                             }
                         },
                     )
@@ -245,6 +349,103 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
+    if (showIconDialog) {
+        AlertDialog(
+            onDismissRequest = { showIconDialog = false },
+            title = { Text(stringResource(R.string.setting_floating_ball_icon_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showIconDialog = false
+                            iconPicker.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.setting_floating_ball_icon_pick))
+                    }
+                    if (settings.floatingBallIconPath.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                showIconDialog = false
+                                val target = FloatingBallService.iconFile(context)
+                                scope.launch {
+                                    withContext(Dispatchers.IO) { runCatching { target.delete() } }
+                                    vm.updateSettings { it.copy(floatingBallIconPath = "") }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.setting_floating_ball_icon_reset))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIconDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showColorDialog) {
+        val custom = colorDraft != null
+        AlertDialog(
+            onDismissRequest = { showColorDialog = false },
+            title = { Text(stringResource(R.string.setting_floating_ball_color_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { colorDraft = null },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = !custom, onClick = { colorDraft = null })
+                        Text(stringResource(R.string.setting_floating_ball_color_follow_theme))
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (colorDraft == null) colorDraft = themePrimary.toArgb()
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = custom,
+                            onClick = { if (colorDraft == null) colorDraft = themePrimary.toArgb() },
+                        )
+                        Text(stringResource(R.string.setting_floating_ball_color_custom))
+                    }
+                    colorDraft?.let { draft ->
+                        ColorPickerRow(
+                            color = Color(draft),
+                            onColorChange = { colorDraft = it.toArgb() },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val value = colorDraft
+                        vm.updateSettings { it.copy(floatingBallColor = value) }
+                        showColorDialog = false
+                    }
+                ) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showColorDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+
     if (showIdleDialog) {
         AlertDialog(
             onDismissRequest = { showIdleDialog = false },
@@ -283,6 +484,41 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
                 }
             },
         )
+    }
+}
+
+/**
+ * Miniature of the ball, so the appearance rows show what the user is about to get: a themed
+ * circle with the glyph, or the picked image cropped into the circle.
+ */
+@Composable
+private fun FloatingBallPreview(
+    color: Color,
+    iconPath: String,
+    size: Dp = 36.dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (iconPath.isNotBlank()) {
+            AsyncImage(
+                model = File(iconPath),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.ic_floating_ball),
+                contentDescription = null,
+                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
+                modifier = Modifier.size(size * 0.5f),
+            )
+        }
     }
 }
 

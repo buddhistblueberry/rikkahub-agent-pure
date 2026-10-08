@@ -2871,6 +2871,14 @@
   <string name="setting_floating_ball_idle_seconds">%d s</string>
   <string name="setting_floating_ball_alpha_title">Tucked-away opacity</string>
   <string name="setting_floating_ball_alpha_desc">How see-through the ball becomes while it is tucked into the edge.</string>
+  <string name="setting_floating_ball_icon_title">Ball icon</string>
+  <string name="setting_floating_ball_icon_desc">Keep the built-in icon, or pick an image to use as the whole ball (shown cropped in a circle).</string>
+  <string name="setting_floating_ball_icon_pick">Choose an image</string>
+  <string name="setting_floating_ball_icon_reset">Reset to default icon</string>
+  <string name="setting_floating_ball_color_title">Ball colour</string>
+  <string name="setting_floating_ball_color_follow_theme">Follow app theme</string>
+  <string name="setting_floating_ball_color_custom">Custom colour</string>
+  <string name="setting_floating_ball_change">Change</string>
   <string name="quick_chat_title">Quick chat</string>
   <string name="quick_chat_new">New chat</string>
   <string name="quick_chat_open_full">Open in app</string>
