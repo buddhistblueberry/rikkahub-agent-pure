@@ -13,7 +13,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -25,15 +24,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.ImageView
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.ColorUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,6 +60,10 @@ private const val TAG = "FloatingBallService"
  *  - long   → open the same panel with voice input already recording
  *  - drag   → move it; it snaps to the nearest horizontal edge and remembers where it was
  *
+ * While a generation turn runs the ball is also the "agent is working" light: its halo turns grey
+ * and a light dot orbits it (see [HaloBallView]). That replaces [AgentOverlay]'s top-of-screen
+ * pill whenever the ball is on screen; the pill remains the fallback for users without the ball.
+ *
  * Runs as a `specialUse` foreground service so the overlay is not evicted when the app goes to
  * the background. The overlay window itself is what exempts us from Android 14+ background
  * activity-start restrictions, so the panel can be launched from here at any time.
@@ -81,19 +81,19 @@ class FloatingBallService : Service(), KoinComponent {
         /** The quick-chat panel came up / went away: the ball hides while it is on screen. */
         const val ACTION_PANEL_OPEN = "me.rerere.rikkahub.action.FLOATING_BALL_PANEL_OPEN"
         const val ACTION_PANEL_CLOSE = "me.rerere.rikkahub.action.FLOATING_BALL_PANEL_CLOSE"
+
+        /** A generation turn started / finished: the ball becomes the "agent is working" light. */
+        const val ACTION_WORKING_ON = "me.rerere.rikkahub.action.FLOATING_BALL_WORKING_ON"
+        const val ACTION_WORKING_OFF = "me.rerere.rikkahub.action.FLOATING_BALL_WORKING_OFF"
         const val NOTIFICATION_ID = 2003
 
         private const val PREF_X = "floating_ball_x"
         private const val PREF_Y = "floating_ball_y"
         private const val LONG_PRESS_MS = 420L
         private const val BALL_SIZE_DP = 56
-        private const val BALL_ICON_DP = 28
 
         /** Used only if the app theme cannot be resolved; the default look follows the theme. */
         private const val FALLBACK_BALL_COLOR = 0xFF6750A4.toInt()
-
-        /** Neutral base under a user-picked icon; the bitmap covers it via a circular crop. */
-        private const val CUSTOM_ICON_BASE_COLOR = 0xFFFFFFFF.toInt()
 
         private const val IDLE_ANIM_MS = 220L
 
@@ -146,16 +146,50 @@ class FloatingBallService : Service(), KoinComponent {
             runCatching { context.startService(intent) }
                 .onFailure { Log.w(TAG, "notifyPanel failed", it) }
         }
+
+        /**
+         * True while the overlay view is actually on screen. [AgentOverlay] reads this to decide
+         * whether the ball can carry the "agent is working" signal or whether it still needs the
+         * top-of-screen pill as a fallback.
+         */
+        @Volatile
+        var isShowing: Boolean = false
+            private set
+
+        /**
+         * Tells the ball that a generation turn started / finished, so it can turn its halo into
+         * the orbiting-light-dot "thinking" state. A no-op while the ball is not on screen (so
+         * the caller keeps its own indicator instead of resurrecting a dead service).
+         */
+        fun setWorking(context: Context, working: Boolean) {
+            if (!isShowing) return
+            val intent = Intent(context, FloatingBallService::class.java).apply {
+                action = if (working) ACTION_WORKING_ON else ACTION_WORKING_OFF
+            }
+            runCatching { context.startService(intent) }
+                .onFailure { Log.w(TAG, "setWorking failed", it) }
+        }
     }
 
     private val settingsStore: SettingsStore by inject()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var ballView: FrameLayout? = null
-    private var ballIconView: ImageView? = null
+    private var ballView: HaloBallView? = null
     private var ballParams: WindowManager.LayoutParams? = null
     private var longPressFired = false
+
+    /** True between ACTION_WORKING_ON and ACTION_WORKING_OFF — the driver of the orbit animation. */
+    private var working = false
+
+    /**
+     * Pushes the orbit animation state onto the view. The dot only spins while a turn is running
+     * *and* the quick-chat panel is not covering the ball — an invisible ball has no business
+     * redrawing itself 60 times a second.
+     */
+    private fun syncWorking() {
+        ballView?.setWorking(working && !panelOpen)
+    }
 
     /** Cache so repainting on unrelated settings changes does not re-decode the picked image. */
     private var loadedIconPath: String? = null
@@ -219,6 +253,7 @@ class FloatingBallService : Service(), KoinComponent {
                     mainHandler.removeCallbacks(idleRunnable)
                     motionAnimator?.cancel()
                     ballView?.visibility = View.INVISIBLE
+                    syncWorking()
                 }
                 return START_NOT_STICKY
             }
@@ -232,6 +267,32 @@ class FloatingBallService : Service(), KoinComponent {
                     // A panel is only ever opened from an awake ball, but stay safe: if it was
                     // tucked away, wake it, and either way restart the idle countdown.
                     if (hidden) setHidden(false) else scheduleIdle()
+                    syncWorking()
+                }
+                return START_NOT_STICKY
+            }
+
+            ACTION_WORKING_ON -> {
+                if (ballView == null) {
+                    stopSelf()
+                } else {
+                    working = true
+                    // The ball is the status light while a turn runs, so it must not tuck itself
+                    // away mid-turn. A ball that is already tucked stays tucked (per the agreed
+                    // behaviour) — we only stop the countdown from tucking an awake one.
+                    mainHandler.removeCallbacks(idleRunnable)
+                    syncWorking()
+                }
+                return START_NOT_STICKY
+            }
+
+            ACTION_WORKING_OFF -> {
+                if (ballView == null) {
+                    stopSelf()
+                } else {
+                    working = false
+                    syncWorking()
+                    scheduleIdle()
                 }
                 return START_NOT_STICKY
             }
@@ -293,13 +354,9 @@ class FloatingBallService : Service(), KoinComponent {
         val density = resources.displayMetrics.density
         val size = (BALL_SIZE_DP * density).toInt()
 
-        val icon = ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
-        }
-        val container = FrameLayout(this).apply {
+        val container = HaloBallView(this).apply {
             contentDescription = getString(R.string.quick_chat_title)
             isClickable = true
-            addView(icon)
         }
 
         val screenWidth = resources.displayMetrics.widthPixels
@@ -336,8 +393,8 @@ class FloatingBallService : Service(), KoinComponent {
             return
         }
         ballView = container
-        ballIconView = icon
         ballParams = params
+        isShowing = true
         // Paint colour + icon from the current theme / user picks (never hard-coded).
         applyAppearance()
         attachTouch(container, params, wm)
@@ -349,8 +406,9 @@ class FloatingBallService : Service(), KoinComponent {
     private fun hideBall() {
         val view = ballView ?: return
         ballView = null
-        ballIconView = null
         ballParams = null
+        isShowing = false
+        working = false
         longPressFired = false
         hidden = false
         loadedIconPath = null
@@ -368,50 +426,19 @@ class FloatingBallService : Service(), KoinComponent {
     // ---- Appearance ----
 
     /**
-     * Paints the ball from the current settings: a user-picked image fills the whole circle when
-     * one is set, otherwise the built-in glyph sits on a circle whose colour follows the app theme
-     * (or a user-chosen colour). Cheap and idempotent — safe to call on every settings change.
+     * Paints the ball from the current settings: the halo is stroked in the app theme's primary
+     * colour, or in the colour the user picked; a user-picked image, when there is one, replaces
+     * the halo instead. Cheap and idempotent — safe to call on every settings change.
      */
     private fun applyAppearance() {
-        val container = ballView ?: return
-        val icon = ballIconView ?: return
+        val ball = ballView ?: return
         val settings = settingsStore.settingsFlow.value
-
-        val bitmap = settings.floatingBallIconPath
-            .takeIf { it.isNotBlank() }
-            ?.let { loadIcon(it) }
-
-        if (bitmap != null) {
-            // Full-bleed circular crop: the image IS the ball.
-            container.clipToOutline = true
-            container.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(CUSTOM_ICON_BASE_COLOR)
-            }
-            icon.layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-            icon.scaleType = ImageView.ScaleType.CENTER_CROP
-            icon.clearColorFilter()
-            icon.setImageBitmap(bitmap)
-        } else {
-            val color = settings.floatingBallColor ?: themePrimaryColor()
-            container.clipToOutline = false
-            container.background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color)
-            }
-            val iconSize = (BALL_ICON_DP * resources.displayMetrics.density).toInt()
-            icon.layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
-            icon.scaleType = ImageView.ScaleType.FIT_CENTER
-            icon.setColorFilter(
-                if (ColorUtils.calculateLuminance(color) > 0.5) 0xFF000000.toInt()
-                else 0xFFFFFFFF.toInt()
-            )
-            icon.setImageResource(R.drawable.ic_floating_ball)
-        }
-        icon.requestLayout()
+        ball.accentColor = settings.floatingBallColor ?: themePrimaryColor()
+        ball.setIcon(
+            settings.floatingBallIconPath
+                .takeIf { it.isNotBlank() }
+                ?.let { loadIcon(it) }
+        )
     }
 
     /** The app theme's primary colour, honouring dynamic colour / dark mode / custom themes. */
@@ -586,7 +613,7 @@ class FloatingBallService : Service(), KoinComponent {
     /** (Re)starts the countdown that tucks the ball away once the user stops bothering with it. */
     private fun scheduleIdle() {
         mainHandler.removeCallbacks(idleRunnable)
-        if (panelOpen || hidden || ballView == null) return
+        if (panelOpen || hidden || working || ballView == null) return
         val seconds = idleSeconds()
         if (seconds <= 0) return
         mainHandler.postDelayed(idleRunnable, seconds * 1000L)

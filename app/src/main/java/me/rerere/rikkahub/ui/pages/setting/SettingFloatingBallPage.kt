@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -41,12 +41,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -58,6 +57,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.service.HaloBallView
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -488,8 +488,10 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
 }
 
 /**
- * Miniature of the ball, so the appearance rows show what the user is about to get: a themed
- * circle with the glyph, or the picked image cropped into the circle.
+ * Miniature of the ball, so the appearance rows show what the user is about to get: a halo ring
+ * in the theme / picked colour, or the picked image cropped into the circle. Mirrors the ring
+ * geometry [me.rerere.rikkahub.service.HaloBallView] draws (the glow and the working-state orbit
+ * only show on the real overlay).
  */
 @Composable
 private fun FloatingBallPreview(
@@ -497,27 +499,25 @@ private fun FloatingBallPreview(
     iconPath: String,
     size: Dp = 36.dp,
 ) {
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(color),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier = Modifier.size(size)) {
         if (iconPath.isNotBlank()) {
             AsyncImage(
                 model = File(iconPath),
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape),
                 contentScale = ContentScale.Crop,
             )
         } else {
-            Icon(
-                painter = painterResource(R.drawable.ic_floating_ball),
-                contentDescription = null,
-                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                modifier = Modifier.size(size * 0.5f),
-            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val half = this.size.minDimension / 2f
+                drawCircle(
+                    color = color,
+                    radius = half * HaloBallView.RING_RADIUS_FRACTION,
+                    style = Stroke(width = half * HaloBallView.STROKE_FRACTION),
+                )
+            }
         }
     }
 }
