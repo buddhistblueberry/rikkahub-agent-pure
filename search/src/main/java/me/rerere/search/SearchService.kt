@@ -17,6 +17,7 @@ import okhttp3.internal.closeQuietly
 import okio.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
+import kotlin.reflect.KClass
 import kotlin.uuid.Uuid
 
 interface SearchService<T : SearchServiceOptions> {
@@ -197,6 +198,51 @@ sealed class SearchServiceOptions {
             SerperOptions::class to "Serper",
             CustomJsOptions::class to "Custom JS",
         )
+
+        /**
+         * No-arg constructors for everything listed in [TYPES], so callers can build
+         * a fresh default instance without reflection.
+         *
+         * The "add search provider" dialog used to do
+         * `type.primaryConstructor!!.callBy(emptyMap())`, which asks kotlin-reflect
+         * to fill in every default argument. That needs the compiler-generated
+         * default-argument constructor — a method nothing calls directly, so R8
+         * dropped it from release builds and adding a provider always crashed with
+         * "This callable does not support a default call" (reported 2026-10-08;
+         * exposed by 2fd33c78's `allowshrinking` @Serializable keep rule, which is
+         * otherwise fine). Spelling the constructors out keeps the picker working
+         * no matter what the shrinker decides to keep.
+         *
+         * `SearchServiceOptionsFactoryTest` fails if this map and [TYPES] drift
+         * apart.
+         */
+        private val CONSTRUCTORS: Map<KClass<out SearchServiceOptions>, () -> SearchServiceOptions> = mapOf(
+            BingLocalOptions::class to { BingLocalOptions() },
+            DuckDuckGoOptions::class to { DuckDuckGoOptions() },
+            RikkaHubOptions::class to { RikkaHubOptions() },
+            ZhipuOptions::class to { ZhipuOptions() },
+            DoubaoOptions::class to { DoubaoOptions() },
+            TavilyOptions::class to { TavilyOptions() },
+            ExaOptions::class to { ExaOptions() },
+            SearXNGOptions::class to { SearXNGOptions() },
+            LinkUpOptions::class to { LinkUpOptions() },
+            BraveOptions::class to { BraveOptions() },
+            MetasoOptions::class to { MetasoOptions() },
+            OllamaOptions::class to { OllamaOptions() },
+            PerplexityOptions::class to { PerplexityOptions() },
+            FirecrawlOptions::class to { FirecrawlOptions() },
+            JinaOptions::class to { JinaOptions() },
+            BochaOptions::class to { BochaOptions() },
+            GrokOptions::class to { GrokOptions() },
+            TinyfishOptions::class to { TinyfishOptions() },
+            SerperOptions::class to { SerperOptions() },
+            CustomJsOptions::class to { CustomJsOptions() },
+        )
+
+        /** A new instance of [type] with every option left at its default value. */
+        fun create(type: KClass<out SearchServiceOptions>): SearchServiceOptions =
+            CONSTRUCTORS[type]?.invoke()
+                ?: error("Unsupported search service type: ${type.qualifiedName}")
     }
 
     @Serializable

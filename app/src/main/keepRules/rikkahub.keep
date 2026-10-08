@@ -28,6 +28,13 @@
 # ones R8 can prove unreachable are dropped. See docs/VIDEO-GENERATION.md.
 -keep,allowshrinking @kotlinx.serialization.Serializable class * {*;}
 
+# A keep rule cannot rescue the reflective `primaryConstructor.callBy(emptyMap())`
+# that used to build new search providers: R8's `...` wildcard is only accepted at
+# the *end* of a parameter list ("Expected char ')'" otherwise), so there is no way
+# to match "any constructor ending in DefaultConstructorMarker" without also
+# matching every constructor of every class. The call site was changed to an
+# explicit factory instead — see SearchServiceOptions.CONSTRUCTORS.
+
 # auth0/jackson: TypeReference subclasses rely on runtime generic signatures.
 # R8 strips Signature/InnerClasses/EnclosingMethod by default, and its class
 # merging/inlining optimizations can destroy the anonymous class hierarchy that
