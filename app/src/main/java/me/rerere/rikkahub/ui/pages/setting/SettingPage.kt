@@ -64,6 +64,7 @@ import me.rerere.hugeicons.stroke.ImageUpload
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
+import me.rerere.hugeicons.stroke.Message01
 import me.rerere.hugeicons.stroke.Megaphone01
 import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.Connect
@@ -343,6 +344,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { Icon(HugeIcons.SmartPhone01, null) },
                         supportingContent = { Text(stringResource(R.string.setting_page_accessibility_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_accessibility)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingFloatingBall) },
+                        leadingContent = { Icon(HugeIcons.Message01, null) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_floating_ball_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_floating_ball)) },
                     )
                     item(
                         onClick = { navController.navigate(Screen.SettingNotifications) },

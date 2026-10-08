@@ -112,6 +112,7 @@ import me.rerere.rikkahub.ui.pages.log.LogPage
 import me.rerere.rikkahub.ui.pages.search.SearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAccessibilityPage
+import me.rerere.rikkahub.ui.pages.setting.SettingFloatingBallPage
 import me.rerere.rikkahub.ui.pages.setting.SettingNotificationsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPermissionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPreferencesPage
@@ -593,6 +594,10 @@ class RouteActivity : ComponentActivity() {
                                 SettingAccessibilityPage()
                             }
 
+                            entry<Screen.SettingFloatingBall> {
+                                SettingFloatingBallPage()
+                            }
+
                             entry<Screen.SettingNotifications> {
                                 SettingNotificationsPage()
                             }
@@ -875,6 +880,8 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object SettingAccessibility : Screen
+
+    data object SettingFloatingBall : Screen
 
     @Serializable
     data object SettingNotifications : Screen

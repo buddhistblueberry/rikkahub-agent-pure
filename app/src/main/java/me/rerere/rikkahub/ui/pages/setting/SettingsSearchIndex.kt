@@ -147,6 +147,12 @@ fun settingsSearchIndex(developerMode: Boolean): List<SettingsSearchEntry> {
             route = Screen.SettingAccessibility,
         ),
         SettingsSearchEntry(
+            titleRes = R.string.setting_floating_ball_page_title,
+            descriptionRes = R.string.setting_page_floating_ball_desc,
+            groupRes = R.string.setting_page_model_and_services,
+            route = Screen.SettingFloatingBall,
+        ),
+        SettingsSearchEntry(
             titleRes = R.string.setting_page_notifications,
             descriptionRes = R.string.setting_page_notifications_desc,
             groupRes = R.string.setting_page_model_and_services,

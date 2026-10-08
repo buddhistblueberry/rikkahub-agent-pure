@@ -246,6 +246,9 @@ class SettingsStore(
         val WEB_SERVER_ACCESS_PASSWORD = stringPreferencesKey("web_server_access_password")
         val WEB_SERVER_LOCALHOST_ONLY = booleanPreferencesKey("web_server_localhost_only")
 
+        // Floating ball (always-available quick chat)
+        val FLOATING_BALL_ENABLED = booleanPreferencesKey("floating_ball_enabled")
+
         // AI logging
         val AI_LOG_LEVEL = stringPreferencesKey("ai_log_level")
 
@@ -352,6 +355,7 @@ class SettingsStore(
                 preferences[WEB_SERVER_JWT_ENABLED] = settings.webServerJwtEnabled
                 preferences[WEB_SERVER_ACCESS_PASSWORD] = settings.webServerAccessPassword
                 preferences[WEB_SERVER_LOCALHOST_ONLY] = settings.webServerLocalhostOnly
+                preferences[FLOATING_BALL_ENABLED] = settings.floatingBallEnabled
                 preferences[AI_LOG_LEVEL] = settings.aiLogLevel.preferenceName
                 preferences[BACKUP_REMINDER_CONFIG] = JsonInstant.encodeToString(settings.backupReminderConfig)
                 preferences[LAUNCH_COUNT] = settings.launchCount
@@ -535,6 +539,7 @@ class SettingsStore(
                 webServerJwtEnabled = preferences[WEB_SERVER_JWT_ENABLED] == true,
                 webServerAccessPassword = preferences[WEB_SERVER_ACCESS_PASSWORD] ?: "",
                 webServerLocalhostOnly = preferences[WEB_SERVER_LOCALHOST_ONLY] == true,
+                floatingBallEnabled = preferences[FLOATING_BALL_ENABLED] == true,
                 aiLogLevel = AiLogLevel.fromPreference(preferences[AI_LOG_LEVEL]),
                 backupReminderConfig = preferences[BACKUP_REMINDER_CONFIG]?.let { raw ->
                     runCatching { JsonInstant.decodeFromString<BackupReminderConfig>(raw) }.getOrElse {
@@ -953,6 +958,11 @@ data class Settings(
     val webServerJwtEnabled: Boolean = false,
     val webServerAccessPassword: String = "",
     val webServerLocalhostOnly: Boolean = false,
+    /**
+     * Always-available floating ball (quick chat overlay). Off by default: it needs
+     * SYSTEM_ALERT_WINDOW and a persistent foreground service, so it stays strictly opt-in.
+     */
+    val floatingBallEnabled: Boolean = false,
     val aiLogLevel: AiLogLevel = AiLogLevel.INFO,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val launchCount: Int = 0,

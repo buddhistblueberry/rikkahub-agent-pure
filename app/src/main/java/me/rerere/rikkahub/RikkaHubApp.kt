@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.ComposeFoundationFlags
@@ -38,6 +39,7 @@ import me.rerere.rikkahub.data.ai.tools.local.AccessibilityServiceHandle
 import me.rerere.rikkahub.data.sync.BackupManager
 import me.rerere.rikkahub.data.sync.RestoreFailedException
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.DatabaseUtil
@@ -54,6 +56,7 @@ private const val TAG = "RikkaHubApp"
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID = "chat_live_update"
 const val WEB_SERVER_NOTIFICATION_CHANNEL_ID = "web_server"
+const val FLOATING_BALL_NOTIFICATION_CHANNEL_ID = "floating_ball"
 
 class RikkaHubApp : Application() {
     override fun onCreate() {
@@ -120,6 +123,9 @@ class RikkaHubApp : Application() {
 
         // Start WebServer if enabled in settings
         startWebServerIfEnabled()
+
+        // Bring the floating ball back if it was left on
+        restoreFloatingBallIfEnabled()
 
         // Eagerly construct ChatService on the main thread. Its constructor calls
         // LifecycleRegistry.addObserver which throws if it runs off-main, and the Telegram
@@ -468,6 +474,30 @@ class RikkaHubApp : Application() {
         }
     }
 
+    /**
+     * Bring the floating ball back after a process start when it is still enabled. The service is
+     * START_NOT_STICKY (so turning it off is final), which means the OS will not revive it on its
+     * own — we do it here, the same way [startTelegramBotIfEnabled] handles the bot.
+     *
+     * Skipped when SYSTEM_ALERT_WINDOW is missing: FloatingBallService would immediately stop
+     * itself anyway, and we avoid leaving a useless foreground service behind.
+     */
+    private fun restoreFloatingBallIfEnabled() {
+        get<AppScope>().launch {
+            runCatching {
+                val settings = get<SettingsStore>().settingsFlowRaw.first()
+                if (!settings.floatingBallEnabled) return@runCatching
+                if (!Settings.canDrawOverlays(this@RikkaHubApp)) {
+                    Log.w(TAG, "restoreFloatingBallIfEnabled: overlay permission not granted, skipping")
+                    return@runCatching
+                }
+                FloatingBallService.start(this@RikkaHubApp)
+            }.onFailure {
+                Log.e(TAG, "restoreFloatingBallIfEnabled failed", it)
+            }
+        }
+    }
+
     private fun startWebServerIfEnabled() {
         get<AppScope>().launch {
             runCatching {
@@ -538,6 +568,14 @@ class RikkaHubApp : Application() {
             .setShowBadge(false)
             .build()
         notificationManager.createNotificationChannel(webServerChannel)
+
+        val floatingBallChannel = NotificationChannelCompat
+            .Builder(FLOATING_BALL_NOTIFICATION_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
+            .setName(getString(R.string.notification_channel_floating_ball))
+            .setVibrationEnabled(false)
+            .setShowBadge(false)
+            .build()
+        notificationManager.createNotificationChannel(floatingBallChannel)
     }
 
     override fun onTerminate() {

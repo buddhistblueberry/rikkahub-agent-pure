@@ -11,7 +11,9 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.entity.ScheduledJobRunEntity
 import me.rerere.rikkahub.data.repository.ScheduledJobRepository
 import me.rerere.rikkahub.data.repository.ScheduledJobRunRepository
@@ -30,6 +32,7 @@ class CronBootReceiver : BroadcastReceiver(), KoinComponent {
     private val repo: ScheduledJobRepository by inject()
     private val runRepo: ScheduledJobRunRepository by inject()
     private val telegramPrefs: me.rerere.rikkahub.data.telegram.TelegramBotPreferences by inject()
+    private val settingsStore: SettingsStore by inject()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -57,6 +60,18 @@ class CronBootReceiver : BroadcastReceiver(), KoinComponent {
                 // by TriggerRegistry.start().
                 runCatching {
                     me.rerere.rikkahub.workflow.trigger.WorkflowBootDispatcher.onBoot()
+                }
+
+                // Re-show the floating ball when it was left on. The service is
+                // START_NOT_STICKY, so a reboot does not bring it back by itself. Allowed from
+                // the background because SYSTEM_ALERT_WINDOW is an FGS-start exemption.
+                runCatching {
+                    val appSettings = settingsStore.settingsFlowRaw.first()
+                    if (appSettings.floatingBallEnabled &&
+                        android.provider.Settings.canDrawOverlays(context)
+                    ) {
+                        FloatingBallService.start(context)
+                    }
                 }
             } finally {
                 pending.finish()

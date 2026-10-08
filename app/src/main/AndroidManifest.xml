@@ -270,6 +270,18 @@
       android:hardwareAccelerated="true"
       android:theme="@style/Theme.Rikkahub" />
 
+    <!-- Always-available quick-chat panel, opened by the floating ball. Translucent so whatever
+         app the user is in stays visible behind the half-screen panel, and excluded from recents
+         so it never appears as a task of its own. Launched from the overlay window, which is what
+         exempts it from the Android 14+ background activity-start restrictions. -->
+    <activity
+      android:name=".ui.pages.quickchat.QuickChatActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTop"
+      android:theme="@style/Theme.Rikkahub.QuickChat"
+      android:windowSoftInputMode="adjustResize" />
+
     <!-- Phase 13: External Automation Intent API. Exported activity that accepts
          RUN_TASK / RUN_CHAT intents from Tasker / MacroDroid / Locale / app callers.
          Translucent + NoTitleBar so trusted-caller fires don't flash a window. The
@@ -374,6 +386,15 @@
         <action android:name="me.rerere.rikkahub.workflow.GEOFENCE_TRANSITION" />
       </intent-filter>
     </receiver>
+
+    <service
+      android:name=".service.FloatingBallService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="always-available floating quick-chat ball overlay" />
+    </service>
 
     <service
       android:name=".service.WebServerService"
