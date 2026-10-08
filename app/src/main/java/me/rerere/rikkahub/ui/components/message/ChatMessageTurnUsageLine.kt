@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -141,9 +142,41 @@ internal fun TurnUsageLine(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     usage.calls.forEach { call -> UsageCallRow(call) }
+                    // The list can run longer than the screen, so the summary line's chevron —
+                    // the only way back — may be scrolled out of sight. Mirror it at the bottom
+                    // of the list so collapsing never means scrolling up first.
+                    CollapseUsageRow(onCollapse = { expanded = false })
                 }
             }
         }
+    }
+}
+
+/**
+ * The bottom mirror of the summary row's chevron: one tap anywhere on the line folds the
+ * per-call list away again, without having to scroll back up to the summary. Tinted with the
+ * primary colour (like the stats page's `Show less`) so it reads as a control rather than as
+ * one more muted stat.
+ */
+@Composable
+private fun CollapseUsageRow(onCollapse: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier = Modifier
+            .clickable(onClick = onCollapse)
+            .padding(top = 2.dp),
+    ) {
+        Icon(
+            imageVector = HugeIcons.ArrowUp01,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(12.dp),
+        )
+        Text(
+            text = stringResource(R.string.chat_message_turn_collapse_action),
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
