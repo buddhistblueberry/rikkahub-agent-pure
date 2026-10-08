@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.service
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.PendingIntent
@@ -28,9 +29,12 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import me.rerere.rikkahub.FLOATING_BALL_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.ui.pages.quickchat.QuickChatActivity
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import kotlin.math.abs
 
 private const val TAG = "FloatingBallService"
@@ -52,11 +56,15 @@ private const val TAG = "FloatingBallService"
  * boot receiver) is expected to have checked, but a stale start must never crash or leave a
  * headless foreground service behind.
  */
-class FloatingBallService : Service() {
+class FloatingBallService : Service(), KoinComponent {
 
     companion object {
         const val ACTION_START = "me.rerere.rikkahub.action.FLOATING_BALL_START"
         const val ACTION_STOP = "me.rerere.rikkahub.action.FLOATING_BALL_STOP"
+
+        /** The quick-chat panel came up / went away: the ball hides while it is on screen. */
+        const val ACTION_PANEL_OPEN = "me.rerere.rikkahub.action.FLOATING_BALL_PANEL_OPEN"
+        const val ACTION_PANEL_CLOSE = "me.rerere.rikkahub.action.FLOATING_BALL_PANEL_CLOSE"
         const val NOTIFICATION_ID = 2003
 
         private const val PREF_X = "floating_ball_x"
@@ -65,6 +73,10 @@ class FloatingBallService : Service() {
         private const val BALL_SIZE_DP = 56
         private const val BALL_ICON_DP = 28
         private const val BALL_COLOR = 0xFF6750A4.toInt()
+        private const val IDLE_ANIM_MS = 220L
+
+        /** How much of the ball stays on screen once it has tucked itself into the edge. */
+        private const val HIDDEN_VISIBLE_FRACTION = 0.5f
 
         /** Starts (or re-starts) the ball. Idempotent — a running service just re-shows its view. */
         fun start(context: Context) {
@@ -86,12 +98,35 @@ class FloatingBallService : Service() {
             runCatching { context.startService(intent) }
                 .onFailure { Log.w(TAG, "stop failed", it) }
         }
+
+        /**
+         * Tells a running ball that the quick-chat panel opened / closed, so it can step out of
+         * the way (hidden while the panel is up) and come back afterwards. Deliberately a plain
+         * startService: the ball is already a foreground service whenever the panel can be open,
+         * and a no-op command on a dead instance must not resurrect it.
+         */
+        fun notifyPanel(context: Context, open: Boolean) {
+            val intent = Intent(context, FloatingBallService::class.java).apply {
+                action = if (open) ACTION_PANEL_OPEN else ACTION_PANEL_CLOSE
+            }
+            runCatching { context.startService(intent) }
+                .onFailure { Log.w(TAG, "notifyPanel failed", it) }
+        }
     }
+
+    private val settingsStore: SettingsStore by inject()
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ballView: FrameLayout? = null
     private var ballParams: WindowManager.LayoutParams? = null
     private var longPressFired = false
+
+    /** True while the ball is tucked into the edge (dimmed, half off-screen) waiting to be woken. */
+    private var hidden = false
+
+    /** True while the half-screen quick-chat panel is up; the ball stays out of its way. */
+    private var panelOpen = false
+    private var motionAnimator: ValueAnimator? = null
 
     private val longPressRunnable = Runnable {
         // Only fire if the finger is still down and we have not turned this into a drag.
@@ -101,12 +136,42 @@ class FloatingBallService : Service() {
         }
     }
 
+    private val idleRunnable = Runnable {
+        if (!panelOpen && ballView != null && !hidden) setHidden(true)
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
                 stopSelf()
+                return START_NOT_STICKY
+            }
+
+            ACTION_PANEL_OPEN -> {
+                panelOpen = true
+                if (ballView == null) {
+                    stopSelf()
+                } else {
+                    // Out of the way entirely: the panel owns the screen while it is up.
+                    mainHandler.removeCallbacks(idleRunnable)
+                    motionAnimator?.cancel()
+                    ballView?.visibility = View.INVISIBLE
+                }
+                return START_NOT_STICKY
+            }
+
+            ACTION_PANEL_CLOSE -> {
+                panelOpen = false
+                if (ballView == null) {
+                    stopSelf()
+                } else {
+                    ballView?.visibility = View.VISIBLE
+                    // A panel is only ever opened from an awake ball, but stay safe: if it was
+                    // tucked away, wake it, and either way restart the idle countdown.
+                    if (hidden) setHidden(false) else scheduleIdle()
+                }
                 return START_NOT_STICKY
             }
 
@@ -121,6 +186,7 @@ class FloatingBallService : Service() {
                     return START_NOT_STICKY
                 }
                 showBall()
+                scheduleIdle()
             }
         }
         // NOT sticky: if the user turned the ball off we must not resurrect it after a kill.
@@ -133,7 +199,15 @@ class FloatingBallService : Service() {
         val view = ballView ?: return
         val params = ballParams ?: return
         val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
-        mainHandler.post { snapToEdge(wm, view, params) }
+        mainHandler.post {
+            if (hidden) {
+                // Recompute the tucked position against the new width/orientation.
+                tuckIntoEdge()
+            } else {
+                snapToEdge(wm, view, params)
+                scheduleIdle()
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -212,7 +286,11 @@ class FloatingBallService : Service() {
         ballView = null
         ballParams = null
         longPressFired = false
+        hidden = false
         mainHandler.removeCallbacks(longPressRunnable)
+        mainHandler.removeCallbacks(idleRunnable)
+        motionAnimator?.cancel()
+        motionAnimator = null
         val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
         runCatching { wm.removeViewImmediate(view) }
             .onFailure { Log.w(TAG, "removeView failed", it) }
@@ -230,10 +308,20 @@ class FloatingBallService : Service() {
         var startX = 0
         var startY = 0
         var dragging = false
+        var waking = false
 
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    // Any interaction pushes the auto-tuck countdown back.
+                    mainHandler.removeCallbacks(idleRunnable)
+                    if (hidden) {
+                        // A tucked-away ball only wakes on this touch; it must not also open the
+                        // panel or start a long-press.
+                        waking = true
+                        return@setOnTouchListener true
+                    }
+                    waking = false
                     downRawX = event.rawX
                     downRawY = event.rawY
                     startX = params.x
@@ -246,6 +334,7 @@ class FloatingBallService : Service() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
+                    if (waking) return@setOnTouchListener true
                     val dx = event.rawX - downRawX
                     val dy = event.rawY - downRawY
                     if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
@@ -262,11 +351,17 @@ class FloatingBallService : Service() {
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
+                    if (waking) {
+                        waking = false
+                        if (event.actionMasked == MotionEvent.ACTION_UP) setHidden(false)
+                        return@setOnTouchListener true
+                    }
                     when {
                         dragging -> snapToEdge(wm, view, params)
                         !longPressFired -> openQuickChat(voice = false)
                     }
                     dragging = false
+                    scheduleIdle()
                     true
                 }
 
@@ -294,9 +389,107 @@ class FloatingBallService : Service() {
 
     private fun openQuickChat(voice: Boolean) {
         try {
-            startActivity(QuickChatActivity.intent(this, voice))
+            startActivity(QuickChatActivity.intent(this, voice, ballSide(), ballCenterY()))
         } catch (t: Throwable) {
             Log.w(TAG, "openQuickChat failed", t)
+        }
+    }
+
+    /** `"left"`/`"right"` — which edge the ball sits on, so the panel can mirror itself. */
+    private fun ballSide(): String {
+        val params = ballParams ?: return "right"
+        val size = ballView?.width?.takeIf { it > 0 } ?: params.width
+        val screenWidth = resources.displayMetrics.widthPixels
+        return if (params.x + size / 2 >= screenWidth / 2) "right" else "left"
+    }
+
+    /** Vertical centre of the ball, in screen pixels; the panel anchors itself to this. */
+    private fun ballCenterY(): Int {
+        val params = ballParams ?: return 0
+        val size = ballView?.height?.takeIf { it > 0 } ?: params.height
+        return params.y + size / 2
+    }
+
+    // ---- Auto tuck (idle) ----
+
+    private fun idleSeconds(): Int = settingsStore.settingsFlow.value.floatingBallIdleSeconds
+
+    private fun hiddenAlpha(): Float =
+        settingsStore.settingsFlow.value.floatingBallHiddenAlpha.coerceIn(10, 100) / 100f
+
+    /** (Re)starts the countdown that tucks the ball away once the user stops bothering with it. */
+    private fun scheduleIdle() {
+        mainHandler.removeCallbacks(idleRunnable)
+        if (panelOpen || hidden || ballView == null) return
+        val seconds = idleSeconds()
+        if (seconds <= 0) return
+        mainHandler.postDelayed(idleRunnable, seconds * 1000L)
+    }
+
+    private fun setHidden(hide: Boolean) {
+        if (hidden == hide) return
+        hidden = hide
+        if (hide) {
+            mainHandler.removeCallbacks(idleRunnable)
+            tuckIntoEdge()
+        } else {
+            wakeUp()
+            scheduleIdle()
+        }
+    }
+
+    /** Slides the ball half off the edge it was snapped to and dims it. */
+    private fun tuckIntoEdge() {
+        val view = ballView ?: return
+        val params = ballParams ?: return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        val size = view.width.takeIf { it > 0 } ?: params.width
+        val screenWidth = resources.displayMetrics.widthPixels
+        val onRight = params.x + size / 2 >= screenWidth / 2
+        val visible = (size * HIDDEN_VISIBLE_FRACTION).toInt().coerceAtLeast(1)
+        val targetX = if (onRight) (screenWidth - visible).toFloat() else (visible - size).toFloat()
+        animateTo(view, params, wm, targetX, hiddenAlpha())
+    }
+
+    /** Brings a tucked-away ball back out to its remembered edge, at full opacity. */
+    private fun wakeUp() {
+        val view = ballView ?: return
+        val params = ballParams ?: return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+        val density = resources.displayMetrics.density
+        val size = view.width.takeIf { it > 0 } ?: params.width
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val margin = (8 * density).toInt()
+        val maxX = (screenWidth - size - margin).coerceAtLeast(margin)
+        val maxY = (screenHeight - size - margin).coerceAtLeast(margin)
+        params.y = params.y.coerceIn(margin, maxY)
+        val restingX = readStringPreference(PREF_X)?.toIntOrNull()?.coerceIn(margin, maxX)
+            ?: if (params.x + size / 2 >= screenWidth / 2) maxX else margin
+        animateTo(view, params, wm, restingX.toFloat(), 1f)
+        writeStringPreference(PREF_X, restingX.toString())
+        writeStringPreference(PREF_Y, params.y.toString())
+    }
+
+    private fun animateTo(
+        view: View,
+        params: WindowManager.LayoutParams,
+        wm: WindowManager,
+        targetX: Float,
+        targetAlpha: Float,
+    ) {
+        motionAnimator?.cancel()
+        val startX = params.x.toFloat()
+        val startAlpha = view.alpha
+        motionAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = IDLE_ANIM_MS
+            addUpdateListener { anim ->
+                val fraction = anim.animatedValue as Float
+                params.x = Math.round(startX + (targetX - startX) * fraction)
+                view.alpha = startAlpha + (targetAlpha - startAlpha) * fraction
+                runCatching { wm.updateViewLayout(view, params) }
+            }
+            start()
         }
     }
 

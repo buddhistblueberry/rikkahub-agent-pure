@@ -2584,6 +2584,12 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_floating_ball_asr_hint">语音输入使用「语音」页选择的识别服务商。只有面板发出消息时才会发给模型。</string>
   <string name="setting_floating_ball_screen_action_hint">面板里的「看屏幕并处理」会让 agent 读取并操作当前屏幕内容；点击后面板会自动收起，方便 agent 操作。</string>
   <string name="setting_floating_ball_notes">悬浮球以前台服务运行，开启期间会保留一条低优先级通知。在此关闭开关即可同时停止两者。</string>
+  <string name="setting_floating_ball_idle_title">闲置后自动隐入边缘</string>
+  <string name="setting_floating_ball_idle_desc">超过该秒数不触碰悬浮球，它会滑入屏幕边缘——只露一半并变淡。点一下先唤醒，之后才能打开面板。</string>
+  <string name="setting_floating_ball_idle_off">关闭</string>
+  <string name="setting_floating_ball_idle_seconds">%d 秒</string>
+  <string name="setting_floating_ball_alpha_title">隐入时不透明度</string>
+  <string name="setting_floating_ball_alpha_desc">悬浮球隐入边缘后变透明的程度。</string>
   <string name="quick_chat_title">快速聊天</string>
   <string name="quick_chat_new">新对话</string>
   <string name="quick_chat_open_full">在应用中打开</string>

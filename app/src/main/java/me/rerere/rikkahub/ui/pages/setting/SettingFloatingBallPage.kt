@@ -3,14 +3,21 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -49,6 +58,11 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var showIdleDialog by remember { mutableStateOf(false) }
+    // Draft so dragging the slider does not write DataStore on every frame; committed on release.
+    var alphaDraft by remember(settings.floatingBallHiddenAlpha) {
+        mutableStateOf(settings.floatingBallHiddenAlpha.toFloat())
+    }
 
     fun overlaySettingsIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
@@ -178,6 +192,49 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
             }
 
             item {
+                CardGroup(modifier = Modifier.padding(horizontal = 8.dp)) {
+                    item(
+                        onClick = { showIdleDialog = true },
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_floating_ball_idle_title))
+                        },
+                        supportingContent = {
+                            Text(stringResource(R.string.setting_floating_ball_idle_desc))
+                        },
+                        trailingContent = {
+                            TextButton(onClick = { showIdleDialog = true }) {
+                                Text(idleSecondsLabel(settings.floatingBallIdleSeconds))
+                            }
+                        },
+                    )
+                    item(
+                        headlineContent = {
+                            Text(stringResource(R.string.setting_floating_ball_alpha_title))
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(stringResource(R.string.setting_floating_ball_alpha_desc))
+                                Slider(
+                                    value = alphaDraft,
+                                    onValueChange = { alphaDraft = it },
+                                    onValueChangeFinished = {
+                                        vm.updateSettings {
+                                            it.copy(floatingBallHiddenAlpha = alphaDraft.roundToInt())
+                                        }
+                                    },
+                                    valueRange = 20f..100f,
+                                    steps = 7,
+                                )
+                            }
+                        },
+                        trailingContent = {
+                            Text("${alphaDraft.roundToInt()}%")
+                        },
+                    )
+                }
+            }
+
+            item {
                 Text(
                     text = stringResource(R.string.setting_floating_ball_notes),
                     style = MaterialTheme.typography.bodySmall,
@@ -187,4 +244,55 @@ fun SettingFloatingBallPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+
+    if (showIdleDialog) {
+        AlertDialog(
+            onDismissRequest = { showIdleDialog = false },
+            title = { Text(stringResource(R.string.setting_floating_ball_idle_title)) },
+            text = {
+                Column {
+                    IDLE_SECONDS_OPTIONS.forEach { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.updateSettings {
+                                        it.copy(floatingBallIdleSeconds = option)
+                                    }
+                                    showIdleDialog = false
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = settings.floatingBallIdleSeconds == option,
+                                onClick = {
+                                    vm.updateSettings {
+                                        it.copy(floatingBallIdleSeconds = option)
+                                    }
+                                    showIdleDialog = false
+                                },
+                            )
+                            Text(idleSecondsLabel(option))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIdleDialog = false }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
 }
+
+/** `0` disables the auto-tuck; anything else is a wait, in seconds. */
+private val IDLE_SECONDS_OPTIONS = listOf(0, 2, 3, 5, 10)
+
+@Composable
+private fun idleSecondsLabel(seconds: Int): String =
+    if (seconds <= 0) {
+        stringResource(R.string.setting_floating_ball_idle_off)
+    } else {
+        stringResource(R.string.setting_floating_ball_idle_seconds, seconds)
+    }

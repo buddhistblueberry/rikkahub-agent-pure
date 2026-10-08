@@ -2865,6 +2865,12 @@
   <string name="setting_floating_ball_asr_hint">Voice input uses the speech provider selected under Speech. Nothing is sent to the model until the panel sends your message.</string>
   <string name="setting_floating_ball_screen_action_hint">In the panel, the Look at screen &amp; act button lets the agent read and operate whatever is on screen; the panel closes so the agent can work.</string>
   <string name="setting_floating_ball_notes">The ball runs as a foreground service and keeps a low-priority notification while it is on. Turn the switch off here to stop both.</string>
+  <string name="setting_floating_ball_idle_title">Auto-hide when idle</string>
+  <string name="setting_floating_ball_idle_desc">Seconds without touching the ball before it tucks itself into the edge — half hidden and faded. Tap it once to wake it; only then does it open the panel.</string>
+  <string name="setting_floating_ball_idle_off">Off</string>
+  <string name="setting_floating_ball_idle_seconds">%d s</string>
+  <string name="setting_floating_ball_alpha_title">Tucked-away opacity</string>
+  <string name="setting_floating_ball_alpha_desc">How see-through the ball becomes while it is tucked into the edge.</string>
   <string name="quick_chat_title">Quick chat</string>
   <string name="quick_chat_new">New chat</string>
   <string name="quick_chat_open_full">Open in app</string>

@@ -11,14 +11,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,9 +48,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +81,18 @@ import org.koin.compose.koinInject
 
 private const val LAST_CONVERSATION_KEY = "lastConversationId"
 
+/** Full panel height, as a fraction of the available screen height. */
+private const val PANEL_HEIGHT_FRACTION = 0.62f
+
+/** The ball sits this far down the panel, so the panel mostly unfolds above the ball. */
+private const val BALL_ANCHOR_FRACTION = 0.75f
+
+/**
+ * The panel shrinks its message list when a low ball would push it off the bottom, but never
+ * below this fraction of its full height — past that it just rests on the bottom edge instead.
+ */
+private const val PANEL_MIN_HEIGHT_FRACTION = 0.75f
+
 /**
  * Reuse the conversation the user was last in; fall back to a fresh one on first use. The main
  * chat page writes `lastConversationId` (ChatVM) so this stays in sync with normal use.
@@ -93,11 +111,18 @@ private fun initialConversationId(context: Context): Uuid {
  * so approvals, cost guards and token accounting apply unchanged. The screen-action button sends
  * and immediately dismisses the panel so the agent can see and drive the app underneath; a plain
  * send keeps the panel open so the reply streams in view.
+ *
+ * The panel is not pinned to the bottom: it is placed so the ball that opened it lands at
+ * [BALL_ANCHOR_FRACTION] of the panel's height, mirrored horizontally when the ball is on the
+ * left so the controls sit under the user's thumb. When the ball is too low for the full panel to
+ * fit, the message area gives up space (at most 25%) before the panel rests on the bottom edge.
  */
 @OptIn(ExperimentalUuidApi::class)
 @Composable
 fun QuickChatPanel(
     startVoiceSignal: Int,
+    mirror: Boolean,
+    ballCenterY: Int,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -166,6 +191,60 @@ fun QuickChatPanel(
         if (closeAfterSend) onDismiss()
     }
 
+    // The interactive controls, split into individual buttons so mirroring is an explicit,
+    // predictable re-order (no RTL layout direction, which would also right-align the text field).
+    val newButton: @Composable () -> Unit = {
+        IconButton(onClick = {
+            asrState.stop()
+            input = ""
+            conversationId = Uuid.random()
+        }) {
+            Icon(HugeIcons.PlusSign, stringResource(R.string.quick_chat_new))
+        }
+    }
+    val openFullButton: @Composable () -> Unit = {
+        IconButton(onClick = {
+            val intent = Intent(context, RouteActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("conversationId", conversationId.toString())
+            }
+            context.startActivity(intent)
+            onDismiss()
+        }) {
+            Icon(HugeIcons.ArrowRight01, stringResource(R.string.quick_chat_open_full))
+        }
+    }
+    val closeButton: @Composable () -> Unit = {
+        IconButton(onClick = onDismiss) {
+            Icon(HugeIcons.Cancel01, stringResource(R.string.quick_chat_close))
+        }
+    }
+    val micButton: @Composable () -> Unit = {
+        IconButton(onClick = {
+            if (asr.isRecording) asrState.stop() else startVoice()
+        }) {
+            Icon(HugeIcons.Mic01, stringResource(R.string.quick_chat_voice))
+        }
+    }
+    val sendButton: @Composable () -> Unit = {
+        if (isGenerating) {
+            IconButton(onClick = {
+                scope.launch { chatService.stopGeneration(conversationId) }
+            }) {
+                Icon(HugeIcons.Stop, stringResource(R.string.quick_chat_stop))
+            }
+        } else {
+            FilledIconButton(
+                onClick = { submit(input, false) },
+                enabled = input.isNotBlank(),
+            ) {
+                Icon(HugeIcons.ArrowUp01, stringResource(R.string.quick_chat_send))
+            }
+        }
+    }
+
     val messages = conversation.currentMessages.filter {
         it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT
     }
@@ -174,34 +253,64 @@ fun QuickChatPanel(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // Tap-outside-to-dismiss: the upper area is empty and lets the app behind show through.
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+            .imePadding(),
+    ) {
+        val density = LocalDensity.current
+        val fullHeight = maxHeight * PANEL_HEIGHT_FRACTION
+        val minHeight = fullHeight * PANEL_MIN_HEIGHT_FRACTION
+        // Place the panel so the ball lands at BALL_ANCHOR_FRACTION of its height:
+        // top = ballY - anchor * height, and we need top + height <= maxHeight.
+        val ballY = with(density) { ballCenterY.toDp() }
+        val heightForBall = (maxHeight - ballY) / (1f - BALL_ANCHOR_FRACTION)
+        val panelHeight = heightForBall.coerceIn(minHeight, fullHeight)
+        val panelTop = (ballY - panelHeight * BALL_ANCHOR_FRACTION)
+            .coerceAtMost(maxHeight - panelHeight)
+            .coerceAtLeast(0.dp)
+
+        // Tap anywhere off the panel to dismiss it; the app behind shows through the gap.
         Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                 ) { onDismiss() }
         )
+
         Surface(
             modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset { IntOffset(0, with(density) { panelTop.roundToPx() }) }
                 .fillMaxWidth()
-                .weight(1.7f)
-                .navigationBarsPadding()
-                .imePadding(),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                .height(panelHeight)
+                // Swallow taps on the panel's own surface (padding, empty history) so they do
+                // not fall through to the dismiss layer behind it.
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (mirror) {
+                        closeButton()
+                        openFullButton()
+                        newButton()
+                    }
                     Text(
                         text = conversation.title.ifBlank { fallbackTitle },
                         style = MaterialTheme.typography.titleMedium,
@@ -209,27 +318,10 @@ fun QuickChatPanel(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    IconButton(onClick = {
-                        asrState.stop()
-                        input = ""
-                        conversationId = Uuid.random()
-                    }) {
-                        Icon(HugeIcons.PlusSign, stringResource(R.string.quick_chat_new))
-                    }
-                    IconButton(onClick = {
-                        val intent = Intent(context, RouteActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP
-                            putExtra("conversationId", conversationId.toString())
-                        }
-                        context.startActivity(intent)
-                        onDismiss()
-                    }) {
-                        Icon(HugeIcons.ArrowRight01, stringResource(R.string.quick_chat_open_full))
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(HugeIcons.Cancel01, stringResource(R.string.quick_chat_close))
+                    if (!mirror) {
+                        newButton()
+                        openFullButton()
+                        closeButton()
                     }
                 }
 
@@ -272,6 +364,10 @@ fun QuickChatPanel(
                 }
 
                 Row(verticalAlignment = Alignment.Bottom) {
+                    if (mirror) {
+                        sendButton()
+                        micButton()
+                    }
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
@@ -281,24 +377,9 @@ fun QuickChatPanel(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                         keyboardActions = KeyboardActions(onSend = { submit(input, false) }),
                     )
-                    IconButton(onClick = {
-                        if (asr.isRecording) asrState.stop() else startVoice()
-                    }) {
-                        Icon(HugeIcons.Mic01, stringResource(R.string.quick_chat_voice))
-                    }
-                    if (isGenerating) {
-                        IconButton(onClick = {
-                            scope.launch { chatService.stopGeneration(conversationId) }
-                        }) {
-                            Icon(HugeIcons.Stop, stringResource(R.string.quick_chat_stop))
-                        }
-                    } else {
-                        FilledIconButton(
-                            onClick = { submit(input, false) },
-                            enabled = input.isNotBlank(),
-                        ) {
-                            Icon(HugeIcons.ArrowUp01, stringResource(R.string.quick_chat_send))
-                        }
+                    if (!mirror) {
+                        micButton()
+                        sendButton()
                     }
                 }
             }
