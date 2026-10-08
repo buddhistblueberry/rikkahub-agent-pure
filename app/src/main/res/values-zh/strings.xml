@@ -2575,4 +2575,39 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="getting_started_keepalive_desc">部分系统（Vivo/小米/华为）会在后台清理应用，无障碍服务开启后也可能被系统收回，屏幕工具随之失灵。到「无障碍」页做一次后台保活即可。</string>
   <string name="getting_started_keepalive_open">去设置</string>
 
+  <!-- Floating ball / quick chat -->
+  <string name="notification_channel_floating_ball">悬浮球</string>
+  <string name="notification_floating_ball_running">随时聊天已就绪</string>
+  <string name="notification_floating_ball_hint">点按悬浮球聊天，长按说话</string>
+  <string name="notification_floating_ball_stop">关闭</string>
+  <string name="setting_page_floating_ball">悬浮球</string>
+  <string name="setting_page_floating_ball_desc">在任意应用上层随时聊天、语音输入</string>
+  <string name="setting_floating_ball_page_title">悬浮球</string>
+  <string name="setting_floating_ball_enable_title">显示悬浮球</string>
+  <string name="setting_floating_ball_enable_desc">在其他应用上层保留一个小圆球。点按快速聊天，长按语音输入。</string>
+  <string name="setting_floating_ball_overlay_title">在其他应用上层显示</string>
+  <string name="setting_floating_ball_overlay_granted">已授权</string>
+  <string name="setting_floating_ball_overlay_required">必须授权，否则悬浮球无法显示</string>
+  <string name="setting_floating_ball_overlay_grant">去授权</string>
+  <string name="setting_floating_ball_gestures_title">手势</string>
+  <string name="setting_floating_ball_gestures_desc">点按：快速聊天 · 长按：语音输入 · 拖动：移动，自动吸附到边缘</string>
+  <string name="setting_floating_ball_voice_title">语音输入</string>
+  <string name="setting_floating_ball_asr_hint">语音输入使用「语音」页选择的识别服务商。只有面板发出消息时才会发给模型。</string>
+  <string name="setting_floating_ball_screen_action_hint">面板里的「看屏幕并处理」会让 agent 读取并操作当前屏幕内容；点击后面板会自动收起，方便 agent 操作。</string>
+  <string name="setting_floating_ball_notes">悬浮球以前台服务运行，开启期间会保留一条低优先级通知。在此关闭开关即可同时停止两者。</string>
+  <string name="quick_chat_title">快速聊天</string>
+  <string name="quick_chat_new">新对话</string>
+  <string name="quick_chat_open_full">在应用中打开</string>
+  <string name="quick_chat_close">关闭</string>
+  <string name="quick_chat_input_hint">想问什么…</string>
+  <string name="quick_chat_send">发送</string>
+  <string name="quick_chat_stop">停止</string>
+  <string name="quick_chat_voice">语音输入</string>
+  <string name="quick_chat_look_screen">看屏幕并处理</string>
+  <string name="quick_chat_look_screen_prompt">看一下我现在的屏幕内容，理解它，并帮我处理。</string>
+  <string name="quick_chat_listening">正在聆听…</string>
+  <string name="quick_chat_no_asr">未配置语音识别服务商，请到「设置 → 语音」配置</string>
+  <string name="quick_chat_mic_permission">语音输入需要麦克风权限</string>
+  <string name="quick_chat_empty">打个招呼、问个问题，或点「看屏幕并处理」。</string>
+
 </resources>

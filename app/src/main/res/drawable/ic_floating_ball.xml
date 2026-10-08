@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chat-bubble glyph used inside the floating ball. White fill so it reads on the colored
+     oval drawn behind it by FloatingBallService. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,2H4C2.9,2 2,2.9 2,4v12c0,1.1 0.9,2 2,2h3v3.6c0,0.45 0.54,0.67 0.85,0.35L12.8,18H20c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2z" />
+</vector>
