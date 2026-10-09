@@ -1367,6 +1367,16 @@ class GenerationLoop(
         .onCompletion {
             AgentOverlay.hide(context)
             handleAutoReturnAfterTurn()
+            // Screen-automation screenshots are working artifacts: unless the model asked to
+            // keep one (keep=true), drop the files now that the turn is over. Gated on the turn
+            // having actually driven the screen, so a plain "take a screenshot" request keeps
+            // its gallery copy. Either way the ledger is cleared, so a file remembered by a
+            // non-automation turn can never be swept by a later automation turn.
+            if (AgentTurnTracker.didAutomate()) {
+                ScreenshotLedger.purge()
+            } else {
+                ScreenshotLedger.clear()
+            }
         }
         .flowOn(Dispatchers.IO)
 

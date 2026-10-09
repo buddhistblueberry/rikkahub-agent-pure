@@ -271,6 +271,7 @@
   <string name="chat_message_tool_create_memory">Created memory</string>
   <string name="chat_message_tool_delete_memory">Deleted memory</string>
   <string name="chat_message_tool_denied">Denied</string>
+  <string name="chat_tool_image_cleaned">Screenshot cleaned up</string>
   <string name="chat_message_tool_deny">Deny</string>
   <string name="chat_message_tool_deny_dialog_hint">Reason (optional)</string>
   <string name="chat_message_tool_deny_dialog_title">Deny Tool Execution</string>

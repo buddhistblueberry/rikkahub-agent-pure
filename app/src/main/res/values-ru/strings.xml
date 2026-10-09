@@ -242,6 +242,7 @@
   <string name="chat_message_tool_create_memory">Создана заметка</string>
   <string name="chat_message_tool_delete_memory">Удалённая память</string>
   <string name="chat_message_tool_denied">Отклонено</string>
+  <string name="chat_tool_image_cleaned">Снимок экрана удалён</string>
   <string name="chat_message_tool_deny">Отклонить</string>
   <string name="chat_message_tool_deny_dialog_hint">Причина (необязательно)</string>
   <string name="chat_message_tool_deny_dialog_title">Отклонить выполнение инструмента</string>

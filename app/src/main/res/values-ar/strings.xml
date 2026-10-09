@@ -323,6 +323,7 @@
   <string name="chat_message_tool_create_memory">تم إنشاء ذاكرة</string>
   <string name="chat_message_tool_delete_memory">تم حذف ذاكرة</string>
   <string name="chat_message_tool_denied">مرفوض</string>
+  <string name="chat_tool_image_cleaned">تم حذف لقطة الشاشة</string>
   <string name="chat_message_tool_deny">رفض</string>
   <string name="chat_message_tool_deny_dialog_hint">السبب (اختياري)</string>
   <string name="chat_message_tool_deny_dialog_title">رفض تنفيذ الأداة</string>

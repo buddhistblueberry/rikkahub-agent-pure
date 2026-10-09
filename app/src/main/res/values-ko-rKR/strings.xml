@@ -242,6 +242,7 @@
   <string name="chat_message_tool_create_memory">기억 생성됨</string>
   <string name="chat_message_tool_delete_memory">기억 삭제됨</string>
   <string name="chat_message_tool_denied">거부됨</string>
+  <string name="chat_tool_image_cleaned">스크린샷이 정리되었습니다</string>
   <string name="chat_message_tool_deny">거부</string>
   <string name="chat_message_tool_deny_dialog_hint">거절 사유(선택 사항)</string>
   <string name="chat_message_tool_deny_dialog_title">도구 실행 거부</string>
