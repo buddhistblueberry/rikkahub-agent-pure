@@ -83,6 +83,7 @@ import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.FloatingBallService
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomAsrState
 import org.koin.compose.koinInject
@@ -143,7 +144,7 @@ private fun initialConversationId(context: Context): Uuid {
 @OptIn(ExperimentalUuidApi::class)
 @Composable
 fun QuickChatPanel(
-    startVoiceSignal: Int,
+    holdToTalk: Boolean,
     mirror: Boolean,
     ballCenterY: Int,
     onUnfoldStart: () -> Unit,
@@ -206,7 +207,11 @@ fun QuickChatPanel(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            asrState.start { input = it }
+            // Hold-to-talk from the ball: the permission dialog can outlive the gesture, so only
+            // start recording if the ball is still held.
+            if (!holdToTalk || FloatingBallService.voiceHoldActive.value) {
+                asrState.start { input = it }
+            }
         } else {
             Toast.makeText(context, R.string.quick_chat_mic_permission, Toast.LENGTH_SHORT).show()
         }
@@ -226,8 +231,19 @@ fun QuickChatPanel(
         }
     }
 
-    LaunchedEffect(startVoiceSignal) {
-        if (startVoiceSignal > 0) startVoice()
+    // Hold-to-talk from the ball (its long-press): record while the ball is held and stop the
+    // instant it is released. Reading the service's flag directly — same process — means a release
+    // that lands before this panel has even finished coming up is not missed, which an intent
+    // hand-off could not guarantee.
+    val voiceHeld by FloatingBallService.voiceHoldActive.collectAsStateWithLifecycle()
+    if (holdToTalk) {
+        LaunchedEffect(voiceHeld) {
+            if (voiceHeld) {
+                if (!asr.isRecording) startVoice()
+            } else if (asr.isRecording) {
+                asrState.stop()
+            }
+        }
     }
 
     val screenPrompt = stringResource(R.string.quick_chat_look_screen_prompt)
