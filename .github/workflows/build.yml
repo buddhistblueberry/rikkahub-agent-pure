@@ -8,9 +8,24 @@ on:
       # Maintenance branches (CI tweaks, dependency bumps, docs) build too — they
       # are still code that will be merged, so they deserve the same gate.
       - 'chore/**'
+    # Doc-only pushes (README, notes, licence) do not need a 13-20 min assemblePure
+    # run: no source, resource or build file changes are involved. A push is
+    # skipped only when *every* changed path matches; mixing docs with code still
+    # triggers CI. Add `[skip ci]` to the commit message for one-off skips.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches:
       - master
+    # Same rule for PRs: a docs-only PR stays mergeable without burning a run.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
 
 permissions:
