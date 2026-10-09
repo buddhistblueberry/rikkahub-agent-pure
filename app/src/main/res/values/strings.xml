@@ -2869,7 +2869,7 @@
   <string name="setting_floating_ball_gestures_desc">Tap: quick chat · Long-press: hold to talk, release to stop · Drag: move it, it snaps to the edge</string>
   <string name="setting_floating_ball_voice_title">Voice input</string>
   <string name="setting_floating_ball_asr_hint">Voice input uses the speech provider selected under Speech. Nothing is sent to the model until the panel sends your message.</string>
-  <string name="setting_floating_ball_screen_action_hint">In the panel, the Look at screen &amp; act button lets the agent read and operate whatever is on screen; the panel closes so the agent can work.</string>
+  <string name="setting_floating_ball_screen_action_hint">In the panel, the Agent takeover button lets the agent read and operate whatever is on screen; the panel closes so the agent can work.</string>
   <string name="setting_floating_ball_notes">The ball runs as a foreground service and keeps a low-priority notification while it is on. Turn the switch off here to stop both.</string>
   <string name="setting_floating_ball_idle_title">Auto-hide when idle</string>
   <string name="setting_floating_ball_idle_desc">Seconds without touching the ball before it tucks itself into the edge — half hidden and faded. Drag it any time to move it, even while tucked away; tap it once to wake it, and only then does it open the panel.</string>
@@ -2893,12 +2893,19 @@
   <string name="quick_chat_send">Send</string>
   <string name="quick_chat_stop">Stop</string>
   <string name="quick_chat_voice">Voice input</string>
-  <string name="quick_chat_look_screen">Look at screen &amp; act</string>
+  <string name="quick_chat_look_screen">Agent takeover</string>
   <string name="quick_chat_look_screen_prompt">Look at what is currently on my screen, understand it, and help me handle it.</string>
   <string name="quick_chat_listening">Listening…</string>
   <string name="quick_chat_no_asr">No speech provider configured — set one in Settings → Speech</string>
   <string name="quick_chat_mic_permission">Microphone permission is required for voice input</string>
-  <string name="quick_chat_empty">Say hi, ask a question, or tap Look at screen &amp; act.</string>
+  <string name="quick_chat_empty">Say hi, ask a question, or tap Agent takeover.</string>
+  <string name="quick_chat_tts_read">Read aloud</string>
+  <string name="quick_chat_tts_stop">Stop reading</string>
+  <string name="quick_chat_no_tts">No text-to-speech provider configured — set one in Settings → Speech</string>
+  <string name="quick_chat_nothing_to_read">Nothing to read yet</string>
+  <string name="quick_chat_segment_thinking">Thinking</string>
+  <string name="quick_chat_segment_tools">Tools (%1$d)</string>
+  <string name="quick_chat_segment_attachment">Attachment</string>
 
   <string name="chat_page_continuing">Connection lost — continuing the reply (%1$d/%2$d)</string>
   <string name="chat_page_subagents_running">%1$d sub-agent(s) running · %2$s</string>
