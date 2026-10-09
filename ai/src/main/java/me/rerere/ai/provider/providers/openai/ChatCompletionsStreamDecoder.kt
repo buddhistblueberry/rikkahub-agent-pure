@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.Tool
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.stream.DecodeResult
 import me.rerere.ai.provider.stream.SseEvent
@@ -27,7 +28,13 @@ import me.rerere.common.http.jsonObjectOrNull
 import me.rerere.common.http.jsonPrimitiveOrNull
 import kotlin.time.Clock
 
-internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
+internal class ChatCompletionsStreamDecoder(
+    /**
+     * Tools offered on this request. Passed through to [TextToolCallParser] so it can refuse
+     * tool calls for tools that were never advertised.
+     */
+    tools: List<Tool> = emptyList(),
+) : StreamChunkDecoder {
     private val streamState = ChatCompletionsStreamState()
     private val toolIdsByIndex = mutableMapOf<Int, String>()
     private val reasoningDetailsByIndex = linkedMapOf<Int, JsonObject>()
@@ -35,6 +42,12 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
     private var responseModel: String? = null
     private var finishReason: String? = null
     private var finished = false
+
+    /**
+     * Only used for content that arrives as literal text. A provider that emits proper
+     * `tool_calls` deltas never routes content here, so this stays inert on the normal path.
+     */
+    private val textToolParser = TextToolCallParser(tools)
 
     override fun accept(event: SseEvent): DecodeResult {
         if (finished) return DecodeResult(completed = true)
@@ -88,7 +101,21 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
     private fun finish(): List<StreamChunk> {
         if (finished) return emptyList()
         finished = true
-        return streamState.finish(finishReason, responseId, responseModel)
+        // Flush any trailing text the text-tool parser was still holding (unterminated tag,
+        // or a partial opening tag at end of stream).
+        val trailing = textToolParser.flushPending()
+            .takeIf { parts -> parts.any { it is UIMessagePart.Text && it.text.isNotBlank() } }
+            ?.let { parts ->
+                streamState.append(
+                    UIMessage(role = MessageRole.ASSISTANT, parts = parts),
+                    responseId,
+                )
+            }
+            .orEmpty()
+        // If the model wrote its tool call as text, report "tool_calls" so the agent loop
+        // knows to execute it instead of treating the turn as finished prose.
+        val reason = finishReason ?: textToolParser.consumePendingFinishReason()
+        return trailing + streamState.finish(reason, responseId, responseModel)
     }
 
     private fun parseMessage(payload: JsonObject): UIMessage {
@@ -117,7 +144,11 @@ internal class ChatCompletionsStreamDecoder : StreamChunkDecoder {
                         metadata = reasoningMetadata,
                     ))
                 }
-                if (content.isNotEmpty()) add(UIMessagePart.Text(content))
+                if (content.isNotEmpty()) {
+                    // The model may have written its tool call as plain text instead of
+                    // sending a structured delta; recover it rather than showing the markup.
+                    addAll(textToolParser.feed(content))
+                }
                 images.forEach { image ->
                     val imageObject = image.jsonObjectOrNull ?: return@forEach
                     if (imageObject["type"]?.jsonPrimitive?.contentOrNull != "image_url") return@forEach
