@@ -108,6 +108,7 @@ import me.rerere.rikkahub.ui.components.ai.ModelModalityTag
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ModelTypeTag
 import me.rerere.rikkahub.ui.components.ai.ProviderBalanceText
+import me.rerere.rikkahub.ui.components.ai.displayName
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.ShareSheet
@@ -182,8 +183,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        AutoAIIcon(provider.name, modifier = Modifier.size(22.dp))
-                        Text(text = provider.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        AutoAIIcon(provider.displayName(), modifier = Modifier.size(22.dp))
+                        Text(text = provider.displayName(), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
                 actions = {
