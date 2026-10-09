@@ -1,15 +1,19 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +50,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -90,6 +99,12 @@ import androidx.compose.ui.draw.clip
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import com.dokar.sonner.ToastType
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.hazeBlur
+import dev.chrisbanes.haze.blur.material3.Material3
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
@@ -187,11 +202,28 @@ fun ChatDrawerContent(
         }
     }
 
+    // 底部功能区悬浮在对话列表之上做磨砂（与输入框同款），因此自建一个 Haze 状态：
+    // 对话列表标记为模糊来源，底部面板做 hazeBlur，列表内容从面板下方滑过时被虚化。
+    val drawerHazeState = rememberHazeState()
+    val bottomBarHazeStyle = HazeBlurStyle.Material3 {
+        blurRadius(12.dp)
+    }
+    // 分隔线颜色：浅色模式纯黑，深色模式自动转浅色（避免深色下看不见）。
+    val separatorColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        Color.White.copy(alpha = 0.45f)
+    } else {
+        Color.Black
+    }
+    var bottomBarHeightPx by remember { mutableStateOf(0) }
+    val bottomBarHeight = with(LocalDensity.current) { bottomBarHeightPx.toDp() }
+
     ModalDrawerSheet(
         modifier = Modifier.width(300.dp)
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (updateChecksEnabled && !isPlayStore) {
@@ -272,14 +304,30 @@ fun ChatDrawerContent(
                 onDelete = { folderToDelete = it },
             )
 
-            ConversationList(
-                current = current,
-                conversations = conversations,
-                conversationJobs = conversationJobs.keys,
-                listState = conversationListState,
+            // 上方功能区与对话列表的分界：黑线贴左接边，右侧略微留空不接边。
+            HorizontalDivider(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(x = (-8).dp),
+                thickness = 1.dp,
+                color = separatorColor,
+            )
+
+            // 列表区域：对话列表铺满整块，底部功能区浮在它上面做磨砂。
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
+            ) {
+                ConversationList(
+                    current = current,
+                    conversations = conversations,
+                    conversationJobs = conversationJobs.keys,
+                    listState = conversationListState,
+                    contentPadding = PaddingValues(bottom = bottomBarHeight + 12.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .hazeSource(state = drawerHazeState),
                 onClick = {
                     navigateToChatPage(navController, it.id)
                 },
@@ -308,6 +356,26 @@ fun ChatDrawerContent(
                 }
             )
 
+                // 底部功能区：圆角磨砂背景 + 细边线，与聊天输入框同款；列表从它下方滑过时被虚化。
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.largeIncreased)
+                        .hazeBlur(
+                            input = HazeInput.Sources(drawerHazeState),
+                            style = bottomBarHazeStyle,
+                        )
+                        .onSizeChanged { bottomBarHeightPx = it.height },
+                    shape = MaterialTheme.shapes.largeIncreased,
+                    color = Color.Transparent,
+                    tonalElevation = 0.dp,
+                    border = BorderStroke(1.dp, separatorColor),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
             // 助手选择器
             AssistantPicker(
                 settings = settings,
@@ -407,6 +475,9 @@ fun ChatDrawerContent(
                     contentDescription = stringResource(R.string.settings),
                     onClick = { navController.navigate(Screen.Setting) },
                 )
+            }
+                    }
+                }
             }
         }
     }
