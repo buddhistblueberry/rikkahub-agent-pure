@@ -242,6 +242,7 @@
   <string name="chat_message_tool_create_memory">記憶を作成しました</string>
   <string name="chat_message_tool_delete_memory">記憶を削除しました</string>
   <string name="chat_message_tool_denied">拒否されました</string>
+  <string name="chat_tool_image_cleaned">スクリーンショットは削除されました</string>
   <string name="chat_message_tool_deny">拒否</string>
   <string name="chat_message_tool_deny_dialog_hint">理由（任意）</string>
   <string name="chat_message_tool_deny_dialog_title">ツール実行を拒否</string>

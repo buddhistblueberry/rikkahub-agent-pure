@@ -243,6 +243,7 @@
   <string name="chat_message_tool_create_memory">創建了記憶</string>
   <string name="chat_message_tool_delete_memory">刪除了記憶</string>
   <string name="chat_message_tool_denied">已拒絕</string>
+  <string name="chat_tool_image_cleaned">截圖已清理</string>
   <string name="chat_message_tool_deny">拒絕</string>
   <string name="chat_message_tool_deny_dialog_hint">原因（選填）</string>
   <string name="chat_message_tool_deny_dialog_title">拒絕工具執行</string>

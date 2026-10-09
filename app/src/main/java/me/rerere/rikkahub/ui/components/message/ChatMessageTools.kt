@@ -61,7 +61,7 @@ import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIContext
 import me.rerere.rikkahub.ui.components.message.tools.ToolUIRegistry
-import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
+import me.rerere.rikkahub.ui.components.message.tools.ToolResultImage
 import me.rerere.rikkahub.ui.components.ui.ChainOfThoughtScope
 import me.rerere.rikkahub.ui.components.ui.DotLoading
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -383,9 +383,8 @@ fun ChainOfThoughtScope.ChatMessageToolStep(
                             modifier = Modifier.wrapContentWidth(),
                         ) {
                             items(images, key = { it.url }) { image ->
-                                ZoomableAsyncImage(
-                                    model = image.url,
-                                    contentDescription = null,
+                                ToolResultImage(
+                                    url = image.url,
                                     modifier = Modifier
                                         .height(64.dp)
                                         .wrapContentWidth(),
