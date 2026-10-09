@@ -171,7 +171,11 @@ class ChatCompletionsAPI(
         // just for debugging response body
         // println(client.newCall(request).await().body.string())
 
-        val decoder = ChatCompletionsStreamDecoder()
+        // Hand the advertised tools to the decoder: it uses them both to tell a real tool
+        // call apart from prose and to reject names we never offered.
+        val decoder = ChatCompletionsStreamDecoder(
+            if (params.model.abilities.contains(ModelAbility.TOOL)) params.tools else emptyList(),
+        )
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {
             chunks.forEach { chunk ->
