@@ -18,48 +18,51 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.ai.tools.ToolInvocationContext
 import me.rerere.rikkahub.service.ActionLogEntry
 
-private const val DEFAULT_MAX_NODES = 500
+private const val DEFAULT_MAX_NODES = 300
 private const val MAX_NODES_HARD_CEILING = 2000
 
 /** How many vanished-node identities a `diff` read reports before truncating. */
 private const val MAX_REMOVED_SIGNATURES = 50
 
+/**
+ * JSON for one node. [rect] must already hold the node's screen bounds — the caller fetches them
+ * once per node so the tree walk and the tree hash share a single `getBoundsInScreen` IPC (that
+ * call is a cross-process hop, and it used to run twice per node).
+ *
+ * Boolean flags are emitted only when noteworthy — `clickable` / `scrollable` / `editable` when
+ * true, `enabled` when false — which roughly halves the tokens of the old all-fields form.
+ */
 internal fun nodeToJson(
     node: AccessibilityNodeInfo,
     windowId: Int,
     traversalIndex: Int,
-): JsonObject {
-    val rect = Rect()
-    node.getBoundsInScreen(rect)
-    return buildJsonObject {
-        put("node_id", "${windowId}:${traversalIndex}")
-        put("bounds", buildJsonArray {
-            add(rect.left); add(rect.top); add(rect.right); add(rect.bottom)
-        })
-        put("class", node.className?.toString() ?: "")
-        node.text?.toString()?.takeIf { it.isNotEmpty() }?.let { put("text", it) }
-        node.contentDescription?.toString()?.takeIf { it.isNotEmpty() }?.let {
-            put("content_description", it)
-        }
-        node.viewIdResourceName?.takeIf { it.isNotEmpty() }?.let { put("view_id", it) }
-        put("clickable", node.isClickable)
-        put("scrollable", node.isScrollable)
-        put("editable", node.isEditable)
-        put("enabled", node.isEnabled)
+    rect: Rect,
+): JsonObject = buildJsonObject {
+    put("node_id", "${windowId}:${traversalIndex}")
+    put("bounds", buildJsonArray {
+        add(rect.left); add(rect.top); add(rect.right); add(rect.bottom)
+    })
+    node.className?.toString()?.takeIf { it.isNotEmpty() }?.let { put("class", it) }
+    node.text?.toString()?.takeIf { it.isNotEmpty() }?.let { put("text", it) }
+    node.contentDescription?.toString()?.takeIf { it.isNotEmpty() }?.let {
+        put("content_description", it)
     }
+    node.viewIdResourceName?.takeIf { it.isNotEmpty() }?.let { put("view_id", it) }
+    if (node.isClickable) put("clickable", true)
+    if (node.isScrollable) put("scrollable", true)
+    if (node.isEditable) put("editable", true)
+    if (!node.isEnabled) put("enabled", false)
 }
 
 /**
  * Stable identity for a node across two reads: the same structural parts the screen-state hash
  * uses (class / text / content description / screen bounds). Two nodes with the same signature
- * are indistinguishable to the delta, which is exactly the granularity we want.
+ * are indistinguishable to the delta, which is exactly the granularity we want. [rect] must
+ * already hold the node's screen bounds.
  */
-internal fun nodeSignature(node: AccessibilityNodeInfo): String {
-    val rect = Rect()
-    node.getBoundsInScreen(rect)
-    return "${node.className}|${node.text}|${node.contentDescription}|" +
+internal fun nodeSignature(node: AccessibilityNodeInfo, rect: Rect): String =
+    "${node.className}|${node.text}|${node.contentDescription}|" +
         "${rect.left},${rect.top},${rect.right},${rect.bottom}"
-}
 
 internal fun defaultFilter(n: AccessibilityNodeInfo, depth: Int): Boolean {
     if (!n.isVisibleToUser) return false
@@ -74,7 +77,7 @@ fun readWindowTreeTool(
     streamer: InteractiveToolStreamer = InteractiveToolStreamer.NoOp,
 ): Tool = Tool(
     name = "read_window_tree",
-    description = "Snapshot of the active window's a11y node tree. Default filters to visible nodes that are clickable / scrollable / editable / have text or content_description. verbose=true skips the filter (use sparingly). max_nodes caps result (default 500, max 2000). package_name optionally restricts + errors if the foreground app doesn't match. Every node carries a node_id you can pass directly to click_node / set_text (preferred over by/value or coordinates). The result includes screen_state identifying the current surface (package, shade_open, ime_visible, display size) and tree_hash. Re-reading a screen that did not move answers {unchanged:true} instead of the whole tree again — pass full=true if you really need the nodes. diff=true returns only the nodes that appeared / disappeared since your previous read: much cheaper after an action.",
+    description = "Snapshot of the active window's a11y node tree. Default filters to visible nodes that are clickable / scrollable / editable / have text or content_description. verbose=true skips the filter (use sparingly). max_nodes caps result (default 300, max 2000). package_name optionally restricts + errors if the foreground app doesn't match. Every node carries a node_id you can pass directly to click_node / set_text (preferred over by/value or coordinates). The result includes screen_state identifying the current surface (package, shade_open, ime_visible, display size) and tree_hash. Re-reading a screen that did not move answers {unchanged:true} instead of the whole tree again — pass full=true if you really need the nodes. diff=true returns only the nodes that appeared / disappeared since your previous read: much cheaper after an action.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -84,7 +87,7 @@ fun readWindowTreeTool(
                 })
                 put("max_nodes", buildJsonObject {
                     put("type", "integer")
-                    put("description", "Cap on returned nodes (default 500, max 2000)")
+                    put("description", "Cap on returned nodes (default 300, max 2000)")
                 })
                 put("package_name", buildJsonObject {
                     put("type", "string")
@@ -144,13 +147,15 @@ fun readWindowTreeTool(
             }
             val nodes = mutableListOf<JsonObject>()
             val signatures = mutableListOf<String>()
+            val rect = Rect()
             val (emitted, seen, truncated) = svc.traverseTree(
                 root = root,
                 filter = if (verbose) ({ _, _ -> true }) else (::defaultFilter),
                 cap = maxNodes,
                 emit = { n, _, idx ->
-                    nodes.add(nodeToJson(n, root.windowId, idx))
-                    signatures.add(nodeSignature(n))
+                    n.getBoundsInScreen(rect)
+                    nodes.add(nodeToJson(n, root.windowId, idx, rect))
+                    signatures.add(nodeSignature(n, rect))
                 }
             )
             svc.appendLog(
@@ -187,7 +192,7 @@ fun readWindowTreeTool(
                                 "The tree is identical to your previous read_window_tree — reuse the " +
                                     "nodes you already have. Pass full=true if you really need them again.",
                             )
-                            put("screen_state", screenStateJson(svc, screenChanged = false))
+                            put("screen_state", screenStateJson(svc, screenChanged = false, root = root))
                         }
                     )
 
@@ -212,7 +217,7 @@ fun readWindowTreeTool(
                                     "lists identities that disappeared. node_ids are current — click them " +
                                     "directly. Pass full=true for the whole tree.",
                             )
-                            put("screen_state", screenStateJson(svc, screenChanged = null))
+                            put("screen_state", screenStateJson(svc, screenChanged = null, root = root))
                         }
                     )
                 }
@@ -220,7 +225,7 @@ fun readWindowTreeTool(
                 else -> JsonObject(
                     header + buildJsonObject {
                         put("nodes", buildJsonArray { nodes.forEach { add(it) } })
-                        put("screen_state", screenStateJson(svc, screenChanged = null))
+                        put("screen_state", screenStateJson(svc, screenChanged = null, root = root))
                     }
                 )
             }

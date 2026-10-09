@@ -93,4 +93,35 @@ class ScreenStateTest {
         assertTrue(quiet)
         assertTrue("must actually wait, not return on first poll", polls > 1)
     }
+
+    @Test
+    fun `awaitQuiet uses the longer idle window before any event`() = runBlocking {
+        var clock = 0L
+        var polls = 0
+        val quiet = awaitQuiet(
+            quietMs = 100, timeoutMs = 2000,
+            now = { polls++; clock.also { clock += 50 } },
+            lastEvent = { 0L },      // no event ever arrives
+            floor = 0L,
+            idleMs = 200,
+        )
+        assertTrue(quiet)
+        // With quietMs (100) the wait would satisfy after 2 polls; idleMs (200) must hold it longer.
+        assertTrue("must wait for idleMs when no event was seen", polls >= 4)
+    }
+
+    @Test
+    fun `awaitQuiet uses the short quiet window once an event arrives`() = runBlocking {
+        var clock = 100L
+        var polls = 0
+        val quiet = awaitQuiet(
+            quietMs = 100, timeoutMs = 2000,
+            now = { polls++; clock.also { clock += 50 } },
+            lastEvent = { 150L },    // an event landed shortly after the action at t=100
+            floor = 100L,
+            idleMs = 5000,           // would time out if the event were not counted
+        )
+        assertTrue(quiet)
+        assertEquals(4, polls)
+    }
 }

@@ -18,6 +18,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.service.ActionLogEntry
 import me.rerere.rikkahub.service.RikkaAccessibilityService
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -76,14 +77,28 @@ fun takeScreenshotTool(context: Context): Tool = Tool(
                     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(ts))
                     val displayName = "Screenshot_${timestamp}.png"
 
+                    // Encode the PNG exactly once. A full-resolution screen is several MB, and
+                    // compressing it twice (cache copy + gallery copy) was most of this tool's
+                    // cost; the gallery copy is now a byte-for-byte write of the same bytes.
+                    val pngBytes: ByteArray = try {
+                        ByteArrayOutputStream().use { bos ->
+                            res.bitmap.compress(Bitmap.CompressFormat.PNG, 100, bos)
+                            bos.toByteArray()
+                        }
+                    } catch (t: Throwable) {
+                        res.bitmap.recycle()
+                        return@withService buildJsonObject {
+                            put("error", "write_failed")
+                            put("reason", t.message ?: t::class.simpleName ?: "unknown")
+                        }
+                    }
+
                     // 1) Always write a cache copy — this is the path attached to the LLM as
                     //    inline vision (file:// uri readable by the encoder; reliable across
                     //    Android versions, regardless of MediaStore success).
                     val cacheFile = File(File(context.cacheDir, SCREENSHOT_CACHE_DIR), "screen-$ts.png")
                     try {
-                        FileOutputStream(cacheFile).use { os ->
-                            res.bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
-                        }
+                        cacheFile.writeBytes(pngBytes)
                     } catch (t: Throwable) {
                         res.bitmap.recycle()
                         return@withService buildJsonObject {
@@ -94,7 +109,7 @@ fun takeScreenshotTool(context: Context): Tool = Tool(
 
                     // 2) Save a user-visible copy to Pictures/RikkaHub/Screenshots — visible in
                     //    Gallery, the Files app, and the list_files / find_files tools.
-                    val galleryPath: String? = saveToGallery(context, res.bitmap, displayName)
+                    val galleryPath: String? = saveToGallery(context, pngBytes, displayName)
                     res.bitmap.recycle()
 
                     svc.appendLog(
@@ -128,7 +143,8 @@ fun takeScreenshotTool(context: Context): Tool = Tool(
 )
 
 /**
- * Persist [bitmap] as a PNG into the device gallery at Pictures/RikkaHub/Screenshots/.
+ * Persist already-encoded [pngBytes] as a PNG into the device gallery at
+ * Pictures/RikkaHub/Screenshots/.
  *
  * Q+ (API 29+): use MediaStore (no permission required for own-app inserts; visible to
  * the user's Gallery app via media indexing).
@@ -139,7 +155,7 @@ fun takeScreenshotTool(context: Context): Tool = Tool(
  *
  * Returns the absolute on-device path the user can navigate to, or null on any failure.
  */
-private fun saveToGallery(context: Context, bitmap: Bitmap, displayName: String): String? {
+private fun saveToGallery(context: Context, pngBytes: ByteArray, displayName: String): String? {
     return runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
@@ -157,7 +173,7 @@ private fun saveToGallery(context: Context, bitmap: Bitmap, displayName: String)
             ) ?: return null
 
             context.contentResolver.openOutputStream(uri)?.use { os ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
+                os.write(pngBytes)
             } ?: run {
                 context.contentResolver.delete(uri, null, null)
                 return null
@@ -178,7 +194,7 @@ private fun saveToGallery(context: Context, bitmap: Bitmap, displayName: String)
             val targetDir = File(pictures, PICTURES_SUBDIR).apply { mkdirs() }
             val out = File(targetDir, displayName)
             FileOutputStream(out).use { os ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, os)
+                os.write(pngBytes)
             }
             // Tell MediaScanner so the gallery picks it up promptly.
             android.media.MediaScannerConnection.scanFile(

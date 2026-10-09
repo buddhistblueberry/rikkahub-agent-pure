@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -224,7 +225,11 @@ fun findNodeTool(
             )
             buildJsonObject {
                 put("matches", buildJsonArray {
-                    matches.forEach { m -> add(nodeToJson(m.node, root.windowId, m.traversalIndex)) }
+                    matches.forEach { m ->
+                        val rect = Rect()
+                        m.node.getBoundsInScreen(rect)
+                        add(nodeToJson(m.node, root.windowId, m.traversalIndex, rect))
+                    }
                 })
                 if (truncated) put("truncated", true)
                 if (matches.isEmpty()) {
@@ -235,7 +240,7 @@ fun findNodeTool(
                             "on that axis — click one by node_id, or try by=view_id_resource_name.",
                     )
                 }
-                put("screen_state", screenStateJson(svc, screenChanged = null))
+                put("screen_state", screenStateJson(svc, screenChanged = null, root = root))
             }
         }
         streamer.streamIfHeadless(invocationContext, "FindNode $by=\"${value.take(30)}\"")
