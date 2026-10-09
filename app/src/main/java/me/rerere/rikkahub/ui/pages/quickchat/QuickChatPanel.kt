@@ -28,7 +28,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -78,14 +81,21 @@ import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.Mic01
 import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.hugeicons.stroke.Stop
+import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.FloatingBallService
+import me.rerere.rikkahub.ui.components.message.MessagePartBlock
+import me.rerere.rikkahub.ui.components.message.ThinkingStep
+import me.rerere.rikkahub.ui.components.message.groupMessageParts
+import me.rerere.rikkahub.ui.components.ui.AssistantAvatar
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomAsrState
+import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import org.koin.compose.koinInject
 
 private const val LAST_CONVERSATION_KEY = "lastConversationId"
@@ -320,6 +330,37 @@ fun QuickChatPanel(
     LaunchedEffect(conversationId, messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
+    // A streaming reply grows in place without the message count changing, so follow it too —
+    // instantly, so the view does not drift behind the text as it arrives.
+    val streamTail = messages.lastOrNull()?.parts?.lastOrNull()?.hashCode() ?: 0
+    LaunchedEffect(streamTail) {
+        if (isGenerating && messages.isNotEmpty()) {
+            runCatching { listState.scrollToItem(messages.lastIndex) }
+        }
+    }
+
+    // Read the latest assistant reply aloud through the app's configured TTS provider.
+    val tts = rememberCustomTtsState()
+    val ttsSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
+    val ttsAvailable by tts.isAvailable.collectAsStateWithLifecycle()
+    val latestAssistantText = messages.lastOrNull { it.role == MessageRole.ASSISTANT }
+        ?.toText()?.trim().orEmpty()
+    fun toggleReadAloud() {
+        // isSpeaking read straight off the StateFlow so a click always sees the live value.
+        if (tts.isSpeaking.value) {
+            tts.stop()
+            return
+        }
+        if (!ttsAvailable) {
+            Toast.makeText(context, R.string.quick_chat_no_tts, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (latestAssistantText.isBlank()) {
+            Toast.makeText(context, R.string.quick_chat_nothing_to_read, Toast.LENGTH_SHORT).show()
+            return
+        }
+        tts.speak(latestAssistantText)
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -404,13 +445,36 @@ fun QuickChatPanel(
                         openFullButton()
                         newButton()
                     }
-                    Text(
-                        text = conversation.title.ifBlank { fallbackTitle },
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    val assistant = settings.getAssistantById(conversation.assistantId)
+                    if (assistant != null) {
+                        AssistantAvatar(
+                            assistant = assistant,
+                            modifier = Modifier.size(32.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            // The assistant leads the header — never an uploaded avatar on its own
+                            // (AssistantAvatar falls back to its model's brand icon) — with the
+                            // conversation title dropping to a quieter second line, so a glance
+                            // tells you who you are talking to.
+                            text = assistant?.name?.ifBlank { null } ?: fallbackTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val subtitle = conversation.title.ifBlank { null }
+                        if (subtitle != null) {
+                            Text(
+                                text = subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     if (!mirror) {
                         newButton()
                         openFullButton()
@@ -435,7 +499,7 @@ fun QuickChatPanel(
                         }
                     }
                     items(messages, key = { it.id.toString() }) { message ->
-                        MessageBubble(message)
+                        MessageSegments(message)
                     }
                 }
 
@@ -445,15 +509,43 @@ fun QuickChatPanel(
                     StatusRow(text = processingStatus.orEmpty())
                 }
 
-                FilledTonalButton(
-                    onClick = { submit(screenPrompt, closeAfterSend = true) },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(HugeIcons.LookTop, null)
-                    Text(
-                        text = stringResource(R.string.quick_chat_look_screen),
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
+                    if (mirror) {
+                        QuickActionButton(
+                            text = stringResource(
+                                if (ttsSpeaking) R.string.quick_chat_tts_stop
+                                else R.string.quick_chat_tts_read
+                            ),
+                            icon = if (ttsSpeaking) HugeIcons.Stop else HugeIcons.VolumeHigh,
+                            onClick = { toggleReadAloud() },
+                            modifier = Modifier.weight(1f),
+                        )
+                        QuickActionButton(
+                            text = stringResource(R.string.quick_chat_look_screen),
+                            icon = HugeIcons.LookTop,
+                            onClick = { submit(screenPrompt, closeAfterSend = true) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        QuickActionButton(
+                            text = stringResource(R.string.quick_chat_look_screen),
+                            icon = HugeIcons.LookTop,
+                            onClick = { submit(screenPrompt, closeAfterSend = true) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        QuickActionButton(
+                            text = stringResource(
+                                if (ttsSpeaking) R.string.quick_chat_tts_stop
+                                else R.string.quick_chat_tts_read
+                            ),
+                            icon = if (ttsSpeaking) HugeIcons.Stop else HugeIcons.VolumeHigh,
+                            onClick = { toggleReadAloud() },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -494,32 +586,105 @@ private fun StatusRow(text: String) {
     }
 }
 
+/**
+ * One message, rendered the way the in-app chat renders it: the parts are split into ordered
+ * blocks (see [groupMessageParts]), so each model call's text becomes its own segment instead of
+ * one merged wall of text, and thinking/tool runs collapse into a single quiet chip.
+ */
 @Composable
-private fun MessageBubble(message: UIMessage) {
+private fun MessageSegments(message: UIMessage) {
     val isUser = message.role == MessageRole.USER
-    val text = message.parts
-        .filterIsInstance<UIMessagePart.Text>()
-        .joinToString("\n") { it.text }
-        .trim()
-    if (text.isEmpty()) return
-    Row(
+    val partsKey = message.parts.size.toString() +
+        (message.parts.lastOrNull()?.hashCode()?.toString() ?: "")
+    val blocks = remember(partsKey) { message.parts.groupMessageParts() }
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.92f),
-            shape = RoundedCornerShape(16.dp),
-            color = if (isUser) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-        ) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+        blocks.forEach { block ->
+            when (block) {
+                is MessagePartBlock.ThinkingBlock -> {
+                    val label = thinkingLabel(block)
+                    if (label != null) SegmentChip(label)
+                }
+
+                is MessagePartBlock.ContentBlock -> when (val part = block.part) {
+                    is UIMessagePart.Text -> {
+                        val text = part.text.trim()
+                        if (text.isNotEmpty()) SegmentBubble(text, isUser)
+                    }
+
+                    else -> SegmentChip(stringResource(R.string.quick_chat_segment_attachment))
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun thinkingLabel(block: MessagePartBlock.ThinkingBlock): String? {
+    val tools = block.steps.count {
+        it is ThinkingStep.ToolStep || it is ThinkingStep.ServerToolStep
+    }
+    return when {
+        tools > 0 -> stringResource(R.string.quick_chat_segment_tools, tools)
+        block.steps.any { it is ThinkingStep.ReasoningStep } ->
+            stringResource(R.string.quick_chat_segment_thinking)
+
+        else -> null
+    }
+}
+
+@Composable
+private fun SegmentBubble(text: String, isUser: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(0.92f),
+        shape = RoundedCornerShape(16.dp),
+        color = if (isUser) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/** A quiet, non-bubble line standing in for thinking/tool steps or a non-text attachment. */
+@Composable
+private fun SegmentChip(label: String) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun QuickActionButton(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(onClick = onClick, modifier = modifier) {
+        Icon(icon, null)
+        Text(
+            text = text,
+            modifier = Modifier.padding(start = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
