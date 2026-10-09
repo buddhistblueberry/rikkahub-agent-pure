@@ -847,6 +847,14 @@
   <string name="setting_page_assistant">助手</string>
   <string name="setting_page_assistant_desc">设置个性化助手 (智能体)</string>
   <string name="setting_page_built_in_tools">内置工具</string>
+  <!-- 内置服务商品牌名（中文） -->
+  <string name="provider_brand_siliconflow">硅基流动</string>
+  <string name="provider_brand_moonshot">月之暗面</string>
+  <string name="provider_brand_alibaba_bailian">阿里云百炼</string>
+  <string name="provider_brand_volcengine">火山引擎</string>
+  <string name="provider_brand_zhipu">智谱AI开放平台</string>
+  <string name="provider_brand_stepfun">阶跃星辰</string>
+  <string name="provider_brand_tencent_hunyuan">腾讯Hunyuan</string>
   <string name="setting_provider_page_pricing">价格</string>
   <string name="setting_provider_page_pricing_desc">每百万 tokens 的美元价格，用于账本计费。缓存读/写留空时回退到输入价。</string>
   <string name="setting_provider_page_pricing_input">输入（每百万）</string>

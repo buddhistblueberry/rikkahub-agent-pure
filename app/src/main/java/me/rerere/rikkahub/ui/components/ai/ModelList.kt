@@ -679,10 +679,10 @@ private fun ColumnScope.ModelList(
                         }
                     },
                     label = {
-                        Text(provider.name)
+                        Text(provider.displayName())
                     },
                     leadingIcon = {
-                        AutoAIIcon(name = provider.name, modifier = Modifier.size(16.dp))
+                        AutoAIIcon(name = provider.displayName(), modifier = Modifier.size(16.dp))
                     },
                 )
             }

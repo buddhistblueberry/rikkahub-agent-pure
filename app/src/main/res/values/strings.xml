@@ -884,6 +884,14 @@
   <string name="setting_page_assistant">Assistant</string>
   <string name="setting_page_assistant_desc">Set up personalized assistants (agents)</string>
   <string name="setting_page_built_in_tools">Built-in Tools</string>
+  <!-- Built-in provider brands. Latin brand for all locales except zh; see ProviderDisplayName.kt -->
+  <string name="provider_brand_siliconflow">SiliconFlow</string>
+  <string name="provider_brand_moonshot">Moonshot AI</string>
+  <string name="provider_brand_alibaba_bailian">Alibaba Cloud Model Studio</string>
+  <string name="provider_brand_volcengine">Volcengine</string>
+  <string name="provider_brand_zhipu">Zhipu AI</string>
+  <string name="provider_brand_stepfun">StepFun</string>
+  <string name="provider_brand_tencent_hunyuan">Tencent Hunyuan</string>
   <string name="setting_provider_page_pricing">Pricing</string>
   <string name="setting_provider_page_pricing_desc">USD price per million tokens, used for ledger billing. Cache read and write fall back to the input price when left blank.</string>
   <string name="setting_provider_page_pricing_input">Input (per million)</string>

@@ -2,6 +2,8 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.net.Uri
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.rikkahub.ui.components.ai.displayName
+import me.rerere.rikkahub.ui.components.ai.localizedBrandLabels
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderRequirement
 import me.rerere.hugeicons.stroke.Camera01
 import me.rerere.hugeicons.stroke.DragDropHorizontal
@@ -102,12 +104,16 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
     // D12 - enabled providers first. A stable sort keeps the user's manual order inside each
     // group, so reordering within "enabled" or within "disabled" still sticks.
-    val filteredProviders = remember(settings.providers, searchQuery) {
+    val brandLabels = localizedBrandLabels(settings.providers.map { it.id })
+    val filteredProviders = remember(settings.providers, searchQuery, brandLabels) {
         val visible = if (searchQuery.isBlank()) {
             settings.providers
         } else {
             settings.providers.filter { provider ->
-                provider.name.contains(searchQuery, ignoreCase = true)
+                // Match both the stored name and the localized brand, so search finds
+                // the provider by whichever name is currently on screen.
+                provider.name.contains(searchQuery, ignoreCase = true) ||
+                    brandLabels[provider.id]?.contains(searchQuery, ignoreCase = true) == true
             }
         }
         visible.sortedByDescending { it.enabled }
@@ -354,7 +360,7 @@ private fun RecommendProviderItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AutoAIIcon(
-                name = provider.name,
+                name = provider.displayName(),
                 modifier = Modifier.size(40.dp)
             )
             Column(
@@ -362,7 +368,7 @@ private fun RecommendProviderItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = provider.name,
+                    text = provider.displayName(),
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -664,7 +670,7 @@ private fun ProviderItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             AutoAIIcon(
-                name = provider.name,
+                name = provider.displayName(),
                 modifier = Modifier.size(40.dp)
             )
             Column(
@@ -672,7 +678,7 @@ private fun ProviderItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = provider.name,
+                    text = provider.displayName(),
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
