@@ -2,6 +2,7 @@ package me.rerere.rikkahub.service
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -36,6 +37,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.FLOATING_BALL_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
@@ -186,6 +190,18 @@ class FloatingBallService : Service(), KoinComponent {
             runCatching { context.startService(intent) }
                 .onFailure { Log.w(TAG, "setWorking failed", it) }
         }
+
+        /**
+         * True while the user is holding the ball down to talk.
+         *
+         * The ball's long-press opens the quick-chat panel and starts recording; recording ends the
+         * moment the finger leaves the ball. The panel owns the recorder (ASR is a Compose-side
+         * thing), so it observes this flag rather than the service poking it: both live in the same
+         * process, so a plain StateFlow is race-free, whereas an intent hand-off would not be — a
+         * quick release would otherwise land before the panel had even come up.
+         */
+        private val _voiceHold = MutableStateFlow(false)
+        val voiceHoldActive: StateFlow<Boolean> = _voiceHold.asStateFlow()
     }
 
     private val settingsStore: SettingsStore by inject()
@@ -233,6 +249,8 @@ class FloatingBallService : Service(), KoinComponent {
         // Only fire if the finger is still down and we have not turned this into a drag.
         if (ballView != null) {
             longPressFired = true
+            // Hold-to-talk: the panel records while the finger is down and stops when it lifts.
+            _voiceHold.value = true
             openQuickChat(voice = true)
         }
     }
@@ -448,6 +466,7 @@ class FloatingBallService : Service(), KoinComponent {
         working = false
         longPressFired = false
         hidden = false
+        _voiceHold.value = false
         loadedIconPath = null
         loadedIconStamp = 0L
         loadedIconBitmap = null
@@ -540,20 +559,18 @@ class FloatingBallService : Service(), KoinComponent {
         var startX = 0
         var startY = 0
         var dragging = false
-        var waking = false
+        var startedHidden = false
 
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     // Any interaction pushes the auto-tuck countdown back.
                     mainHandler.removeCallbacks(idleRunnable)
-                    if (hidden) {
-                        // A tucked-away ball only wakes on this touch; it must not also open the
-                        // panel or start a long-press.
-                        waking = true
-                        return@setOnTouchListener true
-                    }
-                    waking = false
+                    // A tucked-away ball is woken by the touch itself, but the touch is no longer
+                    // swallowed: it can be dragged out of the edge straight away. It only *opens
+                    // the panel* on the next tap, so the "tap once to wake" rule still holds.
+                    startedHidden = hidden
+                    if (hidden) setHidden(false, instant = true)
                     downRawX = event.rawX
                     downRawY = event.rawY
                     startX = params.x
@@ -566,7 +583,9 @@ class FloatingBallService : Service(), KoinComponent {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    if (waking) return@setOnTouchListener true
+                    // Once the hold-to-talk gesture has armed, keep the ball still: the finger is
+                    // talking, not dragging.
+                    if (longPressFired) return@setOnTouchListener true
                     val dx = event.rawX - downRawX
                     val dy = event.rawY - downRawY
                     if (!dragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
@@ -583,15 +602,17 @@ class FloatingBallService : Service(), KoinComponent {
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
-                    if (waking) {
-                        waking = false
-                        if (event.actionMasked == MotionEvent.ACTION_UP) setHidden(false)
-                        return@setOnTouchListener true
+                    if (longPressFired) {
+                        // Finger up: hold-to-talk ends and the recorder stops. Only now may the ball
+                        // fold away into the panel — it was kept visible so it could keep the touch.
+                        _voiceHold.value = false
+                        if (panelOpen) mainHandler.post { collapseBall() }
                     }
                     when {
                         dragging -> snapToEdge(wm, view, params)
-                        !longPressFired -> openQuickChat(voice = false)
+                        !longPressFired && !startedHidden -> openQuickChat(voice = false)
                     }
+                    startedHidden = false
                     dragging = false
                     scheduleIdle()
                     true
@@ -621,7 +642,17 @@ class FloatingBallService : Service(), KoinComponent {
 
     private fun openQuickChat(voice: Boolean) {
         try {
-            startActivity(QuickChatActivity.intent(this, voice, ballSide(), ballCenterY()))
+            // No stock window animation for the panel: it plays its own unfold out of the ball, and
+            // the system's launch transition fighting that is what made the panel stutter — and
+            // look half-animated — over the launcher. The intent also carries
+            // FLAG_ACTIVITY_NO_ANIMATION, and the activity overrides its own open/close transition
+            // to nothing, so opening/closing is entirely ours.
+            @Suppress("DEPRECATION")
+            val options = ActivityOptions.makeCustomAnimation(this, 0, 0)
+            startActivity(
+                QuickChatActivity.intent(this, voice, ballSide(), ballCenterY()),
+                options.toBundle(),
+            )
         } catch (t: Throwable) {
             Log.w(TAG, "openQuickChat failed", t)
         }
@@ -658,14 +689,14 @@ class FloatingBallService : Service(), KoinComponent {
         mainHandler.postDelayed(idleRunnable, seconds * 1000L)
     }
 
-    private fun setHidden(hide: Boolean) {
+    private fun setHidden(hide: Boolean, instant: Boolean = false) {
         if (hidden == hide) return
         hidden = hide
         if (hide) {
             mainHandler.removeCallbacks(idleRunnable)
             tuckIntoEdge()
         } else {
-            wakeUp()
+            wakeUp(instant)
             scheduleIdle()
         }
     }
@@ -683,8 +714,12 @@ class FloatingBallService : Service(), KoinComponent {
         animateTo(view, params, wm, targetX, hiddenAlpha())
     }
 
-    /** Brings a tucked-away ball back out to its remembered edge, at full opacity. */
-    private fun wakeUp() {
+    /**
+     * Brings a tucked-away ball back out to its remembered edge, at full opacity. [instant] skips
+     * the slide — used when the user grabs the ball: it must be under the finger at once, ready to
+     * be dragged, instead of still sliding in from the edge.
+     */
+    private fun wakeUp(instant: Boolean = false) {
         val view = ballView ?: return
         val params = ballParams ?: return
         val wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
@@ -698,7 +733,15 @@ class FloatingBallService : Service(), KoinComponent {
         params.y = params.y.coerceIn(margin, maxY)
         val restingX = readStringPreference(PREF_X)?.toIntOrNull()?.coerceIn(margin, maxX)
             ?: if (params.x + size / 2 >= screenWidth / 2) maxX else margin
-        animateTo(view, params, wm, restingX.toFloat(), 1f)
+        if (instant) {
+            motionAnimator?.cancel()
+            view.animate().cancel()
+            params.x = restingX
+            view.alpha = 1f
+            runCatching { wm.updateViewLayout(view, params) }
+        } else {
+            animateTo(view, params, wm, restingX.toFloat(), 1f)
+        }
         writeStringPreference(PREF_X, restingX.toString())
         writeStringPreference(PREF_Y, params.y.toString())
     }
@@ -736,6 +779,12 @@ class FloatingBallService : Service(), KoinComponent {
      */
     private fun collapseBall() {
         val view = ballView ?: return
+        if (panelOpen && voiceHoldActive.value) {
+            // The finger is still down for hold-to-talk. Hiding the ball now would rip the touch
+            // out from under the gesture (INVISIBLE cancels it) and end the recording early — so
+            // the ball stays put, under the user's finger, until the hold is released.
+            return
+        }
         if (panelOpen) {
             // The panel is unfolding out of the ball — the ball becomes it.
             view.animate().cancel()
