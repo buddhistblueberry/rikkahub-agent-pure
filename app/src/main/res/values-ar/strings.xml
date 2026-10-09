@@ -1142,7 +1142,7 @@
   <string name="assistant_page_local_tools_reliability_title">الموثوقية</string>
   <string name="assistant_page_local_tools_reliability_desc">السماح للمساعد بالتحقق من GitHub بحثًا عن إصدارات أحدث وبناء ملف ZIP لتقرير الأخطاء مع إخفاء البيانات الحساسة عند الطلب. يتضمن تقرير الأخطاء آخر بضعة آلاف من أسطر logcat (مع إخفاء الأسرار) وإصدار التطبيق + معلومات الجهاز — ويستبعد صراحةً محادثاتك ورموزك والمضيفين المحفوظين.</string>
   <string name="assistant_page_local_tools_sub_agents_title">الوكلاء الفرعيون</string>
-  <string name="assistant_page_local_tools_sub_agents_desc">السماح للمساعد بإرسال مهام فرعية مركّزة (بحث، عمل متعدد الخطوات) كعمليات تشغيل مستقلة للنموذج اللغوي في الخلفية. كل تشغيل يخضع للموافقة، ومحدود (افتراضيًا 3 متزامنة لكل مساعد، 16 عالميًا)، وتظل HARDLINE سارية بداخله.</string>
+  <string name="assistant_page_local_tools_sub_agents_desc">السماح للمساعد بإرسال مهام فرعية مركّزة (بحث، عمل متعدد الخطوات) كعمليات تشغيل مستقلة للنموذج اللغوي في الخلفية. كل تشغيل يخضع للموافقة، ومحدود (افتراضيًا 3 متزامنة لكل مساعد، وحدّ عام قابل للضبط (افتراضيًا 30))، وتظل HARDLINE سارية بداخله.</string>
   <string name="assistant_page_local_tools_cost_guards_title">حُرّاس التكلفة</string>
   <string name="assistant_page_local_tools_cost_guards_desc">السماح للمساعد بفحص إجمالي الرموز (Tokens) المستهلكة مقابل الحدود المرنة / الصارمة الخاصة بكل مساعد والتحكم الذاتي في السرعة. للقراءة فقط — سيتم توفير الإيقاف التلقائي للبث في تحديث لاحق.</string>
   <string name="setting_page_accessibility">إمكانية الوصول</string>
@@ -1498,6 +1498,10 @@
   <string name="setting_model_page_auto_compaction_keep_tool_calls">الاحتفاظ بأحدث استدعاءات الأدوات</string>
   <string name="setting_model_page_auto_compaction_keep_tool_calls_desc">يحافظ الضغط التلقائي على الإدخال والنتيجة الأصليين لهذه الاستدعاءات. اضبط القيمة على 0 لضغط السياق الحالي بالكامل.</string>
   <string name="setting_model_page_response_stream_retries">محاولات إعادة تدفق Response API</string>
+  <string name="setting_model_page_subagent_concurrency">الحد العام للوكلاء الفرعيين المتزامنين</string>
+  <string name="setting_model_page_subagent_concurrency_desc">أقصى عدد من الوكلاء الفرعيين الذين يمكن تشغيلهم في الوقت نفسه عبر كل المساعدين. لكل مساعد حدّه الخاص أيضاً. زيادته تسرّع الإرسال المتوازي، لكن الكثير جداً قد يلامس حدود مزوّد الخدمة.</string>
+  <string name="setting_model_page_subagent_concurrency_input">عدد الوكلاء المتزامنين</string>
+  <string name="setting_model_page_subagent_concurrency_hint">بين %1$d و %2$d.</string>
   <string name="setting_model_page_response_stream_retries_desc">عند إغلاق تدفق Response API قبل اكتماله، أعد محاولة الطلب بهذا العدد من المرات. اضبطه على 0 لتعطيل إعادة المحاولة التلقائية.</string>
   <string name="setting_model_page_response_stream_retries_input">الحد الأقصى لعدد المحاولات</string>
 
@@ -2101,4 +2105,6 @@
   <string name="setting_update_reminder_paused_until">متوقف مؤقتًا حتى %1$s</string>
   <string name="setting_update_reminder_resume_now">استئناف الآن</string>
   <string name="table">جدول</string>
+  <string name="chat_page_continuing">انقطع الاتصال — يتم متابعة الرد (%1$d/%2$d)</string>
+  <string name="chat_page_subagents_running">الوكلاء الفرعيون قيد التشغيل: %1$d · %2$s</string>
 </resources>

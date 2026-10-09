@@ -1331,7 +1331,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="assistant_page_local_tools_ssh_title">SSH</string>
   <string name="assistant_page_local_tools_storage_desc">读取内部和外部存储卷的总计/可用/已用空间。</string>
   <string name="assistant_page_local_tools_storage_title">存储信息</string>
-  <string name="assistant_page_local_tools_sub_agents_desc">让助手将专注的子任务（研究、多步骤工作）作为独立的大模型运行派发到后台。每次运行都需授权、有上限（每个助手默认并发 3 个，全局 16 个），且内部仍然适用 HARDLINE。</string>
+  <string name="assistant_page_local_tools_sub_agents_desc">让助手将专注的子任务（研究、多步骤工作）作为独立的大模型运行派发到后台。每次运行都需授权、有上限（每个助手默认并发 3 个，全局上限可配置（默认 30）），且内部仍然适用 HARDLINE。</string>
   <string name="assistant_page_local_tools_sub_agents_title">子智能体</string>
   <string name="assistant_page_local_tools_system_intents_desc">让助手为你预填系统应用，由你最终确认：日历事件、新建联系人、邮件编辑器、短信编辑器、WiFi 设置、地图。没有你在目标应用中的点击，不会保存或发送任何内容。</string>
   <string name="assistant_page_local_tools_system_intents_title">系统 Intent</string>
@@ -1936,6 +1936,10 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_model_page_auto_compaction_keep_tool_calls">保留最近的工具调用</string>
   <string name="setting_model_page_auto_compaction_keep_tool_calls_desc">自动压缩会保留这些工具调用的原始输入和输出。设为0时压缩整个当前上下文。</string>
   <string name="setting_model_page_response_stream_retries">Response API 流重试次数</string>
+  <string name="setting_model_page_subagent_concurrency">子 agent 全局并发上限</string>
+  <string name="setting_model_page_subagent_concurrency_desc">所有助手同一时刻最多在跑的子 agent 总数（每个助手另有自己的上限）。调高可让批量派发更快，但过高可能触发服务商限流。</string>
+  <string name="setting_model_page_subagent_concurrency_input">全局并发数</string>
+  <string name="setting_model_page_subagent_concurrency_hint">取值 %1$d 到 %2$d。</string>
   <string name="setting_model_page_response_stream_retries_desc">Response API 流在完成前意外关闭时，自动重试请求此次数。设为 0 可禁用自动重试。</string>
   <string name="setting_model_page_response_stream_retries_input">最大重试次数</string>
 
@@ -2614,4 +2618,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="quick_chat_mic_permission">语音输入需要麦克风权限</string>
   <string name="quick_chat_empty">打个招呼、问个问题，或点「看屏幕并处理」。</string>
 
+  <string name="chat_page_continuing">连接中断，正在续写回复（%1$d/%2$d）</string>
+  <string name="chat_page_subagents_running">子 agent %1$d 个运行中 · %2$s</string>
 </resources>

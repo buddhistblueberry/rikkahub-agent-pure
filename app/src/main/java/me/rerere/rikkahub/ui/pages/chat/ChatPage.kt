@@ -29,6 +29,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -81,6 +82,9 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.subagent.SubAgentRegistry
+import me.rerere.rikkahub.subagent.SubAgentRun
+import me.rerere.rikkahub.subagent.SubAgentStatus
 import me.rerere.rikkahub.utils.base64Decode
 import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
@@ -107,6 +111,15 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
+    // U4 — the sub-agent registry is not collected anywhere in the UI today, so a parent turn that
+    // dispatched background work had no live signal at all. Fold it into the status line the chat
+    // already shows instead of adding a second surface.
+    val subAgentRegistry: SubAgentRegistry = koinInject()
+    val subAgentRuns by subAgentRegistry.runs.collectAsStateWithLifecycle()
+    val subAgentStatus = subAgentStatusLine(subAgentRuns)
+    val mergedStatus = listOfNotNull(processingStatus, subAgentStatus)
+        .joinToString(separator = "  ·  ")
+        .ifBlank { null }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
@@ -203,7 +216,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
-                    processingStatus = processingStatus,
+                    processingStatus = mergedStatus,
                     setting = setting,
                     conversation = conversation,
                     drawerState = drawerState,
@@ -236,7 +249,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
                     onStartVoiceMode = startVoiceMode,
                     inputState = inputState,
                     loadingJob = loadingJob,
-                    processingStatus = processingStatus,
+                    processingStatus = mergedStatus,
                     setting = setting,
                     conversation = conversation,
                     drawerState = drawerState,
@@ -256,6 +269,41 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, nodeId: Uuid? = null) {
             }
         }
     }
+}
+
+/**
+ * U4 — a one-line live summary of the sub-agent runs in flight, folded into the chat's existing
+ * status line. Shows how many are running and how long the oldest has been going, and re-composes
+ * once a second so the elapsed time keeps moving — the moving clock is the "still alive" signal
+ * that was missing while a parent turn waited on background work. Returns null when none are
+ * active, so the status line is exactly as before on an install that never dispatches.
+ */
+@Composable
+private fun subAgentStatusLine(runs: Map<String, SubAgentRun>): String? {
+    val active = runs.values.filter {
+        it.status == SubAgentStatus.RUNNING || it.status == SubAgentStatus.PENDING
+    }
+    if (active.isEmpty()) return null
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(active.size) {
+        while (true) {
+            nowMs = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+    val oldestStartMs = active.minOf { it.startedAtMs }
+    val elapsedSeconds = ((nowMs - oldestStartMs) / 1_000L).coerceAtLeast(0L)
+    return stringResource(
+        R.string.chat_page_subagents_running,
+        active.size,
+        formatElapsed(elapsedSeconds),
+    )
+}
+
+private fun formatElapsed(seconds: Long): String {
+    val minutes = seconds / 60
+    val remaining = seconds % 60
+    return "%d:%02d".format(minutes, remaining)
 }
 
 @Composable

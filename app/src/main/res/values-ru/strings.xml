@@ -1202,7 +1202,7 @@
   <string name="assistant_page_local_tools_ssh_title">SSH</string>
   <string name="assistant_page_local_tools_storage_desc">Чтение общего/свободного/использованного хранилища на внутренних и внешних томах.</string>
   <string name="assistant_page_local_tools_storage_title">Сведения о хранилище</string>
-  <string name="assistant_page_local_tools_sub_agents_desc">Позволяет ассистенту отправлять сфокусированные подзадачи (исследование, многошаговая работа) как независимые запуски LLM в фоне. Каждый запуск требует одобрения, ограничен (по умолчанию 3 одновременно на ассистента, 16 глобально), и HARDLINE всё ещё применяется внутри.</string>
+  <string name="assistant_page_local_tools_sub_agents_desc">Позволяет ассистенту отправлять сфокусированные подзадачи (исследование, многошаговая работа) как независимые запуски LLM в фоне. Каждый запуск требует одобрения, ограничен (по умолчанию 3 одновременно на ассистента, а глобальный лимит настраивается (по умолчанию 30)), и HARDLINE всё ещё применяется внутри.</string>
   <string name="assistant_page_local_tools_sub_agents_title">Субагенты</string>
   <string name="assistant_page_local_tools_system_intents_desc">Позволяет ассистенту предзаполнять системные приложения для финального оформления вами: событие календаря, новый контакт, составитель письма, составитель SMS, настройки WiFi, Карты. Ничего не сохраняется и не отправляется без вашего нажатия в приложении назначения.</string>
   <string name="assistant_page_local_tools_system_intents_title">Системные намерения</string>
@@ -1800,6 +1800,10 @@
   <string name="setting_model_page_auto_compaction_keep_tool_calls">Сохранять последние вызовы инструментов</string>
   <string name="setting_model_page_auto_compaction_keep_tool_calls_desc">Автоматическое сжатие сохраняет исходные входные данные и результаты этих вызовов. Установите 0, чтобы сжать весь текущий контекст.</string>
   <string name="setting_model_page_response_stream_retries">Повторные попытки потока Response API</string>
+  <string name="setting_model_page_subagent_concurrency">Глобальный лимит параллельных субагентов</string>
+  <string name="setting_model_page_subagent_concurrency_desc">Максимум субагентов, работающих одновременно у всех ассистентов. У каждого ассистента есть и свой лимит. Больше — быстрее параллельные задачи, но слишком много может упереться в лимиты провайдера.</string>
+  <string name="setting_model_page_subagent_concurrency_input">Параллельных субагентов</string>
+  <string name="setting_model_page_subagent_concurrency_hint">От %1$d до %2$d.</string>
   <string name="setting_model_page_response_stream_retries_desc">Если поток Response API закрывается до завершения, повторить запрос указанное число раз. Установите 0, чтобы отключить автоматические повторы.</string>
   <string name="setting_model_page_response_stream_retries_input">Максимальное число повторов</string>
 
@@ -1916,4 +1920,6 @@
   <string name="workspace_detail_compatibility_mode">Режим совместимости</string>
   <string name="workspace_detail_compatibility_mode_desc">Попробуйте включить это, если терминал не запускается. Это может снизить производительность. Применяется к новым вкладкам терминала и последующим командам.</string>
   <string name="workspace_detail_settings_save_failed">Не удалось сохранить настройки</string>
+  <string name="chat_page_continuing">Соединение потеряно — продолжаю ответ (%1$d/%2$d)</string>
+  <string name="chat_page_subagents_running">Субагентов выполняется: %1$d · %2$s</string>
 </resources>
