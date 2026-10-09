@@ -34,6 +34,11 @@ internal class ChatCompletionsStreamDecoder(
      * tool calls for tools that were never advertised.
      */
     tools: List<Tool> = emptyList(),
+    /**
+     * Whether to recover tool calls written as reply text. When false the parser is never fed,
+     * so the decoder behaves exactly as it did before this feature existed.
+     */
+    private val parseTextToolCalls: Boolean = false,
 ) : StreamChunkDecoder {
     private val streamState = ChatCompletionsStreamState()
     private val toolIdsByIndex = mutableMapOf<Int, String>()
@@ -47,7 +52,7 @@ internal class ChatCompletionsStreamDecoder(
      * Only used for content that arrives as literal text. A provider that emits proper
      * `tool_calls` deltas never routes content here, so this stays inert on the normal path.
      */
-    private val textToolParser = TextToolCallParser(tools)
+    private val textToolParser = TextToolCallParser(tools).takeIf { parseTextToolCalls }
 
     override fun accept(event: SseEvent): DecodeResult {
         if (finished) return DecodeResult(completed = true)
@@ -103,7 +108,7 @@ internal class ChatCompletionsStreamDecoder(
         finished = true
         // Flush any trailing text the text-tool parser was still holding (unterminated tag,
         // or a partial opening tag at end of stream).
-        val trailing = textToolParser.flushPending()
+        val trailing = textToolParser?.flushPending()
             .takeIf { parts -> parts.any { it is UIMessagePart.Text && it.text.isNotBlank() } }
             ?.let { parts ->
                 streamState.append(
@@ -114,7 +119,10 @@ internal class ChatCompletionsStreamDecoder(
             .orEmpty()
         // If the model wrote its tool call as text, report "tool_calls" so the agent loop
         // knows to execute it instead of treating the turn as finished prose.
-        val reason = finishReason ?: textToolParser.consumePendingFinishReason()
+        // Match the AICoreProvider precedence: a recovered text tool call must win over the
+        // raw finish_reason. Gateways commonly send "stop" on the final chunk, which would
+        // otherwise make a recovered call look like finished prose.
+        val reason = textToolParser?.consumePendingFinishReason() ?: finishReason
         return trailing + streamState.finish(reason, responseId, responseModel)
     }
 
@@ -147,7 +155,7 @@ internal class ChatCompletionsStreamDecoder(
                 if (content.isNotEmpty()) {
                     // The model may have written its tool call as plain text instead of
                     // sending a structured delta; recover it rather than showing the markup.
-                    addAll(textToolParser.feed(content))
+                    textToolParser?.feed(content)?.let(::addAll)
                 }
                 images.forEach { image ->
                     val imageObject = image.jsonObjectOrNull ?: return@forEach

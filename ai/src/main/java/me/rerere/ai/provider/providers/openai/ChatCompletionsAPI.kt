@@ -174,7 +174,8 @@ class ChatCompletionsAPI(
         // Hand the advertised tools to the decoder: it uses them both to tell a real tool
         // call apart from prose and to reject names we never offered.
         val decoder = ChatCompletionsStreamDecoder(
-            if (params.model.abilities.contains(ModelAbility.TOOL)) params.tools else emptyList(),
+            tools = if (params.model.abilities.contains(ModelAbility.TOOL)) params.tools else emptyList(),
+            parseTextToolCalls = params.textToolCallParsing,
         )
 
         fun sendChunks(chunks: Iterable<StreamChunk>) {

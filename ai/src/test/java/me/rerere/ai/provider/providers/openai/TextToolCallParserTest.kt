@@ -1,9 +1,13 @@
 package me.rerere.ai.provider.providers.openai
 
 import me.rerere.ai.core.InputSchema
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.util.json
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.Tool
+import me.rerere.ai.provider.stream.SseEvent
+import me.rerere.ai.ui.StreamChunk
 import me.rerere.ai.ui.UIMessagePart
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -26,6 +30,7 @@ class TextToolCallParserTest {
                 required = listOf("task"),
             )
         },
+        execute = { emptyList() },
     )
 
     private val agent = Tool(
@@ -37,6 +42,7 @@ class TextToolCallParserTest {
                 required = listOf("goal"),
             )
         },
+        execute = { emptyList() },
     )
 
     /**
@@ -58,7 +64,10 @@ class TextToolCallParserTest {
         )
         val tool = out.filterIsInstance<UIMessagePart.Tool>().single()
         assertEquals("agent-core", tool.toolName)
-        assertEquals("battery", Regex("\"task\"\\s*:\\s*\"battery\"").find(tool.input)?.value)
+        // Parse the input rather than regex-slice it: Regex.find() yields the whole match,
+        // so the old assertion compared '"task":"battery"' against 'battery' and could never pass.
+        val input = json.parseToJsonElement(tool.input).jsonObject
+        assertEquals("battery", input["task"]?.jsonPrimitive?.content)
         assertEquals("tool_calls", parser.consumePendingFinishReason())
         assertTrue(parser.detected)
     }
@@ -150,5 +159,37 @@ class TextToolCallParserTest {
         val out = parts(parser, "<tool_call>not json at all</tool_call>")
         assertTrue(out.none { it is UIMessagePart.Tool })
         assertTrue(out.filterIsInstance<UIMessagePart.Text>().any { it.text.contains("not json") })
+    }
+
+    /**
+     * Scope guard: with the feature disabled (the default) a tag sitting in ordinary prose
+     * must stay inert text — this is what stops a model *explaining* the format, or a tag
+     * arriving inside fetched web content, from executing a real tool.
+     */
+    @Test
+    fun `decoder without the flag never recovers a text tool call`() {
+        val decoder = ChatCompletionsStreamDecoder(
+            tools = listOf(echo),
+            parseTextToolCalls = false,
+        )
+        val payload = """
+            {"id":"1","choices":[{"delta":{"content":"Here is the format: <tool_call>{\"name\":\"agent-core\",\"input\":{\"task\":\"x\"}}</tool_call>"},"index":0}]}
+        """.trimIndent()
+        val chunks = decoder.accept(SseEvent(null, null, payload)).chunks
+        val recovered = chunks.filterIsInstance<StreamChunk.ToolCallStart>()
+        assertTrue(recovered.isEmpty())
+    }
+
+    @Test
+    fun `decoder with the flag recovers a text tool call`() {
+        val decoder = ChatCompletionsStreamDecoder(
+            tools = listOf(echo),
+            parseTextToolCalls = true,
+        )
+        val payload = """
+            {"id":"1","choices":[{"delta":{"content":"<tool_call>{\"name\":\"agent-core\",\"input\":{\"task\":\"x\"}}</tool_call>"},"index":0}]}
+        """.trimIndent()
+        val chunks = decoder.accept(SseEvent(null, null, payload)).chunks
+        assertTrue(chunks.filterIsInstance<StreamChunk.ToolCallStart>().isNotEmpty())
     }
 }

@@ -81,6 +81,13 @@ data class TextGenerationParams(
      */
     val maxStreamRetries: Int = 0,
     val tools: List<Tool> = emptyList(),
+    /**
+     * Recover a tool call the model wrote as literal reply text (`<tool_call>{…}</tool_call>`)
+     * instead of as a structured call. Off by default at the call site: a tag can appear in
+     * ordinary prose or inside fetched web content, so this is opt-in per request rather than
+     * automatic for every OpenAI-compatible provider.
+     */
+    val textToolCallParsing: Boolean = false,
     val reasoningLevel: ReasoningLevel = ReasoningLevel.OFF,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
