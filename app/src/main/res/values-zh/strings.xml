@@ -847,6 +847,19 @@
   <string name="setting_page_assistant">助手</string>
   <string name="setting_page_assistant_desc">设置个性化助手 (智能体)</string>
   <string name="setting_page_built_in_tools">内置工具</string>
+  <!-- 从硬编码中文 UI 文案提取（第一批） -->
+  <string name="setting_mcp_page_needs_oauth_authorization">需要 OAuth 授权</string>
+  <string name="setting_mcp_page_oauth_authorize">OAuth 授权</string>
+  <string name="setting_mcp_page_authorizing_browser">正在授权，请在浏览器中完成…</string>
+  <string name="setting_mcp_page_cancel_authorization">取消授权</string>
+  <string name="workspace_file_editor_read_failed">读取文件失败</string>
+  <string name="workspace_file_editor_source">源码</string>
+  <string name="workspace_file_editor_preview">预览</string>
+  <string name="workspace_file_editor_saved">已保存</string>
+  <string name="workspace_file_editor_save_failed">保存失败</string>
+  <string name="setting_asr_configure_keep_dialect">保留方言</string>
+  <string name="setting_asr_configure_keep_dialect_desc">仅 qwen-audio-3.1-asr-flash-streaming 支持：开启后保留方言表达，否则转写为普通话。</string>
+  <string name="tts_setting_provider_volcengine">火山引擎</string>
   <string name="setting_provider_page_pricing">价格</string>
   <string name="setting_provider_page_pricing_desc">每百万 tokens 的美元价格，用于账本计费。缓存读/写留空时回退到输入价。</string>
   <string name="setting_provider_page_pricing_input">输入（每百万）</string>

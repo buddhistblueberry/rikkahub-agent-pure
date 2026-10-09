@@ -25,11 +25,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dokar.sonner.ToastType
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
@@ -67,6 +69,15 @@ fun WorkspaceFileEditorPage(
     var loadError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
 
+    // Hoisted out of composition: these are read from coroutine callbacks
+    // (LaunchedEffect / scope.launch), which are not @Composable scopes, so
+    // stringResource() cannot be called at the point of use.
+    val readFailedMessage = stringResource(R.string.workspace_file_editor_read_failed)
+    val savedMessage = stringResource(R.string.workspace_file_editor_saved)
+    val saveFailedMessage = stringResource(R.string.workspace_file_editor_save_failed)
+    val sourceLabel = stringResource(R.string.workspace_file_editor_source)
+    val previewLabel = stringResource(R.string.workspace_file_editor_preview)
+
     LaunchedEffect(id, area, path) {
         loading = true
         loadError = null
@@ -76,7 +87,7 @@ fun WorkspaceFileEditorPage(
             textState.setTextAndPlaceCursorAtEnd(content)
             loading = false
         }.onFailure {
-            loadError = it.message ?: "读取文件失败"
+            loadError = it.message ?: readFailedMessage
             loading = false
         }
     }
@@ -95,7 +106,7 @@ fun WorkspaceFileEditorPage(
                 actions = {
                     if (supportsPreview && !loading && loadError == null) {
                         TextButton(onClick = { showPreview = !showPreview }) {
-                            Text(if (showPreview) "源码" else "预览")
+                            Text(if (showPreview) sourceLabel else previewLabel)
                         }
                     }
                     if (editable && !loading && loadError == null) {
@@ -112,9 +123,9 @@ fun WorkspaceFileEditorPage(
                                             overwrite = true,
                                         )
                                     }.onSuccess {
-                                        toaster.show("已保存", type = ToastType.Success)
+                                        toaster.show(savedMessage, type = ToastType.Success)
                                     }.onFailure {
-                                        toaster.show(it.message ?: "保存失败", type = ToastType.Error)
+                                        toaster.show(it.message ?: saveFailedMessage, type = ToastType.Error)
                                     }
                                     saving = false
                                 }

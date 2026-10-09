@@ -884,6 +884,19 @@
   <string name="setting_page_assistant">Assistant</string>
   <string name="setting_page_assistant_desc">Set up personalized assistants (agents)</string>
   <string name="setting_page_built_in_tools">Built-in Tools</string>
+  <!-- Extracted from hardcoded Chinese UI literals (batch 1) -->
+  <string name="setting_mcp_page_needs_oauth_authorization">Needs OAuth authorization</string>
+  <string name="setting_mcp_page_oauth_authorize">Authorize with OAuth</string>
+  <string name="setting_mcp_page_authorizing_browser">Authorizing, please finish it in your browser…</string>
+  <string name="setting_mcp_page_cancel_authorization">Cancel authorization</string>
+  <string name="workspace_file_editor_read_failed">Failed to read file</string>
+  <string name="workspace_file_editor_source">Source</string>
+  <string name="workspace_file_editor_preview">Preview</string>
+  <string name="workspace_file_editor_saved">Saved</string>
+  <string name="workspace_file_editor_save_failed">Failed to save</string>
+  <string name="setting_asr_configure_keep_dialect">Keep dialect</string>
+  <string name="setting_asr_configure_keep_dialect_desc">Only qwen-audio-3.1-asr-flash-streaming supports this. When enabled, dialectal expression is preserved; otherwise speech is transcribed as Mandarin.</string>
+  <string name="tts_setting_provider_volcengine">Volcengine</string>
   <string name="setting_provider_page_pricing">价格</string>
   <string name="setting_provider_page_pricing_desc">每百万 tokens 的美元价格，用于账本计费。缓存读/写留空时回退到输入价。</string>
   <string name="setting_provider_page_pricing_input">输入（每百万）</string>

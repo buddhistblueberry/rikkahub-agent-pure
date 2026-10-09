@@ -617,8 +617,8 @@ private fun DashScopeStreamingASRConfiguration(
     }
 
     FormItem(
-        label = { Text("保留方言") },
-        description = { Text("仅 qwen-audio-3.1-asr-flash-streaming 支持：开启后保留方言表达，否则转写为普通话。") }
+        label = { Text(stringResource(R.string.setting_asr_configure_keep_dialect)) },
+        description = { Text(stringResource(R.string.setting_asr_configure_keep_dialect_desc)) }
     ) {
         androidx.compose.material3.Switch(
             checked = setting.keepDialect,

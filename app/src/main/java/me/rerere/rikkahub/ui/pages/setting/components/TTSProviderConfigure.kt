@@ -58,7 +58,7 @@ fun TTSProviderConfigure(
                     is TTSProviderSetting.Step -> "Step"
                     is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                     is TTSProviderSetting.FishAudio -> "Fish Audio"
-                    is TTSProviderSetting.Volcengine -> "火山引擎"
+                    is TTSProviderSetting.Volcengine -> stringResource(R.string.tts_setting_provider_volcengine)
                 },
                 options = providers,
                 readOnly = true,
@@ -75,7 +75,7 @@ fun TTSProviderConfigure(
                         TTSProviderSetting.MiMo::class -> "MiMo"
                         TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
                         TTSProviderSetting.FishAudio::class -> "Fish Audio"
-                        TTSProviderSetting.Volcengine::class -> "火山引擎"
+                        TTSProviderSetting.Volcengine::class -> stringResource(R.string.tts_setting_provider_volcengine)
                         TTSProviderSetting.Step::class -> "Step"
                         else -> providerClass.simpleName ?: "Unknown"
                     }

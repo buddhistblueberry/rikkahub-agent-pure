@@ -375,7 +375,7 @@ private fun TTSProviderItem(
                             is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                             is TTSProviderSetting.Step -> "Step"
                             is TTSProviderSetting.FishAudio -> "Fish Audio"
-                            is TTSProviderSetting.Volcengine -> "火山引擎"
+                            is TTSProviderSetting.Volcengine -> stringResource(R.string.tts_setting_provider_volcengine)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
