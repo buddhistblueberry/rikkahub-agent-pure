@@ -2,8 +2,11 @@ package me.rerere.rikkahub.subagent
 
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -31,6 +34,15 @@ import me.rerere.rikkahub.service.ChatService
 import kotlin.uuid.Uuid
 
 private const val TAG = "SubAgentEngine"
+
+/**
+ * How long [SubAgentEngine.notifyParentIfBackground] waits for the parent conversation to be idle
+ * before it posts the completion notice anyway. Was 5 minutes, which made a background sub-agent
+ * that finished while the user was mid-turn look like it had hung — the result is only useful once
+ * the user sees it, and a busy parent is the common case. A minute is long enough for the usual
+ * generation gap and short enough that the notice still feels attached to the work.
+ */
+private const val PARENT_NOTIFY_IDLE_WAIT_MS = 60_000L
 
 /**
  * Turn a wait-for-completion outcome into a stop decision, stopping the still-running
@@ -78,9 +90,12 @@ internal suspend fun finishSubAgentWait(completed: Boolean, stop: suspend () -> 
  *
  * Concurrency caps:
  *  - Per-assistant cap from [me.rerere.rikkahub.data.model.Assistant.maxConcurrentSubAgents]
- *  - Global cap from [SubAgentDefaults.GLOBAL_CONCURRENCY_CAP]
- *  - Both enforced at dispatch entry — over-cap requests fail fast (background) or block
- *    up to 30s waiting for a slot before failing (foreground, per spec).
+ *  - Global cap from `Settings.subAgentGlobalConcurrencyCap` (default
+ *    [SubAgentDefaults.GLOBAL_CONCURRENCY_CAP])
+ *  - Both enforced at dispatch entry as a BOUNDED WAIT: an over-cap dispatch queues for a free
+ *    slot for up to [SubAgentDefaults.SLOT_WAIT_TIMEOUT_MS] and only fails if the wait expires.
+ *    Before this, the same check failed fast, which threw away most runs of a parallel burst —
+ *    exactly the workload the feature exists for.
  */
 class SubAgentEngine(
     private val registry: SubAgentRegistry,
@@ -135,6 +150,14 @@ class SubAgentEngine(
     private val ledgerIds = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /**
+     * Serialises the "is there a free concurrency slot?" check and the [SubAgentRegistry.addPending]
+     * that claims it, so two dispatches waking at the same instant cannot both see the last slot as
+     * free. Held only for those few non-suspending map operations — the actual waiting happens
+     * outside it, so a queued dispatch never blocks the reserve attempts of the others.
+     */
+    private val slotMutex = Mutex()
+
+    /**
      * P2-15 — what the budget gate learned about this dispatch's orchestration, whether or not it
      * refused. [refusal] is the envelope to raise (null = allowed); [remaining] is how many
      * orchestration tokens were still unspent when this dispatch was admitted (null = no ceiling,
@@ -187,20 +210,12 @@ class SubAgentEngine(
             return@withContext refusal
         }
 
-        // Concurrency cap. Global first (cheaper), then per-assistant.
-        if (registry.globalActiveCount() >= SubAgentDefaults.GLOBAL_CONCURRENCY_CAP) {
-            return@withContext DispatchResult.Reject(
-                "global_cap_reached",
-                "max ${SubAgentDefaults.GLOBAL_CONCURRENCY_CAP} concurrent sub-agents across all assistants"
-            )
-        }
+        // Concurrency cap, enforced as a BOUNDED WAIT rather than a fail-fast. A parallel burst
+        // (the whole point of the feature) used to lose every run past the cap; now each dispatch
+        // queues for a free slot and only gives up when the wait expires. Global is read from
+        // settings (falling back to the default) and checked first as the coarser limit.
+        val globalCap = globalConcurrencyCap()
         val perAssistantCap = currentAssistantCap(parentAssistantId)
-        if (registry.activeCountForAssistant(parentAssistantId) >= perAssistantCap) {
-            return@withContext DispatchResult.Reject(
-                "assistant_cap_reached",
-                "this assistant's max_concurrent_sub_agents cap of $perAssistantCap is reached"
-            )
-        }
 
         val runId = Uuid.random().toString()
         val now = System.currentTimeMillis()
@@ -219,7 +234,38 @@ class SubAgentEngine(
             status = SubAgentStatus.PENDING,
             startedAtMs = now,
         )
-        registry.addPending(initialRun)
+
+        // PENDING holds a slot too (see SubAgentRegistry.activeCount*), so claiming the slot IS the
+        // addPending — done atomically with the capacity check under [slotMutex] so two dispatches
+        // waking together cannot both take the last slot. Waiting happens outside the lock.
+        val waitDeadlineMs = now + SubAgentDefaults.SLOT_WAIT_TIMEOUT_MS
+        var slotRefusal: String? = null
+        while (true) {
+            val reserved = slotMutex.withLock {
+                val hasGlobalSlot = registry.globalActiveCount() < globalCap
+                val hasAssistantSlot =
+                    registry.activeCountForAssistant(parentAssistantId) < perAssistantCap
+                if (hasGlobalSlot && hasAssistantSlot) {
+                    registry.addPending(initialRun)
+                    true
+                } else {
+                    false
+                }
+            }
+            if (reserved) break
+            val remainingMs = waitDeadlineMs - System.currentTimeMillis()
+            if (remainingMs <= 0L) {
+                slotRefusal = "waited ${SubAgentDefaults.SLOT_WAIT_TIMEOUT_MS / 1000}s for a free " +
+                    "sub-agent slot; the global cap ($globalCap) and this assistant's " +
+                    "max_concurrent_sub_agents cap ($perAssistantCap) are still reached — " +
+                    "retry once a running sub-agent finishes"
+                break
+            }
+            delay(minOf(SubAgentDefaults.SLOT_RETRY_INTERVAL_MS, remainingMs))
+        }
+        if (slotRefusal != null) {
+            return@withContext DispatchResult.Reject("concurrency_cap_reached", slotRefusal)
+        }
 
         // Phase 24 — open the cross-pillar ledger row. domain_id is the sub-agent run id.
         // The row starts in `queued` (the execution coroutine hasn't been launched yet);
@@ -303,6 +349,21 @@ class SubAgentEngine(
             SubAgentDefaults.MAX_PER_ASSISTANT_CAP,
         )
     }
+
+    /**
+     * The global (all-assistants) concurrency ceiling, read live from
+     * `Settings.subAgentGlobalConcurrencyCap`. Best-effort like every other settings read on the
+     * dispatch path: a settings hiccup degrades to the compiled default rather than blocking a
+     * dispatch, and the value is clamped so a hand-edited preference cannot park it outside the
+     * supported range.
+     */
+    private suspend fun globalConcurrencyCap(): Int =
+        runCatching { settingsStore.settingsFlow.first().subAgentGlobalConcurrencyCap }
+            .getOrDefault(SubAgentDefaults.GLOBAL_CONCURRENCY_CAP)
+            .coerceIn(
+                SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
+                SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
+            )
 
     /**
      * P2-13 — refuse the dispatch when this conversation has already spent its orchestration
@@ -677,9 +738,9 @@ class SubAgentEngine(
      *  - parentChatId / runs missing: defensive.
      *
      * Cancellation hygiene: ChatService.sendMessage cancels any in-flight generation in the
-     * target conversation. To avoid stomping on a turn the user is engaged with, we wait up
-     * to 5 minutes for the parent to be idle before posting. After 5 minutes we post anyway
-     * — better to interrupt than to silently lose the completion.
+     * target conversation. To avoid stomping on a turn the user is engaged with, we wait
+     * up to [PARENT_NOTIFY_IDLE_WAIT_MS] for the parent to be idle before posting. After that we post
+     * anyway — better to interrupt than to silently lose the completion.
      */
     private suspend fun notifyParentIfBackground(parentChatId: String?, run: SubAgentRun?) {
         if (parentChatId == null || run == null || !run.runInBackground) return
@@ -707,7 +768,7 @@ class SubAgentEngine(
         }.trimEnd()
 
         runCatching {
-            withTimeoutOrNull(5 * 60_000L) {
+            withTimeoutOrNull(PARENT_NOTIFY_IDLE_WAIT_MS) {
                 chatService.getGenerationJobStateFlow(parentUuid).first { it == null }
                 Unit
             }

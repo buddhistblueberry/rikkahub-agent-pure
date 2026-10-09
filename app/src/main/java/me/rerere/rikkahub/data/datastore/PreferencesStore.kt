@@ -56,6 +56,7 @@ import me.rerere.rikkahub.data.model.PromptInjection
 import me.rerere.rikkahub.data.model.QuickMessage
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.sync.s3.S3Config
+import me.rerere.rikkahub.subagent.SubAgentDefaults
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.utils.JsonInstant
@@ -220,6 +221,12 @@ class SettingsStore(
         // SettingsPersistenceCoverageTest 守住这条不变量。
         val SUB_AGENT_ARCHIVE_FOLDERS = stringPreferencesKey("sub_agent_archive_folders")
         val AUTO_ENABLED_DEFAULT_SKILLS = stringPreferencesKey("auto_enabled_default_skills")
+        /**
+         * Global (all-assistants) ceiling on concurrently running sub-agents. Stored as its own
+         * top-level preference, so it needs the same three-place wiring as every other Settings
+         * field: this key, the write in [persistSettings], and the read when [Settings] is rebuilt.
+         */
+        val SUB_AGENT_GLOBAL_CONCURRENCY_CAP = intPreferencesKey("sub_agent_global_concurrency_cap")
 
         // 搜索
         val SEARCH_SERVICES = stringPreferencesKey("search_services")
@@ -337,6 +344,11 @@ class SettingsStore(
                     JsonInstant.encodeToString(settings.subAgentArchiveFolders)
                 preferences[AUTO_ENABLED_DEFAULT_SKILLS] =
                     JsonInstant.encodeToString(settings.autoEnabledDefaultSkills)
+                preferences[SUB_AGENT_GLOBAL_CONCURRENCY_CAP] =
+                    settings.subAgentGlobalConcurrencyCap.coerceIn(
+                        SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
+                        SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
+                    )
 
                 preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settings.searchServices)
                 preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settings.searchCommonOptions)
@@ -475,7 +487,12 @@ class SettingsStore(
                         emptySet()
                     }
                 } ?: emptySet(),
-                dynamicColor = preferences[DYNAMIC_COLOR] != false,
+                subAgentGlobalConcurrencyCap =
+                    (preferences[SUB_AGENT_GLOBAL_CONCURRENCY_CAP]
+                        ?: SubAgentDefaults.GLOBAL_CONCURRENCY_CAP).coerceIn(
+                        SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
+                        SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
+                    ),
                 themeId = preferences[THEME_ID] ?: PresetThemes[0].id,
                 customThemes = preferences[CUSTOM_THEMES]?.let { raw ->
                     runCatching { JsonInstant.decodeFromString<List<CustomTheme>>(raw) }.getOrElse {
@@ -952,6 +969,14 @@ data class Settings(
      * `AppDatabase` identity hash moves (see `ImportedDatabaseReconciler`).
      */
     val subAgentArchiveFolders: Map<String, String> = emptyMap(),
+    /**
+     * Global (all-assistants) ceiling on concurrently running sub-agents, on top of each
+     * assistant's own [Assistant.maxConcurrentSubAgents]. Lives here rather than on the assistant
+     * because it is a device-wide resource limit (provider rate limits, memory, battery), not a
+     * property of any one assistant. Clamped to
+     * [SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP]..[SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP].
+     */
+    val subAgentGlobalConcurrencyCap: Int = SubAgentDefaults.GLOBAL_CONCURRENCY_CAP,
     /**
      * Names of bundled default-on skills (see [DEFAULT_AUTO_ENABLED_SKILLS]) that have already
      * been seeded into the default assistants' enabledSkills exactly once. Mirrors

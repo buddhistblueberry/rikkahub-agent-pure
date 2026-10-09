@@ -1228,7 +1228,7 @@
   <string name="assistant_page_local_tools_ssh_title">SSH</string>
   <string name="assistant_page_local_tools_storage_desc">讀取內部和外部儲存空間的總計/可用/已用容量。</string>
   <string name="assistant_page_local_tools_storage_title">儲存空間資訊</string>
-  <string name="assistant_page_local_tools_sub_agents_desc">讓助理將專注的子任務（研究、多步驟工作）作為獨立的大型語言模型執行派發到背景。每次執行都需授權、有上限（每個助理預設並行 3 個，全域 16 個），且內部仍然適用 HARDLINE。</string>
+  <string name="assistant_page_local_tools_sub_agents_desc">讓助理將專注的子任務（研究、多步驟工作）作為獨立的大型語言模型執行派發到背景。每次執行都需授權、有上限（每個助理預設並行 3 個，全域上限可設定（預設 30）），且內部仍然適用 HARDLINE。</string>
   <string name="assistant_page_local_tools_sub_agents_title">子代理</string>
   <string name="assistant_page_local_tools_system_intents_desc">讓助理為你預先填寫系統應用程式，由你最終確認：日曆活動、新增聯絡人、電子郵件編輯器、簡訊編輯器、WiFi 設定、地圖。沒有你在目標應用程式中的點選，不會儲存或傳送任何內容。</string>
   <string name="assistant_page_local_tools_system_intents_title">系統 Intent</string>
@@ -1826,6 +1826,10 @@
   <string name="setting_model_page_auto_compaction_keep_tool_calls">保留最近的工具呼叫</string>
   <string name="setting_model_page_auto_compaction_keep_tool_calls_desc">自動壓縮會保留這些工具呼叫的原始輸入和輸出。設為 0 時壓縮整個目前上下文。</string>
   <string name="setting_model_page_response_stream_retries">Response API 串流重試次數</string>
+  <string name="setting_model_page_subagent_concurrency">子 agent 全域併發上限</string>
+  <string name="setting_model_page_subagent_concurrency_desc">所有助理同一時刻最多在跑的子 agent 總數（每個助理另有自己的上限）。調高可讓批次派發更快，但過高可能觸發服務商限流。</string>
+  <string name="setting_model_page_subagent_concurrency_input">全域併發數</string>
+  <string name="setting_model_page_subagent_concurrency_hint">取值 %1$d 到 %2$d。</string>
   <string name="setting_model_page_response_stream_retries_desc">Response API 串流在完成前意外關閉時，自動重試請求此次數。設為 0 可停用自動重試。</string>
   <string name="setting_model_page_response_stream_retries_input">最大重試次數</string>
 
@@ -2341,4 +2345,6 @@
   <string name="setting_ssh_page_error_port_invalid">連接埠需在 1-65535 之間</string>
   <string name="setting_ssh_page_error_user_blank">請輸入使用者</string>
   <string name="setting_ssh_page_error_credential_missing">請填寫密碼或私鑰</string>
+  <string name="chat_page_continuing">連線中斷，正在續寫回覆（%1$d/%2$d）</string>
+  <string name="chat_page_subagents_running">子 agent %1$d 個執行中 · %2$s</string>
 </resources>

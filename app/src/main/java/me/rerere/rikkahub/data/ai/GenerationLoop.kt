@@ -82,6 +82,22 @@ private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 private const val GENERATION_STREAM_RETRY_INITIAL_DELAY_MS = 750L
 private const val GENERATION_STREAM_RETRY_MAX_DELAY_MS = 4_000L
 
+/**
+ * U3 — how many times a mid-stream break is patched by asking the model to continue from the text
+ * it had already produced, before falling back to restarting the whole reply.
+ */
+private const val MAX_STREAM_CONTINUATIONS = 2
+
+/**
+ * U3 — the synthetic user turn appended to a continuation request. It is sent to the provider but
+ * never written back into the visible conversation, so the user only sees the streamed continuation
+ * text (which merges into the same assistant message).
+ */
+private const val CONTINUATION_INSTRUCTION =
+    "Your previous reply was cut off by a network error. Continue it from exactly where it " +
+        "stopped. Do not repeat anything you already wrote, do not restate the question, and do " +
+        "not start over — just keep going to a natural end."
+
 private val USER_CANCELLATION_MARKERS = listOf(
     "canceled by user",
     "cancelled by user",
@@ -137,6 +153,97 @@ internal fun shouldRetryGenerationStreamFailure(
     // out of the retry loop so stop-generation and parent-scope cancellation propagate.
     return !isCancellationFailure(failure)
 }
+
+/**
+ * U3 — should a stream that broke AFTER the model had already written something be CONTINUED,
+ * i.e. re-issued with the partial text and an instruction to keep going, instead of being handed
+ * to the caller as a truncated reply?
+ *
+ * This is deliberately the mirror image of [shouldRetryGenerationStreamFailure]: that one refuses
+ * to retry once output has arrived (a fresh retry would regenerate and duplicate text), while this
+ * one only fires once output HAS arrived. The permanent conditions — an explicit response-stream
+ * error, a context-limit failure, an exhausted quota, and a deterministic non-retryable 4xx — stay
+ * non-continuable, because asking the model again cannot fix any of them.
+ */
+internal fun shouldContinueGenerationStream(
+    failure: Throwable,
+    receivedMeaningfulOutput: Boolean,
+    continuationsUsed: Int,
+    maxContinuations: Int = MAX_STREAM_CONTINUATIONS,
+): Boolean {
+    if (!receivedMeaningfulOutput) return false
+    if (continuationsUsed >= maxContinuations.coerceAtLeast(0)) return false
+    if (isCancellationFailure(failure)) return false
+    if (failure is ResponseStreamErrorException || isContextLimitFailure(failure)) return false
+    if (isNonRetryableClientError(failure)) return false
+    if (isQuotaExhaustedFailure(failure)) return false
+    return true
+}
+
+/**
+ * U3 — can [partial] (the assistant message a broken stream left behind) seed a continuation
+ * request? Only plain text is safe to continue: re-sending an assistant turn that holds a
+ * half-streamed tool call would produce a request with a dangling tool call and no matching
+ * result, which several providers reject outright.
+ */
+internal fun canContinueFromPartial(partial: UIMessage?): Boolean =
+    partial != null &&
+        partial.role == MessageRole.ASSISTANT &&
+        partial.parts.none { it is UIMessagePart.ToolCall } &&
+        partial.parts.any { it is UIMessagePart.Text && it.text.isNotBlank() }
+
+/**
+ * U3 — the request messages for a continuation attempt: the original system + context, then the
+ * partial assistant turn, then a synthetic user instruction to keep going. The synthetic turn is
+ * deliberately NOT written back into `messages`, so the visible conversation gains only the
+ * streamed continuation text — merged into the same assistant message by [StreamChunkHandler].
+ */
+internal fun continuationRequestMessages(
+    baseRequestMessages: List<UIMessage>,
+    currentMessages: List<UIMessage>,
+): List<UIMessage> {
+    val partial = currentMessages.lastOrNull()
+        ?.takeIf { it.role == MessageRole.ASSISTANT }
+        ?: return baseRequestMessages
+    return baseRequestMessages +
+        UIMessage(role = MessageRole.ASSISTANT, parts = partial.parts) +
+        UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(CONTINUATION_INSTRUCTION)),
+            isSynthetic = true,
+        )
+}
+
+/**
+ * U3 — the final fallback: when a continuation is not possible, or has already been tried and the
+ * stream broke again, restart the whole request ONCE from the pre-stream snapshot. The partial
+ * reply is discarded, so the user sees the answer regenerate rather than stop mid-sentence.
+ * [receivedMeaningfulOutput] here is the loop-wide flag, so this still fires when a continuation
+ * attempt itself died before writing a single chunk.
+ */
+internal fun shouldRestartGenerationStreamAfterPartial(
+    failure: Throwable,
+    receivedMeaningfulOutput: Boolean,
+    alreadyRestarted: Boolean,
+): Boolean {
+    if (!receivedMeaningfulOutput || alreadyRestarted) return false
+    if (isCancellationFailure(failure)) return false
+    if (failure is ResponseStreamErrorException || isContextLimitFailure(failure)) return false
+    if (isNonRetryableClientError(failure)) return false
+    if (isQuotaExhaustedFailure(failure)) return false
+    return true
+}
+
+/**
+ * U3 — the "we lost the connection, keeping your reply going" note shown in the chat's status line
+ * while a continuation attempt runs. Plain mirror of [retryStatusText], but for the post-output
+ * case, which never carries a failure reason the user needs to read.
+ */
+private fun continueStatusText(
+    context: Context,
+    number: Int,
+    max: Int,
+): String = context.getString(me.rerere.rikkahub.R.string.chat_page_continuing, number, max)
 
 // A 4xx other than the RETRYABLE_4XX_STATUS_CODES exceptions is deterministic: the same
 // request will fail the same way on every retry. 5xx and failures with no known status code
@@ -1380,7 +1487,8 @@ class GenerationLoop(
             workspaceCwd = workspaceCwd,
         )
 
-        var messages: List<UIMessage> = messages
+        val preStreamMessages = messages
+        var messages: List<UIMessage> = preStreamMessages
         val params = TextGenerationParams(
             model = model,
             temperature = assistant.temperature,
@@ -1411,96 +1519,161 @@ class GenerationLoop(
                 )
                 var receivedMeaningfulOutput = false
                 var receivedAnyChunk = false
-                val streamChunkHandler = StreamChunkHandler(model)
-                // Stream-idle watchdog: lets the chat say "still working" vs "wedged"
-                // instead of counting seconds with no explanation (see StreamIdleNotifier).
-                val idleNotifier = StreamIdleNotifier()
-                // P2-12a - a streamed call is a model round trip exactly like the non-stream
-                // one below, so it carries the same ambient context. It was previously left
-                // unwrapped, which (once the decorator started wrapping `streamText`) would have
-                // filed every streamed call as UNKNOWN with no conversation / assistant.
-                // P2-12d — a sub-agent conversation carries a run attribution registered by
-                // SubAgentEngine; interactive turns resolve to null and keep today's context.
-                val usageAttribution = conversationId?.let { UsageRunContexts.get(it.toString()) }
-                    coroutineScope {
-                        val idleWatchdog = launch { watchStreamIdle(context, idleNotifier, processingStatus) }
-                        try {
-                            withContext(
-                                UsageCallContext(
-                                    purpose = usageAttribution?.purpose
-                                        ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
-                                    conversationId = conversationId?.toString(),
-                                    assistantId = assistant.id.toString(),
-                                    runId = usageAttribution?.runId,
-                                    parentRunId = usageAttribution?.parentRunId,
-                                )
-                            ) {
-                                providerImpl.streamText(
-                                    providerSetting = provider,
-                                    messages = internalMessages,
-                                    params = params
-                                )
-                            }.onCompletion { cause ->
-                                // Some SSE implementations report an abruptly closed socket through onClosed
-                                // without an exception. Treat a clean close with no chunks at all as a transport
-                                // failure so the retry policy can recover a background continuation. A clean
-                                // close after chunks arrived but none produced parseable parts is a permanent
-                                // condition (unrecognized part shapes), not a transport hiccup, so it must not
-                                // burn retries - log it and let the generation end normally with an empty reply.
-                                if (cause == null && shouldReportEmptyGenerationStream(receivedAnyChunk)) {
-                                    throw IOException("Model stream closed without meaningful output")
-                                }
-                                if (cause == null && receivedAnyChunk && !receivedMeaningfulOutput) {
-                                    Log.w(
-                                        TAG,
-                                        "streamText: stream closed after chunks arrived but none contained " +
-                                            "parseable parts; ending without retry",
-                                    )
-                                }
-                            }.retryWhen { cause, retryAttempt ->
-                                val shouldRetry = shouldRetryGenerationStreamFailure(
-                                    failure = cause,
-                                    retryAttempt = retryAttempt,
-                                    maxRetries = params.maxStreamRetries,
-                                    receivedMeaningfulOutput = receivedMeaningfulOutput,
-                                )
-                                if (shouldRetry) {
-                                    // A new attempt is about to start collecting from scratch: reset the
-                                    // per-attempt "did anything arrive" flag so onCompletion's transport-failure
-                                    // check reflects this attempt, not a chunk seen in an earlier one.
-                                    receivedAnyChunk = false
-                                    idleNotifier.onAttemptStart()
-                                    val delayMs = generationStreamRetryDelayMs(retryAttempt)
-                                    processingStatus.value = retryStatusText(
-                                        context = context,
-                                        retryNumber = retryAttempt + 1,
-                                        maxRetries = params.maxStreamRetries,
-                                        failure = cause,
-                                    )
-                                    Log.w(
-                                        TAG,
-                                        "streamText: retrying after failure " +
-                                            "(${retryAttempt + 1}/${params.maxStreamRetries}) in ${delayMs}ms",
-                                        cause,
-                                    )
-                                    delay(delayMs)
-                                }
-                                shouldRetry
-                            }.collect {
-                                receivedAnyChunk = true
-                                val meaningful = isMeaningfulStreamChunk(it)
-                                if (meaningful) {
-                                    receivedMeaningfulOutput = true
-                                    clearRetryStatus(processingStatus)
-                                }
-                                idleNotifier.onChunk(meaningful)
-                                messages = streamChunkHandler.handle(messages, it)
-                                onUpdateMessages(messages)
-                            }
-                        } finally {
-                            idleWatchdog.cancel()
-                        }
+                // U3 — a transport failure AFTER the model started writing used to end the turn
+                // mid-sentence. The stream is now attempted in a loop that, in order: (1) asks the
+                // model to continue from the partial text (up to MAX_STREAM_CONTINUATIONS times);
+                // (2) if that is unavailable or also fails, restarts the whole request once from
+                // the pre-stream snapshot. `everReceivedMeaningfulOutput` survives the per-attempt
+                // reset so (2) still fires when a continuation attempt itself dies before writing.
+                var everReceivedMeaningfulOutput = false
+                var continuationsUsed = 0
+                var restartedAfterPartial = false
+                while (true) {
+                    receivedMeaningfulOutput = false
+                    receivedAnyChunk = false
+                    val attemptMessages = if (continuationsUsed == 0) {
+                        internalMessages
+                    } else {
+                        continuationRequestMessages(internalMessages, messages)
                     }
+                    try {
+                    val streamChunkHandler = StreamChunkHandler(model)
+                    // Stream-idle watchdog: lets the chat say "still working" vs "wedged"
+                    // instead of counting seconds with no explanation (see StreamIdleNotifier).
+                    val idleNotifier = StreamIdleNotifier()
+                    // P2-12a - a streamed call is a model round trip exactly like the non-stream
+                    // one below, so it carries the same ambient context. It was previously left
+                    // unwrapped, which (once the decorator started wrapping `streamText`) would have
+                    // filed every streamed call as UNKNOWN with no conversation / assistant.
+                    // P2-12d — a sub-agent conversation carries a run attribution registered by
+                    // SubAgentEngine; interactive turns resolve to null and keep today's context.
+                    val usageAttribution = conversationId?.let { UsageRunContexts.get(it.toString()) }
+                        coroutineScope {
+                            val idleWatchdog = launch { watchStreamIdle(context, idleNotifier, processingStatus) }
+                            try {
+                                withContext(
+                                    UsageCallContext(
+                                        purpose = usageAttribution?.purpose
+                                            ?: if (stepIndex > 0) UsagePurpose.TOOL_LOOP else UsagePurpose.MAIN,
+                                        conversationId = conversationId?.toString(),
+                                        assistantId = assistant.id.toString(),
+                                        runId = usageAttribution?.runId,
+                                        parentRunId = usageAttribution?.parentRunId,
+                                    )
+                                ) {
+                                    providerImpl.streamText(
+                                        providerSetting = provider,
+                                        messages = attemptMessages,
+                                        params = params
+                                    )
+                                }.onCompletion { cause ->
+                                    // Some SSE implementations report an abruptly closed socket through onClosed
+                                    // without an exception. Treat a clean close with no chunks at all as a transport
+                                    // failure so the retry policy can recover a background continuation. A clean
+                                    // close after chunks arrived but none produced parseable parts is a permanent
+                                    // condition (unrecognized part shapes), not a transport hiccup, so it must not
+                                    // burn retries - log it and let the generation end normally with an empty reply.
+                                    if (cause == null && shouldReportEmptyGenerationStream(receivedAnyChunk)) {
+                                        throw IOException("Model stream closed without meaningful output")
+                                    }
+                                    if (cause == null && receivedAnyChunk && !receivedMeaningfulOutput) {
+                                        Log.w(
+                                            TAG,
+                                            "streamText: stream closed after chunks arrived but none contained " +
+                                                "parseable parts; ending without retry",
+                                        )
+                                    }
+                                }.retryWhen { cause, retryAttempt ->
+                                    val shouldRetry = shouldRetryGenerationStreamFailure(
+                                        failure = cause,
+                                        retryAttempt = retryAttempt,
+                                        maxRetries = params.maxStreamRetries,
+                                        receivedMeaningfulOutput = receivedMeaningfulOutput,
+                                    )
+                                    if (shouldRetry) {
+                                        // A new attempt is about to start collecting from scratch: reset the
+                                        // per-attempt "did anything arrive" flag so onCompletion's transport-failure
+                                        // check reflects this attempt, not a chunk seen in an earlier one.
+                                        receivedAnyChunk = false
+                                        idleNotifier.onAttemptStart()
+                                        val delayMs = generationStreamRetryDelayMs(retryAttempt)
+                                        processingStatus.value = retryStatusText(
+                                            context = context,
+                                            retryNumber = retryAttempt + 1,
+                                            maxRetries = params.maxStreamRetries,
+                                            failure = cause,
+                                        )
+                                        Log.w(
+                                            TAG,
+                                            "streamText: retrying after failure " +
+                                                "(${retryAttempt + 1}/${params.maxStreamRetries}) in ${delayMs}ms",
+                                            cause,
+                                        )
+                                        delay(delayMs)
+                                    }
+                                    shouldRetry
+                                }.collect {
+                                    receivedAnyChunk = true
+                                    val meaningful = isMeaningfulStreamChunk(it)
+                                    if (meaningful) {
+                                        receivedMeaningfulOutput = true
+                                        everReceivedMeaningfulOutput = true
+                                        clearRetryStatus(processingStatus)
+                                    }
+                                    idleNotifier.onChunk(meaningful)
+                                    messages = streamChunkHandler.handle(messages, it)
+                                    onUpdateMessages(messages)
+                                }
+                            } finally {
+                                idleWatchdog.cancel()
+                            }
+                        }
+                    } catch (failure: Throwable) {
+                        // Only a plain-text partial can be continued; a half-streamed tool call
+                        // would produce a dangling call and no result, which providers reject.
+                        val partial = messages.lastOrNull()
+                            ?.takeIf { it.role == MessageRole.ASSISTANT }
+                        if (canContinueFromPartial(partial) &&
+                            shouldContinueGenerationStream(
+                                failure = failure,
+                                receivedMeaningfulOutput = receivedMeaningfulOutput,
+                                continuationsUsed = continuationsUsed,
+                            )
+                        ) {
+                            continuationsUsed++
+                            processingStatus.value = continueStatusText(
+                                context = context,
+                                number = continuationsUsed,
+                                max = MAX_STREAM_CONTINUATIONS,
+                            )
+                            Log.w(
+                                TAG,
+                                "streamText: continuing after a mid-stream failure " +
+                                    "($continuationsUsed/$MAX_STREAM_CONTINUATIONS)",
+                                failure,
+                            )
+                            continue
+                        }
+                        if (shouldRestartGenerationStreamAfterPartial(
+                                failure = failure,
+                                receivedMeaningfulOutput = everReceivedMeaningfulOutput,
+                                alreadyRestarted = restartedAfterPartial,
+                            )
+                        ) {
+                            restartedAfterPartial = true
+                            continuationsUsed = 0
+                            messages = preStreamMessages
+                            onUpdateMessages(preStreamMessages)
+                            Log.w(
+                                TAG,
+                                "streamText: restarting the reply after a mid-stream failure",
+                                failure,
+                            )
+                            continue
+                        }
+                        throw failure
+                    }
+                }
             } else {
                 aiLoggingManager.addLog(
                     AILogging.Generation(

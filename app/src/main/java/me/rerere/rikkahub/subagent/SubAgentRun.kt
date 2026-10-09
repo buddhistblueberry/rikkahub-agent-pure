@@ -50,15 +50,31 @@ enum class SubAgentStatus {
 }
 
 object SubAgentDefaults {
-    const val DEFAULT_TIMEOUT_SECONDS = 300
+    /**
+     * Default per-run wall-clock cap used when a dispatch omits `timeout_seconds`. A foreground
+     * dispatch blocks the parent's tool call for the whole run, so the old 300s default was the
+     * single biggest contributor to "the tool call looks hung" for several minutes. A caller can
+     * still ask for up to [MAX_TIMEOUT_SECONDS] explicitly.
+     */
+    const val DEFAULT_TIMEOUT_SECONDS = 180
     const val MAX_TIMEOUT_SECONDS = 1800
     const val DEFAULT_MAX_TRIPS = 12
     const val MAX_MAX_TRIPS = 30
     const val MAX_LABEL_LENGTH = 60
+    /** Compiled-in default; the live ceiling is `Settings.subAgentGlobalConcurrencyCap`. */
     const val GLOBAL_CONCURRENCY_CAP = 30
+    const val MIN_GLOBAL_CONCURRENCY_CAP = 8
+    const val MAX_GLOBAL_CONCURRENCY_CAP = 64
     const val MIN_PER_ASSISTANT_CAP = 1
-    const val MAX_PER_ASSISTANT_CAP = 8
+    const val MAX_PER_ASSISTANT_CAP = 16
     const val REGISTRY_LRU_CAP = 50
+    /**
+     * How long a dispatch waits for a free concurrency slot before refusing. The engine's own doc
+     * has always promised "block up to 30s waiting for a slot"; before the bounded wait existed an
+     * over-cap dispatch simply failed, so a parallel burst lost every run past the cap.
+     */
+    const val SLOT_WAIT_TIMEOUT_MS = 30_000L
+    const val SLOT_RETRY_INTERVAL_MS = 250L
 
     /** Default system prompt used when the assistant's per-sub-agent prompt is empty. */
     val DEFAULT_SYSTEM_PROMPT = """

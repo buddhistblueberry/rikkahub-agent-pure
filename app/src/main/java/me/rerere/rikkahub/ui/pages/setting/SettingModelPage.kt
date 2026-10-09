@@ -54,6 +54,7 @@ import me.rerere.hugeicons.stroke.ArrowRight01
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.AutoCompactionThresholdMode
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.subagent.SubAgentDefaults
 import me.rerere.rikkahub.ui.components.ai.ModelListSheet
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ai.rememberModelListState
@@ -181,6 +182,76 @@ private fun ModelSettingsPage(settings: Settings, vm: SettingVM, contentPadding:
         item {
             ResponseStreamRetrySettingItem(settings = settings, vm = vm)
         }
+        item {
+            SubAgentConcurrencySettingItem(settings = settings, vm = vm)
+        }
+    }
+}
+
+@Composable
+private fun SubAgentConcurrencySettingItem(
+    settings: Settings,
+    vm: SettingVM,
+) {
+    var capInput by remember(settings.subAgentGlobalConcurrencyCap) {
+        mutableStateOf(settings.subAgentGlobalConcurrencyCap.toString())
+    }
+
+    fun commit(value: String) {
+        val normalized = value.toIntOrNull()
+            ?.coerceIn(
+                SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
+                SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
+            )
+            ?: settings.subAgentGlobalConcurrencyCap
+        capInput = normalized.toString()
+        vm.updateSettings { current ->
+            if (current.subAgentGlobalConcurrencyCap == normalized) {
+                current
+            } else {
+                current.copy(subAgentGlobalConcurrencyCap = normalized)
+            }
+        }
+    }
+
+    CardGroup {
+        item(
+            headlineContent = {
+                Text(stringResource(R.string.setting_model_page_subagent_concurrency))
+            },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.setting_model_page_subagent_concurrency_desc))
+                    OutlinedTextField(
+                        value = capInput,
+                        onValueChange = { value ->
+                            capInput = value.filter(Char::isDigit).take(2)
+                        },
+                        singleLine = true,
+                        label = {
+                            Text(stringResource(R.string.setting_model_page_subagent_concurrency_input))
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focusState ->
+                                if (!focusState.isFocused) {
+                                    commit(capInput)
+                                }
+                            },
+                        supportingText = {
+                            Text(
+                                stringResource(
+                                    R.string.setting_model_page_subagent_concurrency_hint,
+                                    SubAgentDefaults.MIN_GLOBAL_CONCURRENCY_CAP,
+                                    SubAgentDefaults.MAX_GLOBAL_CONCURRENCY_CAP,
+                                )
+                            )
+                        },
+                    )
+                }
+            },
+        )
     }
 }
 

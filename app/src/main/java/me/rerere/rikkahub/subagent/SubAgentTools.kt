@@ -55,9 +55,11 @@ fun subagentDispatchTool(
                 the running sub-agent. For long-running work, set run_in_background=true and
                 poll with subagent_get; otherwise foreground (default) blocks until terminal.
 
-                Concurrency caps: each assistant has its own (default 3, configurable 1-8) and
-                there's a global cap of 30 across all assistants. Over-cap dispatches fail with
-                a clear error — back off and retry, or wait for a slot.
+                Concurrency caps: each assistant has its own (default 3, configurable
+                ${SubAgentDefaults.MIN_PER_ASSISTANT_CAP}-${SubAgentDefaults.MAX_PER_ASSISTANT_CAP}) and there is a
+                global cap across all assistants. An over-cap dispatch waits for a free slot for up to
+                ${SubAgentDefaults.SLOT_WAIT_TIMEOUT_MS / 1000}s and only fails if the wait expires, so a burst of
+                parallel dispatches no longer loses the runs past the cap — but keep batches sensibly sized.
 
                 Approval-required: every dispatch needs explicit confirmation. Eligible for
                 Always Allow if the user trusts the assistant to delegate freely.
